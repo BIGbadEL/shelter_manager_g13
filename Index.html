@@ -45,12 +45,26 @@
   .count{margin:12px 2px 4px;font-size:13px;color:var(--muted);}
   .count b{color:var(--ink);font-weight:700;}
 
+  /* --- zadania na dziś --- */
+  .tasksbox{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  .tasksbox h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--forest);margin-bottom:4px;}
+  .task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;}
+  .task:last-of-type{border-bottom:none;}
+  .task .box{width:21px;height:21px;border:2px solid var(--forest);border-radius:7px;flex:none;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;}
+  .task.done .box{background:var(--forest);}
+  .task .txt{font-size:14.5px;flex:1;}
+  .task.done .txt{text-decoration:line-through;text-decoration-color:#aeb8b0;color:var(--muted);}
+  .age{font-size:11px;font-weight:700;color:#8a4a12;background:#fbe8cf;padding:2px 8px;border-radius:6px;flex:none;}
+
   ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:10px;}
   .dog{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 14px;}
   .dog.walked{opacity:.6;}
   .row{display:flex;align-items:center;gap:10px;}
   .name{font-size:17px;font-weight:700;letter-spacing:-.01em;}
   .name.done{text-decoration:line-through;text-decoration-color:#aeb8b0;}
+  .dogmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:12px;color:var(--muted);}
+  .miss{font-size:11px;font-weight:700;color:#8a4a12;background:#fbe8cf;padding:2px 8px;border-radius:6px;}
   .dif{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;}
   .flex{flex:1;}
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
@@ -63,6 +77,7 @@
   .walk{background:var(--ink);color:#fff;font-size:13px;padding:8px 13px;}
   .ghost{background:transparent;color:var(--muted);font-size:12.5px;padding:6px 8px;}
   .del{background:transparent;color:var(--hard);font-size:13px;padding:6px 8px;font-weight:800;}
+  .edit{background:transparent;color:var(--forest);font-size:14px;padding:6px 8px;}
 
   .status{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
   .who{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink);}
@@ -74,12 +89,15 @@
     border:1.5px solid var(--forest);border-radius:10px;background:#fff;color:var(--ink);outline:none;}
   .hidden{display:none;}
 
+  /* --- formularze prowadzącej --- */
   .adminbox{margin-top:14px;background:#eef3ee;border:1px solid #cfdccf;border-radius:12px;padding:13px;}
   .adminbox h3{font-size:13px;color:var(--forest);margin-bottom:9px;letter-spacing:.02em;}
-  .adminrow{display:flex;gap:7px;}
-  .adminrow input{flex:1;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;outline:none;}
+  .adminrow{display:flex;gap:7px;flex-wrap:wrap;}
+  .adminrow input{flex:1;min-width:110px;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;outline:none;}
   .adminrow select{font-family:inherit;font-size:13px;padding:9px 8px;border:1px solid #bcccbc;border-radius:9px;background:#fff;}
-  .add-btn{background:var(--forest);color:#fff;font-size:14px;padding:0 15px;}
+  .add-btn{background:var(--forest);color:#fff;font-size:14px;padding:10px 15px;}
+  .editform{margin-top:10px;display:flex;flex-direction:column;gap:7px;}
+  .editform .adminrow input{background:#fff;}
 
   .hist-day{margin-top:14px;}
   .hist-date{font-size:13px;font-weight:800;color:var(--forest);margin-bottom:6px;text-transform:capitalize;}
@@ -87,6 +105,7 @@
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
   .empty{color:var(--muted);font-size:13.5px;padding:24px 4px;text-align:center;}
+  .empty.small{padding:10px 2px;text-align:left;}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
     font-size:13px;font-weight:600;padding:9px 15px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;}
   .toast.show{opacity:1;}
@@ -124,7 +143,9 @@
 
   <footer>
     <b>Kolor po lewej = trudność psa.</b> <b>Zarezerwuj</b> = biorę go dziś. <b>Wyprowadzony ✓</b> = spacer odbyty, wpada do historii.
-    Psy dodaje i usuwa tylko prowadząca i dwie wyznaczone osoby (⚙️, PIN). Lista zeruje się co wieczór o 22:00.
+    Odznaka <b>„bez spaceru”</b> = pies nie wyszedł poprzedniego dnia — w miarę możliwości bierzcie takie psy w pierwszej kolejności.
+    Zadania odhaczamy stukając w nie; nieodhaczone przechodzą na kolejny dzień.
+    Psy i zadania dodaje tylko prowadząca i dwie wyznaczone osoby (⚙️, PIN). Lista zeruje się co wieczór o 22:00.
   </footer>
 
   <div class="toast" id="toast"></div>
@@ -136,11 +157,24 @@
     hard:{label:"bardzo wymagający", color:"#cf4a3a"},
   };
 
-  const state = { dogs:[], history:[], view:"today", admin:false, pin:null, loaded:false };
+  const state = {
+    dogs:[], tasks:[], history:[],
+    today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
+    view:"today", admin:false, pin:null, loaded:false,
+    editId:null,           // pies aktualnie edytowany w trybie prowadzącej
+  };
   let inFlight = 0;
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
 
+  /* ---- drobiazgi ---- */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
+  function daysAgo(iso){                    // ile dni temu względem daty serwera
+    if(!iso || !state.today) return null;
+    const ms = Date.parse(state.today) - Date.parse(iso);
+    return isNaN(ms) ? null : Math.round(ms/864e5);
+  }
   function todayStr(){
     try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date());}
     catch(e){return "dziś";}
@@ -154,6 +188,7 @@
     setTimeout(()=>t.classList.remove('show'),2600);
   }
   function busyEditing(){
+    if(state.editId!==null) return true;
     if(document.querySelector('.entry:not(.hidden)')) return true;
     const a=document.activeElement;
     return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
@@ -161,18 +196,23 @@
   function setSync(txt){ document.getElementById('sync').textContent = txt; }
 
   /* ---- komunikacja z serwerem ---- */
+  function applyData(res){
+    state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+  }
   function call(fn, args, onOk){
     inFlight++; setSync('zapisywanie…');
     google.script.run
       .withSuccessHandler(res=>{ inFlight--; if(inFlight<=0) setSync(''); if(onOk) onOk(res); })
-      .withFailureHandler(err=>{ inFlight--; setSync(''); toast('Nie udało się — spróbuj ponownie'); })
+      .withFailureHandler(err=>{
+        inFlight--; if(inFlight<=0) setSync('');
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się — spróbuj ponownie');
+      })
       [fn].apply(google.script.run, args);
   }
 
   function refresh(){
-    google.script.run.withSuccessHandler(res=>{
-      state.dogs=res.dogs; state.loaded=true; render();
-    }).withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
+    google.script.run.withSuccessHandler(res=>{ applyData(res); render(); })
+      .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
       .getData();
     if(state.view==='history'){
       google.script.run.withSuccessHandler(res=>{ state.history=res.history; if(state.view==='history') render(); }).getHistory();
@@ -184,6 +224,62 @@
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
     gear.classList.toggle('on',state.admin);
     viewEl.innerHTML = state.view==='today' ? renderToday() : renderHistory();
+  }
+
+  /* Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie ostatniego spaceru z Historii. */
+  function missBadge(dog){
+    if(dog.status==='walked') return '';
+    const n = daysAgo(dog.lastWalk);
+    if(n===null || n<2) return '';                       // wczoraj wyszedł albo brak danych
+    const txt = n===2 ? 'wczoraj bez spaceru' : `bez spaceru od ${n-1} dni`;
+    return `<span class="miss">⚠ ${txt}</span>`;
+  }
+
+  function dogMeta(dog){
+    const bits=[];
+    if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
+    if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
+    const miss=missBadge(dog);
+    if(!bits.length && !miss) return '';
+    return `<div class="dogmeta">${bits.join(' · ')}${miss?(bits.length?' ':'')+miss:''}</div>`;
+  }
+
+  function renderTasks(){
+    if(!state.tasks.length && !state.admin) return '';
+    let html=`<div class="tasksbox"><h3>Zadania na dziś</h3>`;
+    if(!state.tasks.length) html+=`<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
+    state.tasks.forEach(t=>{
+      const n=daysAgo(t.date);
+      const age = (n && n>0) ? `<span class="age">${n===1?'od wczoraj':`od ${n} dni`}</span>` : '';
+      const del = state.admin ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+      html+=`<div class="task ${t.done?'done':''}" data-act="taskToggle" data-id="${t.id}">
+        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${age}${del}</div>`;
+    });
+    if(state.admin){
+      html+=`<div class="entry">
+        <input type="text" id="newTask" placeholder="Nowe zadanie (np. umyć miski w K-4)">
+        <button class="btn add-btn" data-act="taskAdd">Dodaj</button></div>`;
+    }
+    return html+`</div>`;
+  }
+
+  function renderEditForm(dog){
+    const opts=Object.keys(DIF).map(k=>
+      `<option value="${k}" ${dog.dif===k?'selected':''}>${DIF[k].label}</option>`).join('');
+    return `<li class="dog" style="border-left-color:${(DIF[dog.dif]||DIF.easy).color}">
+      <div class="row"><span class="name">Edycja: ${esc(dogLabel(dog))}</span></div>
+      <div class="editform">
+        <div class="adminrow"><input type="text" data-ef="name" value="${esc(dog.name)}" placeholder="Imię (może być puste)"></div>
+        <div class="adminrow">
+          <input type="text" data-ef="ident" value="${esc(dog.ident)}" placeholder="Nr identyfikacyjny">
+          <input type="text" data-ef="box" value="${esc(dog.box)}" placeholder="Boks">
+          <select data-ef="dif">${opts}</select>
+        </div>
+        <div class="adminrow">
+          <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
+          <button class="btn ghost" data-act="editCancel">Anuluj</button>
+        </div>
+      </div></li>`;
   }
 
   function renderToday(){
@@ -199,18 +295,26 @@
         <span><span class="dot" style="background:${DIF.med.color}"></span>wymagający</span>
         <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
       </div>
+      ${renderTasks()}
       <div class="count"><b>${r}</b> zarezerwowane · <b>${w}</b> wyprowadzone · <b>${f}</b> wolne</div>
       <ul>`;
 
     d.forEach(dog=>{
+      if(state.admin && state.editId===dog.id){ html+=renderEditForm(dog); return; }
+
       const dm=DIF[dog.dif]||DIF.easy;
+      const label=esc(dogLabel(dog));
       const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
         <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
-      const del = state.admin ? `<button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
+      const adm = state.admin
+        ? `<button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
+           <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
+      const meta=dogMeta(dog);
 
       if(dog.status==='free'){
         html+=`<li class="dog" style="border-left-color:${dm.color}">
-          <div class="row"><span class="name">${esc(dog.name)}</span><span class="flex"></span>${difChip}${del}</div>
+          <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
+          ${meta}
           <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button></div>
           <div class="entry hidden" data-entry="${dog.id}">
             <input type="text" placeholder="Twoje imię" data-input="${dog.id}">
@@ -218,8 +322,9 @@
           </div></li>`;
       } else if(dog.status==='reserved'){
         html+=`<li class="dog" style="border-left-color:${dm.color}">
-          <div class="row"><span class="name">${esc(dog.name)}</span>
-            <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${del}</div>
+          <div class="row"><span class="name">${label}</span>
+            <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
+          ${meta}
           <div class="status">
             <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
             <button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>
@@ -227,7 +332,8 @@
           </div></li>`;
       } else {
         html+=`<li class="dog walked" style="border-left-color:${dm.color}">
-          <div class="row"><span class="name done">${esc(dog.name)}</span><span class="flex"></span>${difChip}${del}</div>
+          <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
+          ${meta}
           <div class="status"><span class="who">✓ ${esc(dog.who)} · ${esc(dog.time)}</span>
             <button class="btn ghost spacer" data-act="free" data-id="${dog.id}">Cofnij</button>
           </div></li>`;
@@ -239,7 +345,11 @@
       html+=`<div class="adminbox">
         <h3>TRYB PROWADZĄCEJ — dodaj psa</h3>
         <div class="adminrow">
-          <input type="text" id="newName" placeholder="Imię psa">
+          <input type="text" id="newName" placeholder="Imię (może być puste)">
+          <input type="text" id="newIdent" placeholder="Nr identyfikacyjny">
+        </div>
+        <div class="adminrow" style="margin-top:7px">
+          <input type="text" id="newBox" placeholder="Boks">
           <select id="newDif">
             <option value="easy">łatwy</option>
             <option value="med">wymagający</option>
@@ -267,8 +377,6 @@
     return html;
   }
 
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
   /* ---- zdarzenia ---- */
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
@@ -277,7 +385,7 @@
   });
 
   gear.addEventListener('click',()=>{
-    if(state.admin){ state.admin=false; render(); return; }
+    if(state.admin){ state.admin=false; state.editId=null; render(); return; }
     document.getElementById('pinrow').classList.toggle('hidden');
     document.getElementById('pinErr').classList.add('hidden');
     const p=document.getElementById('pinInput'); p.value=''; p.focus();
@@ -294,11 +402,15 @@
     }).checkPin(pin);
   }
 
+  function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
+  function onData(res){ applyData(res); state.editId=null; render(); }
+
   viewEl.addEventListener('click',e=>{
     const btn=e.target.closest('[data-act]'); if(!btn) return;
     const act=btn.dataset.act;
     const id=btn.dataset.id?Number(btn.dataset.id):null;
 
+    /* wolontariusze — psy */
     if(act==='reserve'){
       viewEl.querySelector(`[data-entry="${id}"]`).classList.remove('hidden');
       btn.classList.add('hidden');
@@ -307,31 +419,59 @@
     if(act==='confirm'){
       const el=viewEl.querySelector(`[data-input="${id}"]`); const val=el.value.trim();
       if(!val){ el.focus(); return; }
-      call('reserve',[id,val],res=>{ state.dogs=res.dogs; render(); });
+      call('reserve',[id,val],onData);
     }
-    if(act==='walk') call('markWalked',[id,''],res=>{ state.dogs=res.dogs; render(); });
-    if(act==='free') call('setFree',[id],res=>{ state.dogs=res.dogs; render(); });
+    if(act==='walk') call('markWalked',[id,''],onData);
+    if(act==='free') call('setFree',[id],onData);
 
+    /* wolontariusze — zadania (✕ wewnątrz kafelka ma własny data-act, więc tu nie wpadnie) */
+    if(act==='taskToggle'){
+      const t=state.tasks.find(x=>x.id===id); if(!t) return;
+      call('setTaskDone',[id,!t.done],onData);
+    }
+
+    /* prowadząca */
+    if(act==='edit'){ state.editId=id; render(); }
+    if(act==='editCancel'){ state.editId=null; render(); }
+    if(act==='editSave'){
+      call('updateDog',[id,{name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')},state.pin],onData);
+    }
     if(act==='remove'){
       const dog=state.dogs.find(x=>x.id===id);
-      if(!confirm('Usunąć psa: '+(dog?dog.name:'')+'?')) return;
-      call('removeDog',[id,state.pin],res=>{ state.dogs=res.dogs; render(); });
+      if(!confirm('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
+      call('removeDog',[id,state.pin],onData);
     }
     if(act==='add'){
       const name=document.getElementById('newName').value.trim();
+      const ident=document.getElementById('newIdent').value.trim();
+      const box=document.getElementById('newBox').value.trim();
       const dif=document.getElementById('newDif').value;
-      if(!name){ document.getElementById('newName').focus(); return; }
-      call('addDog',[name,dif,state.pin],res=>{ state.dogs=res.dogs; render(); });
+      if(!name && !ident){ toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return; }
+      call('addDog',[{name,ident,box,dif},state.pin],onData);
+    }
+    if(act==='taskAdd'){
+      const el=document.getElementById('newTask'); const text=el.value.trim();
+      if(!text){ el.focus(); return; }
+      call('addTask',[text,state.pin],onData);
+    }
+    if(act==='taskRemove'){
+      const t=state.tasks.find(x=>x.id===id);
+      if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
+      call('removeTask',[id,state.pin],onData);
     }
   });
 
   viewEl.addEventListener('keydown',e=>{
-    if(e.key==='Enter'&&e.target.matches('[data-input]')){
+    if(e.key!=='Enter') return;
+    if(e.target.matches('[data-input]')){
       const id=e.target.dataset.input;
       viewEl.querySelector(`[data-act="confirm"][data-id="${id}"]`).click();
     }
-    if(e.key==='Enter'&&e.target.id==='newName'){
+    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox'){
       viewEl.querySelector('[data-act="add"]').click();
+    }
+    if(e.target.id==='newTask'){
+      viewEl.querySelector('[data-act="taskAdd"]').click();
     }
   });
 
