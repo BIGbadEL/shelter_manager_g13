@@ -1,0 +1,76 @@
+/**
+ * G13 Spacery — HISTORIA I NOCNY RESET.
+ */
+
+/* ---------- ODCZYT ---------- */
+
+function readHistory_() {
+  const sh = ss_().getSheetByName(SHEETS.HIST);
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, HIST_WIDTH).getValues()
+    .filter(r => r[HIST.DATE - 1] !== '' && r[HIST.DATE - 1] !== null)
+    .map(r => ({
+      date: cellDate_(r[HIST.DATE - 1]),
+      name: String(r[HIST.DOG - 1]),
+      who:  String(r[HIST.WHO - 1] || ''),
+      time: cellTime_(r[HIST.TIME - 1]),
+    }))
+    .reverse();   // najnowsze na górze
+}
+
+/* ---------- RESET O 22:00 ---------- */
+
+/**
+ * Uruchamiany przez wyzwalacz czasowy (zakłada go installTriggers() — patrz Setup.gs).
+ * Robi trzy rzeczy:
+ *   1. wyprowadzone psy -> Historia + data w kolumnie ostatni_spacer,
+ *   2. wszystkie psy z powrotem na "wolny",
+ *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień.
+ * Do testów można uruchomić ręcznie z edytora.
+ */
+function endOfDay() {
+  withLock_(() => {
+    archiveAndResetDogs_();
+    clearDoneTasks_();
+  });
+}
+
+function archiveAndResetDogs_() {
+  const s = ss_();
+  const sh = s.getSheetByName(SHEETS.DOGS);
+  const last = sh.getLastRow();
+  if (last < 2) return;
+
+  const today = today_();
+  const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
+  const toHist = [];
+
+  vals.forEach(r => {
+    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) {
+      const label = dogLabel_(String(r[DOG.NAME - 1] || ''), String(r[DOG.IDENT - 1] || ''), r[DOG.ID - 1]);
+      toHist.push([today, label, String(r[DOG.WHO - 1] || ''), cellTime_(r[DOG.TIME - 1])]);
+      r[DOG.LAST_WALK - 1] = today;             // zapamiętaj datę ostatniego spaceru
+    }
+    r[DOG.STATUS - 1] = STATUS.FREE;
+    r[DOG.WHO - 1] = '';
+    r[DOG.TIME - 1] = '';
+  });
+
+  if (toHist.length) {
+    const hist = s.getSheetByName(SHEETS.HIST);
+    hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist);
+  }
+  sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
+}
+
+function clearDoneTasks_() {
+  const sh = ss_().getSheetByName(SHEETS.TASKS);
+  if (!sh) return;
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const st = sh.getRange(2, TASK.STATUS, last - 1, 1).getValues();
+  for (let i = st.length - 1; i >= 0; i--) {     // od dołu, żeby numery wierszy się nie przesuwały
+    if (String(st[i][0]) === 'done') sh.deleteRow(i + 2);
+  }
+}

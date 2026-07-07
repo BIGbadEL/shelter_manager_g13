@@ -1,0 +1,357 @@
+<script>
+  /* =========================================================
+     STAN I STAŁE
+     ========================================================= */
+  const DIF = {
+    easy:{label:"łatwy", color:"#3f9e57"},
+    med :{label:"wymagający", color:"#d99a1c"},
+    hard:{label:"bardzo wymagający", color:"#cf4a3a"},
+  };
+
+  const state = {
+    dogs:[], tasks:[], history:[],
+    today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
+    view:"today", admin:false, pin:null, loaded:false,
+    editId:null,           // pies aktualnie edytowany w trybie prowadzącej
+  };
+  let inFlight = 0;        // liczba trwających zapisów (blokuje auto-odświeżanie)
+  const viewEl = document.getElementById('view');
+  const gear   = document.getElementById('gear');
+
+  /* =========================================================
+     DROBIAZGI
+     ========================================================= */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
+
+  /** Ile dni temu (względem daty serwera) — null gdy brak danych. */
+  function daysAgo(iso){
+    if(!iso || !state.today) return null;
+    const ms = Date.parse(state.today) - Date.parse(iso);
+    return isNaN(ms) ? null : Math.round(ms/864e5);
+  }
+  function todayStr(){
+    try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date());}
+    catch(e){return "dziś";}
+  }
+  function fmtDate(iso){
+    // T12:00 zamiast północy — data nie przeskoczy na sąsiedni dzień przy dziwnej strefie telefonu
+    try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(iso+'T12:00:00'));}
+    catch(e){return iso;}
+  }
+  function toast(msg){
+    const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'),2600);
+  }
+  function busyEditing(){
+    if(state.editId!==null) return true;
+    if(document.querySelector('.entry:not(.hidden)')) return true;
+    const a=document.activeElement;
+    return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
+  }
+  function setSync(txt){ document.getElementById('sync').textContent = txt; }
+
+  /* =========================================================
+     KOMUNIKACJA Z SERWEREM
+     ========================================================= */
+  function applyData(res){
+    state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+  }
+  /** Standardowa obsługa odpowiedzi po zapisie. */
+  function onData(res){ applyData(res); state.editId=null; render(); }
+
+  function call(fn, args, onOk){
+    inFlight++; setSync('zapisywanie…');
+    google.script.run
+      .withSuccessHandler(res=>{ inFlight--; if(inFlight<=0) setSync(''); if(onOk) onOk(res); })
+      .withFailureHandler(err=>{
+        inFlight--; if(inFlight<=0) setSync('');
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się — spróbuj ponownie');
+      })
+      [fn].apply(google.script.run, args);
+  }
+
+  function refresh(){
+    google.script.run.withSuccessHandler(res=>{ applyData(res); render(); })
+      .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
+      .getData();
+    if(state.view==='history'){
+      google.script.run.withSuccessHandler(res=>{ state.history=res.history; if(state.view==='history') render(); }).getHistory();
+    }
+  }
+
+  /* =========================================================
+     RENDER
+     ========================================================= */
+  function render(){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
+    gear.classList.toggle('on',state.admin);
+    viewEl.innerHTML = state.view==='today' ? renderToday() : renderHistory();
+  }
+
+  /** Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie kolumny ostatni_spacer. */
+  function missBadge(dog){
+    if(dog.status==='walked') return '';
+    const n = daysAgo(dog.lastWalk);
+    if(n===null || n<2) return '';                       // wczoraj wyszedł albo brak danych
+    const txt = n===2 ? 'wczoraj bez spaceru' : `bez spaceru od ${n-1} dni`;
+    return `<span class="miss">⚠ ${txt}</span>`;
+  }
+
+  function dogMeta(dog){
+    const bits=[];
+    if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
+    if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
+    const miss=missBadge(dog);
+    if(!bits.length && !miss) return '';
+    return `<div class="dogmeta">${bits.join(' · ')}${miss?(bits.length?' ':'')+miss:''}</div>`;
+  }
+
+  function renderTasks(){
+    if(!state.tasks.length && !state.admin) return '';
+    let html=`<div class="tasksbox"><h3>Zadania na dziś</h3>`;
+    if(!state.tasks.length) html+=`<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
+    state.tasks.forEach(t=>{
+      const n=daysAgo(t.date);
+      const age = (n && n>0) ? `<span class="age">${n===1?'od wczoraj':`od ${n} dni`}</span>` : '';
+      const del = state.admin ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+      html+=`<div class="task ${t.done?'done':''}" data-act="taskToggle" data-id="${t.id}">
+        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${age}${del}</div>`;
+    });
+    if(state.admin){
+      html+=`<div class="entry">
+        <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)">
+        <button class="btn add-btn" data-act="taskAdd">Dodaj</button></div>`;
+    }
+    return html+`</div>`;
+  }
+
+  function renderEditForm(dog){
+    const opts=Object.keys(DIF).map(k=>
+      `<option value="${k}" ${dog.dif===k?'selected':''}>${DIF[k].label}</option>`).join('');
+    return `<li class="dog" style="border-left-color:${(DIF[dog.dif]||DIF.easy).color}">
+      <div class="row"><span class="name">Edycja: ${esc(dogLabel(dog))}</span></div>
+      <div class="editform">
+        <div class="adminrow"><input type="text" data-ef="name" maxlength="40" value="${esc(dog.name)}" placeholder="Imię (może być puste)"></div>
+        <div class="adminrow">
+          <input type="text" data-ef="ident" maxlength="20" value="${esc(dog.ident)}" placeholder="Nr identyfikacyjny">
+          <input type="text" data-ef="box" maxlength="20" value="${esc(dog.box)}" placeholder="Boks">
+          <select data-ef="dif">${opts}</select>
+        </div>
+        <div class="adminrow">
+          <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
+          <button class="btn ghost" data-act="editCancel">Anuluj</button>
+        </div>
+      </div></li>`;
+  }
+
+  function renderDog(dog){
+    const dm=DIF[dog.dif]||DIF.easy;
+    const label=esc(dogLabel(dog));
+    const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
+      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
+    const adm = state.admin
+      ? `<button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
+         <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
+    const meta=dogMeta(dog);
+
+    if(dog.status==='free'){
+      return `<li class="dog" style="border-left-color:${dm.color}">
+        <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
+        ${meta}
+        <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button></div>
+        <div class="entry hidden" data-entry="${dog.id}">
+          <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
+          <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
+        </div></li>`;
+    }
+    if(dog.status==='reserved'){
+      return `<li class="dog" style="border-left-color:${dm.color}">
+        <div class="row"><span class="name">${label}</span>
+          <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
+        ${meta}
+        <div class="status">
+          <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
+          <button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>
+          <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
+        </div></li>`;
+    }
+    return `<li class="dog walked" style="border-left-color:${dm.color}">
+      <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
+      ${meta}
+      <div class="status"><span class="who">✓ ${esc(dog.who)} · ${esc(dog.time)}</span>
+        <button class="btn ghost spacer" data-act="free" data-id="${dog.id}">Cofnij</button>
+      </div></li>`;
+  }
+
+  function renderAdminAddBox(){
+    return `<div class="adminbox">
+      <h3>TRYB PROWADZĄCEJ — dodaj psa</h3>
+      <div class="adminrow">
+        <input type="text" id="newName" maxlength="40" placeholder="Imię (może być puste)">
+        <input type="text" id="newIdent" maxlength="20" placeholder="Nr identyfikacyjny">
+      </div>
+      <div class="adminrow" style="margin-top:7px">
+        <input type="text" id="newBox" maxlength="20" placeholder="Boks">
+        <select id="newDif">
+          <option value="easy">łatwy</option>
+          <option value="med">wymagający</option>
+          <option value="hard">b. wymagający</option>
+        </select>
+        <button class="btn add-btn" data-act="add">Dodaj</button>
+      </div>
+    </div>`;
+  }
+
+  function renderToday(){
+    if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
+    const d=state.dogs;
+    const count = st => d.filter(x=>x.status===st).length;
+
+    let html=`
+      <div class="diflegend">
+        <span><span class="dot" style="background:${DIF.easy.color}"></span>łatwy</span>
+        <span><span class="dot" style="background:${DIF.med.color}"></span>wymagający</span>
+        <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
+      </div>
+      ${renderTasks()}
+      <div class="count"><b>${count('reserved')}</b> zarezerwowane · <b>${count('walked')}</b> wyprowadzone · <b>${count('free')}</b> wolne</div>
+      <ul>`;
+    d.forEach(dog=>{
+      html += (state.admin && state.editId===dog.id) ? renderEditForm(dog) : renderDog(dog);
+    });
+    html+=`</ul>`;
+    if(state.admin) html+=renderAdminAddBox();
+    return html;
+  }
+
+  function renderHistory(){
+    if(!state.history.length) return '<div class="empty">Brak zapisanych dni jeszcze.</div>';
+    const byDate={};
+    state.history.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+    const dates=Object.keys(byDate).sort().reverse();
+    let html='';
+    dates.forEach(dt=>{
+      const items=byDate[dt];
+      html+=`<div class="hist-day"><div class="hist-date">${fmtDate(dt)} — ${items.length} spacerów</div>`;
+      items.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+      html+=`</div>`;
+    });
+    return html;
+  }
+
+  /* =========================================================
+     ZDARZENIA
+     ========================================================= */
+  document.querySelector('.tabs').addEventListener('click',e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    state.view=t.dataset.tab; render();
+    if(state.view==='history') google.script.run.withSuccessHandler(res=>{state.history=res.history; render();}).getHistory();
+  });
+
+  gear.addEventListener('click',()=>{
+    if(state.admin){ state.admin=false; state.editId=null; render(); return; }
+    document.getElementById('pinrow').classList.toggle('hidden');
+    document.getElementById('pinErr').classList.add('hidden');
+    const p=document.getElementById('pinInput'); p.value=''; p.focus();
+  });
+  document.getElementById('pinOk').addEventListener('click',tryPin);
+  document.getElementById('pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') tryPin(); });
+  function tryPin(){
+    const pin=document.getElementById('pinInput').value.trim();
+    google.script.run.withSuccessHandler(ok=>{
+      if(ok){ state.admin=true; state.pin=pin;
+        document.getElementById('pinrow').classList.add('hidden');
+        document.getElementById('pinErr').classList.add('hidden'); render();
+      } else { document.getElementById('pinErr').classList.remove('hidden'); }
+    }).checkPin(pin);
+  }
+
+  /** Wartość pola formularza edycji psa. */
+  function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
+
+  viewEl.addEventListener('click',e=>{
+    const btn=e.target.closest('[data-act]'); if(!btn) return;
+    const act=btn.dataset.act;
+    const id=btn.dataset.id?Number(btn.dataset.id):null;
+
+    /* --- wolontariusze: psy --- */
+    if(act==='reserve'){
+      viewEl.querySelector(`[data-entry="${id}"]`).classList.remove('hidden');
+      btn.classList.add('hidden');
+      viewEl.querySelector(`[data-input="${id}"]`).focus();
+    }
+    if(act==='confirm'){
+      const el=viewEl.querySelector(`[data-input="${id}"]`); const val=el.value.trim();
+      if(!val){ el.focus(); return; }
+      call('reserve',[id,val],res=>{
+        onData(res);
+        // ktoś mógł zdążyć pierwszy — backend wtedy nie nadpisuje rezerwacji
+        const dog=state.dogs.find(x=>x.id===id);
+        if(dog && !(dog.status==='reserved' && dog.who===val)) toast('Ubiegł Cię ktoś inny — pies już zajęty');
+      });
+    }
+    if(act==='walk') call('markWalked',[id,''],onData);
+    if(act==='free') call('setFree',[id],onData);
+
+    /* --- wolontariusze: zadania (✕ ma własny data-act, więc tu nie wpada) --- */
+    if(act==='taskToggle'){
+      const t=state.tasks.find(x=>x.id===id); if(!t) return;
+      call('setTaskDone',[id,!t.done],onData);
+    }
+
+    /* --- prowadząca --- */
+    if(act==='edit'){ state.editId=id; render(); }
+    if(act==='editCancel'){ state.editId=null; render(); }
+    if(act==='editSave'){
+      call('updateDog',[id,{name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')},state.pin],onData);
+    }
+    if(act==='remove'){
+      const dog=state.dogs.find(x=>x.id===id);
+      if(!confirm('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
+      call('removeDog',[id,state.pin],onData);
+    }
+    if(act==='add'){
+      const name=document.getElementById('newName').value.trim();
+      const ident=document.getElementById('newIdent').value.trim();
+      const box=document.getElementById('newBox').value.trim();
+      const dif=document.getElementById('newDif').value;
+      if(!name && !ident){ toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return; }
+      call('addDog',[{name,ident,box,dif},state.pin],onData);
+    }
+    if(act==='taskAdd'){
+      const el=document.getElementById('newTask'); const text=el.value.trim();
+      if(!text){ el.focus(); return; }
+      call('addTask',[text,state.pin],onData);
+    }
+    if(act==='taskRemove'){
+      const t=state.tasks.find(x=>x.id===id);
+      if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
+      call('removeTask',[id,state.pin],onData);
+    }
+  });
+
+  viewEl.addEventListener('keydown',e=>{
+    if(e.key!=='Enter') return;
+    if(e.target.matches('[data-input]')){
+      const id=e.target.dataset.input;
+      viewEl.querySelector(`[data-act="confirm"][data-id="${id}"]`).click();
+    }
+    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox'){
+      viewEl.querySelector('[data-act="add"]').click();
+    }
+    if(e.target.id==='newTask'){
+      viewEl.querySelector('[data-act="taskAdd"]').click();
+    }
+  });
+
+  /* =========================================================
+     START + AUTO-ODŚWIEŻANIE
+     ========================================================= */
+  document.getElementById('today').textContent=todayStr();
+  refresh();
+  // co 15 s, ale tylko gdy karta widoczna, nic się nie zapisuje i nikt nie pisze w polu
+  setInterval(()=>{ if(!document.hidden && inFlight===0 && !busyEditing()) refresh(); }, 15000);
+  // powrót do karty (np. odblokowanie telefonu) = natychmiastowe odświeżenie
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && inFlight===0 && !busyEditing()) refresh(); });
+</script>
