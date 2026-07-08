@@ -23,13 +23,17 @@ function readTasks_() {
 
 /* ---------- AKCJE WOLONTARIUSZY ---------- */
 
-/** Odhaczenie / odznaczenie zadania (pomyłki można cofać). */
+/**
+ * Odhaczenie / odznaczenie zadania (pomyłki można cofać).
+ * Zwraca małe potwierdzenie zamiast pełnego stanu — interfejs jest
+ * optymistyczny, a prawda i tak dojedzie z okresowym odświeżeniem.
+ */
 function setTaskDone(id, done) {
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.TASKS);
     const row = rowById_(sh, id);
     if (row > 0) sh.getRange(row, TASK.STATUS).setValue(done ? 'done' : 'open');
-    return getData();
+    return { ok: row > 0, id: Number(id), done: !!done };
   });
 }
 

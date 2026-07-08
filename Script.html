@@ -7,6 +7,7 @@
     med :{label:"wymagający", color:"#d99a1c"},
     hard:{label:"bardzo wymagający", color:"#cf4a3a"},
   };
+  const WATCHDOG_MS = 30000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony
 
   const state = {
     dogs:[], tasks:[], history:[],
@@ -14,7 +15,6 @@
     view:"today", admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie prowadzącej
   };
-  let inFlight = 0;        // liczba trwających zapisów (blokuje auto-odświeżanie)
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
 
@@ -23,6 +23,9 @@
      ========================================================= */
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
+  function findDog(id){ return state.dogs.find(x=>x.id===id); }
+  function replaceDog(d){ const i=state.dogs.findIndex(x=>x.id===d.id); if(i>=0) state.dogs[i]=d; }
+  function localHM(){ const d=new Date(); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
 
   /** Ile dni temu (względem daty serwera) — null gdy brak danych. */
   function daysAgo(iso){
@@ -52,32 +55,79 @@
   function setSync(txt){ document.getElementById('sync').textContent = txt; }
 
   /* =========================================================
-     KOMUNIKACJA Z SERWEREM
+     KOLEJKA ZAPISÓW
+     Interfejs jest optymistyczny: klik zmienia stan lokalny od razu,
+     a zapis idzie w tle. Kolejka pilnuje, żeby leciał JEDEN zapis naraz
+     (zero walki o blokadę serwera z samym sobą), a watchdog gwarantuje,
+     że nawet zaginiona odpowiedź niczego nie zawiesi na stałe.
+     ========================================================= */
+  const queue = [];
+  let sending = false;
+  let needRefresh = false;   // po błędzie/watchdogu dosynchronizuj, gdy kolejka się opróżni
+
+  function enqueue(fn, args, reconcile){
+    queue.push({fn, args, reconcile});
+    pump();
+  }
+
+  function pump(){
+    if(sending) return;
+    if(!queue.length){
+      setSync('');
+      if(needRefresh){ needRefresh=false; refresh(); }
+      return;
+    }
+    sending = true; setSync('zapisywanie…');
+    const job = queue.shift();
+    let settled = false;
+    const finish = ()=>{ if(settled) return; settled=true; sending=false; pump(); };
+    const watchdog = setTimeout(()=>{
+      needRefresh = true;
+      toast('Serwer długo nie odpowiada — dosynchronizuję');
+      finish();
+    }, WATCHDOG_MS);
+
+    google.script.run
+      .withSuccessHandler(res=>{
+        clearTimeout(watchdog);
+        if(!settled && job.reconcile) job.reconcile(res);
+        finish();
+      })
+      .withFailureHandler(err=>{
+        clearTimeout(watchdog);
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się zapisać');
+        needRefresh = true;   // optymistyczna zmiana mogła być błędna — cofnie ją odświeżenie
+        finish();
+      })
+      [job.fn](...job.args);   // wywołanie NA skonfigurowanym runnerze (bez .apply z podmianą this)
+  }
+
+  /* =========================================================
+     ODŚWIEŻANIE (odczyt pełnego stanu)
      ========================================================= */
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
   }
-  /** Standardowa obsługa odpowiedzi po zapisie. */
-  function onData(res){ applyData(res); state.editId=null; render(); }
-
-  function call(fn, args, onOk){
-    inFlight++; setSync('zapisywanie…');
-    google.script.run
-      .withSuccessHandler(res=>{ inFlight--; if(inFlight<=0) setSync(''); if(onOk) onOk(res); })
-      .withFailureHandler(err=>{
-        inFlight--; if(inFlight<=0) setSync('');
-        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się — spróbuj ponownie');
-      })
-      [fn].apply(google.script.run, args);
-  }
+  /** Render, który nie wyrywa nikomu klawiatury spod palców. */
+  function safeRender(){ if(!busyEditing()) render(); }
 
   function refresh(){
-    google.script.run.withSuccessHandler(res=>{ applyData(res); render(); })
+    if(sending || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
+    google.script.run
+      .withSuccessHandler(res=>{
+        if(sending || queue.length) return;   // w międzyczasie ruszył zapis
+        applyData(res); safeRender();
+      })
       .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
       .getData();
-    if(state.view==='history'){
-      google.script.run.withSuccessHandler(res=>{ state.history=res.history; if(state.view==='history') render(); }).getHistory();
-    }
+    if(state.view==='history') fetchHistory();
+  }
+
+  function fetchHistory(){
+    google.script.run.withSuccessHandler(res=>{
+      state.history=res.history;
+      if(state.view==='history') render();
+    }).getHistory();
   }
 
   /* =========================================================
@@ -241,12 +291,51 @@
   }
 
   /* =========================================================
+     AKCJE (optymistyczne: najpierw lokalny stan i render,
+     potem zapis w tle; ewentualna korekta po odpowiedzi)
+     ========================================================= */
+  function doReserve(id, who){
+    const dog=findDog(id); if(!dog || dog.status!=='free') return;
+    dog.status='reserved'; dog.who=who; dog.time='';
+    render();
+    enqueue('reserve',[id,who],res=>{
+      if(!res || !res.dog) return;
+      replaceDog(res.dog);
+      if(!(res.dog.status==='reserved' && res.dog.who===who)){
+        toast('Ubiegł Cię ktoś inny — pies już zajęty');
+        render();               // konflikt pokazujemy od razu
+      } else safeRender();
+    });
+  }
+
+  function doWalk(id){
+    const dog=findDog(id); if(!dog) return;
+    dog.status='walked'; dog.time=localHM();
+    render();
+    enqueue('markWalked',[id,''],res=>{ if(res && res.dog){ replaceDog(res.dog); safeRender(); } });
+  }
+
+  function doFree(id){
+    const dog=findDog(id); if(!dog) return;
+    dog.status='free'; dog.who=''; dog.time='';
+    render();
+    enqueue('setFree',[id],res=>{ if(res && res.dog){ replaceDog(res.dog); safeRender(); } });
+  }
+
+  function doTaskToggle(id){
+    const t=state.tasks.find(x=>x.id===id); if(!t) return;
+    t.done=!t.done;
+    render();
+    enqueue('setTaskDone',[id,t.done],null);
+  }
+
+  /* =========================================================
      ZDARZENIA
      ========================================================= */
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
     state.view=t.dataset.tab; render();
-    if(state.view==='history') google.script.run.withSuccessHandler(res=>{state.history=res.history; render();}).getHistory();
+    if(state.view==='history') fetchHistory();
   });
 
   gear.addEventListener('click',()=>{
@@ -270,46 +359,46 @@
   /** Wartość pola formularza edycji psa. */
   function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
 
+  /** Otwiera pole "Twoje imię" przy jednym psie, zamykając wszystkie inne. */
+  function openEntry(id, clickedBtn){
+    viewEl.querySelectorAll('.entry').forEach(el=>el.classList.add('hidden'));
+    viewEl.querySelectorAll('[data-act="reserve"]').forEach(b=>b.classList.remove('hidden'));
+    viewEl.querySelector(`[data-entry="${id}"]`).classList.remove('hidden');
+    clickedBtn.classList.add('hidden');
+    viewEl.querySelector(`[data-input="${id}"]`).focus();
+  }
+
   viewEl.addEventListener('click',e=>{
     const btn=e.target.closest('[data-act]'); if(!btn) return;
     const act=btn.dataset.act;
     const id=btn.dataset.id?Number(btn.dataset.id):null;
 
     /* --- wolontariusze: psy --- */
-    if(act==='reserve'){
-      viewEl.querySelector(`[data-entry="${id}"]`).classList.remove('hidden');
-      btn.classList.add('hidden');
-      viewEl.querySelector(`[data-input="${id}"]`).focus();
-    }
+    if(act==='reserve') openEntry(id, btn);
     if(act==='confirm'){
       const el=viewEl.querySelector(`[data-input="${id}"]`); const val=el.value.trim();
       if(!val){ el.focus(); return; }
-      call('reserve',[id,val],res=>{
-        onData(res);
-        // ktoś mógł zdążyć pierwszy — backend wtedy nie nadpisuje rezerwacji
-        const dog=state.dogs.find(x=>x.id===id);
-        if(dog && !(dog.status==='reserved' && dog.who===val)) toast('Ubiegł Cię ktoś inny — pies już zajęty');
-      });
+      doReserve(id, val);
     }
-    if(act==='walk') call('markWalked',[id,''],onData);
-    if(act==='free') call('setFree',[id],onData);
+    if(act==='walk') doWalk(id);
+    if(act==='free') doFree(id);
 
     /* --- wolontariusze: zadania (✕ ma własny data-act, więc tu nie wpada) --- */
-    if(act==='taskToggle'){
-      const t=state.tasks.find(x=>x.id===id); if(!t) return;
-      call('setTaskDone',[id,!t.done],onData);
-    }
+    if(act==='taskToggle') doTaskToggle(id);
 
-    /* --- prowadząca --- */
+    /* --- prowadząca (rzadkie akcje — pełna synchronizacja z serwerem) --- */
     if(act==='edit'){ state.editId=id; render(); }
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
-      call('updateDog',[id,{name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')},state.pin],onData);
+      enqueue('updateDog',[id,{name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')},state.pin],
+        res=>{ applyData(res); state.editId=null; render(); });
     }
     if(act==='remove'){
-      const dog=state.dogs.find(x=>x.id===id);
+      const dog=findDog(id);
       if(!confirm('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
-      call('removeDog',[id,state.pin],onData);
+      state.dogs=state.dogs.filter(x=>x.id!==id);   // optymistycznie znika od razu
+      render();
+      enqueue('removeDog',[id,state.pin],res=>{ applyData(res); safeRender(); });
     }
     if(act==='add'){
       const name=document.getElementById('newName').value.trim();
@@ -317,17 +406,20 @@
       const box=document.getElementById('newBox').value.trim();
       const dif=document.getElementById('newDif').value;
       if(!name && !ident){ toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return; }
-      call('addDog',[{name,ident,box,dif},state.pin],onData);
+      enqueue('addDog',[{name,ident,box,dif},state.pin],res=>{ applyData(res); render(); });
     }
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }
-      call('addTask',[text,state.pin],onData);
+      el.value='';
+      enqueue('addTask',[text,state.pin],res=>{ applyData(res); render(); });
     }
     if(act==='taskRemove'){
       const t=state.tasks.find(x=>x.id===id);
       if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
-      call('removeTask',[id,state.pin],onData);
+      state.tasks=state.tasks.filter(x=>x.id!==id);   // optymistycznie
+      render();
+      enqueue('removeTask',[id,state.pin],res=>{ applyData(res); safeRender(); });
     }
   });
 
@@ -350,8 +442,8 @@
      ========================================================= */
   document.getElementById('today').textContent=todayStr();
   refresh();
-  // co 15 s, ale tylko gdy karta widoczna, nic się nie zapisuje i nikt nie pisze w polu
-  setInterval(()=>{ if(!document.hidden && inFlight===0 && !busyEditing()) refresh(); }, 15000);
+  // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
+  setInterval(()=>{ if(!document.hidden && !sending && !queue.length && !busyEditing()) refresh(); }, 15000);
   // powrót do karty (np. odblokowanie telefonu) = natychmiastowe odświeżenie
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && inFlight===0 && !busyEditing()) refresh(); });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !sending && !queue.length && !busyEditing()) refresh(); });
 </script>
