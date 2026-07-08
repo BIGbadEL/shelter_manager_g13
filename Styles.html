@@ -106,6 +106,10 @@
   .hist-item{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);}
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
+  .saving{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--honey);
+    border-radius:50%;vertical-align:-1px;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
   .empty{color:var(--muted);font-size:13.5px;padding:24px 4px;text-align:center;}
   .empty.small{padding:10px 2px;text-align:left;}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;

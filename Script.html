@@ -65,8 +65,22 @@
   let sending = false;
   let needRefresh = false;   // po błędzie/watchdogu dosynchronizuj, gdy kolejka się opróżni
 
-  function enqueue(fn, args, reconcile){
-    queue.push({fn, args, reconcile});
+  /**
+   * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
+   * Dopóki > 0: (a) interfejs pokazuje przy bycie kręciołek "zapisuję",
+   * (b) starsze odpowiedzi serwera dla tego bytu są IGNOROWANE — tylko
+   * odpowiedź na ostatnią operację ma prawo skorygować stan lokalny.
+   * To eliminuje przeskoki przy szybkich sekwencjach (rezerwuj -> zwolnij).
+   */
+  const pendingKeys = new Map();
+  function keyDog(id){ return 'dog:'+id; }
+  function keyTask(id){ return 'task:'+id; }
+  function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
+
+  function enqueue(fn, args, opts){
+    opts = opts || {};
+    if(opts.key) pendingKeys.set(opts.key, (pendingKeys.get(opts.key)||0)+1);
+    queue.push({fn, args, key:opts.key||null, reconcile:opts.reconcile||null});
     pump();
   }
 
@@ -80,24 +94,34 @@
     sending = true; setSync('zapisywanie…');
     const job = queue.shift();
     let settled = false;
-    const finish = ()=>{ if(settled) return; settled=true; sending=false; pump(); };
+
+    function finish(res, failed){
+      if(settled) return; settled = true;
+      if(job.key){
+        const c = (pendingKeys.get(job.key)||1) - 1;
+        if(c > 0) pendingKeys.set(job.key, c); else pendingKeys.delete(job.key);
+      }
+      if(!failed && job.reconcile && !isPending(job.key)){
+        job.reconcile(res);          // ostatnia operacja dla bytu — stosujemy prawdę serwera
+      } else if(!isPending(job.key)){
+        safeRender();                // zgaś kręciołek "zapisuję" przy bycie
+      }
+      sending = false; pump();
+    }
+
     const watchdog = setTimeout(()=>{
       needRefresh = true;
       toast('Serwer długo nie odpowiada — dosynchronizuję');
-      finish();
+      finish(null, true);
     }, WATCHDOG_MS);
 
     google.script.run
-      .withSuccessHandler(res=>{
-        clearTimeout(watchdog);
-        if(!settled && job.reconcile) job.reconcile(res);
-        finish();
-      })
+      .withSuccessHandler(res=>{ clearTimeout(watchdog); finish(res, false); })
       .withFailureHandler(err=>{
         clearTimeout(watchdog);
         toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się zapisać');
         needRefresh = true;   // optymistyczna zmiana mogła być błędna — cofnie ją odświeżenie
-        finish();
+        finish(null, true);
       })
       [job.fn](...job.args);   // wywołanie NA skonfigurowanym runnerze (bez .apply z podmianą this)
   }
@@ -110,6 +134,16 @@
   }
   /** Render, który nie wyrywa nikomu klawiatury spod palców. */
   function safeRender(){ if(!busyEditing()) render(); }
+
+  /**
+   * Pełny stan z serwera (akcje prowadzącej). Gdy w kolejce czekają
+   * kolejne zapisy, nie nadpisujemy nim nowszych lokalnych zmian —
+   * dosynchronizujemy się dopiero po opróżnieniu kolejki.
+   */
+  function applyFull_(res){
+    if(queue.length || pendingKeys.size){ needRefresh=true; return; }
+    applyData(res); safeRender();
+  }
 
   function refresh(){
     if(sending || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
@@ -165,8 +199,9 @@
       const n=daysAgo(t.date);
       const age = (n && n>0) ? `<span class="age">${n===1?'od wczoraj':`od ${n} dni`}</span>` : '';
       const del = state.admin ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+      const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
       html+=`<div class="task ${t.done?'done':''}" data-act="taskToggle" data-id="${t.id}">
-        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${age}${del}</div>`;
+        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${age}${del}</div>`;
     });
     if(state.admin){
       html+=`<div class="entry">
@@ -197,7 +232,8 @@
 
   function renderDog(dog){
     const dm=DIF[dog.dif]||DIF.easy;
-    const label=esc(dogLabel(dog));
+    const label=esc(dogLabel(dog))
+      + (isPending(keyDog(dog.id)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
     const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
       <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
     const adm = state.admin
@@ -298,35 +334,41 @@
     const dog=findDog(id); if(!dog || dog.status!=='free') return;
     dog.status='reserved'; dog.who=who; dog.time='';
     render();
-    enqueue('reserve',[id,who],res=>{
-      if(!res || !res.dog) return;
+    enqueue('reserve',[id,who],{key:keyDog(id),reconcile:res=>{
+      if(!res || !res.dog){ safeRender(); return; }
       replaceDog(res.dog);
       if(!(res.dog.status==='reserved' && res.dog.who===who)){
         toast('Ubiegł Cię ktoś inny — pies już zajęty');
         render();               // konflikt pokazujemy od razu
       } else safeRender();
-    });
+    }});
   }
 
   function doWalk(id){
     const dog=findDog(id); if(!dog) return;
     dog.status='walked'; dog.time=localHM();
     render();
-    enqueue('markWalked',[id,''],res=>{ if(res && res.dog){ replaceDog(res.dog); safeRender(); } });
+    enqueue('markWalked',[id,''],{key:keyDog(id),reconcile:res=>{
+      if(res && res.dog) replaceDog(res.dog);
+      safeRender();
+    }});
   }
 
   function doFree(id){
     const dog=findDog(id); if(!dog) return;
     dog.status='free'; dog.who=''; dog.time='';
     render();
-    enqueue('setFree',[id],res=>{ if(res && res.dog){ replaceDog(res.dog); safeRender(); } });
+    enqueue('setFree',[id],{key:keyDog(id),reconcile:res=>{
+      if(res && res.dog) replaceDog(res.dog);
+      safeRender();
+    }});
   }
 
   function doTaskToggle(id){
     const t=state.tasks.find(x=>x.id===id); if(!t) return;
     t.done=!t.done;
     render();
-    enqueue('setTaskDone',[id,t.done],null);
+    enqueue('setTaskDone',[id,t.done],{key:keyTask(id)});
   }
 
   /* =========================================================
@@ -390,15 +432,20 @@
     if(act==='edit'){ state.editId=id; render(); }
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
-      enqueue('updateDog',[id,{name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')},state.pin],
-        res=>{ applyData(res); state.editId=null; render(); });
+      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')};
+      if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
+      const dog=findDog(id);
+      if(dog) Object.assign(dog, fields);           // optymistycznie od razu
+      state.editId=null;
+      render();
+      enqueue('updateDog',[id,fields,state.pin],{key:keyDog(id),reconcile:applyFull_});
     }
     if(act==='remove'){
       const dog=findDog(id);
       if(!confirm('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
       state.dogs=state.dogs.filter(x=>x.id!==id);   // optymistycznie znika od razu
       render();
-      enqueue('removeDog',[id,state.pin],res=>{ applyData(res); safeRender(); });
+      enqueue('removeDog',[id,state.pin],{reconcile:applyFull_});
     }
     if(act==='add'){
       const name=document.getElementById('newName').value.trim();
@@ -406,20 +453,20 @@
       const box=document.getElementById('newBox').value.trim();
       const dif=document.getElementById('newDif').value;
       if(!name && !ident){ toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return; }
-      enqueue('addDog',[{name,ident,box,dif},state.pin],res=>{ applyData(res); render(); });
+      enqueue('addDog',[{name,ident,box,dif},state.pin],{reconcile:applyFull_});
     }
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }
       el.value='';
-      enqueue('addTask',[text,state.pin],res=>{ applyData(res); render(); });
+      enqueue('addTask',[text,state.pin],{reconcile:applyFull_});
     }
     if(act==='taskRemove'){
       const t=state.tasks.find(x=>x.id===id);
       if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
       state.tasks=state.tasks.filter(x=>x.id!==id);   // optymistycznie
       render();
-      enqueue('removeTask',[id,state.pin],res=>{ applyData(res); safeRender(); });
+      enqueue('removeTask',[id,state.pin],{reconcile:applyFull_});
     }
   });
 
