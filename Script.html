@@ -7,7 +7,7 @@
     med :{label:"wymagający", color:"#d99a1c"},
     hard:{label:"bardzo wymagający", color:"#cf4a3a"},
   };
-  const WATCHDOG_MS = 30000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony
+  const WATCHDOG_MS = 12000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony (i raz ponawiamy)
 
   const state = {
     dogs:[], tasks:[], history:[],
@@ -63,7 +63,12 @@
      ========================================================= */
   const queue = [];
   let sending = false;
-  let needRefresh = false;   // po błędzie/watchdogu dosynchronizuj, gdy kolejka się opróżni
+  let needRefresh = false;      // po błędzie/watchdogu dosynchronizuj, gdy kolejka się opróżni
+  let currentShip = null;       // {at} — kiedy wysłano trwający zapis
+  let currentSettle = null;     // ratunkowe domknięcie trwającego zapisu (checkStuck)
+
+  /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','setTaskDone','updateDog','removeDog','removeTask']);
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -80,7 +85,7 @@
   function enqueue(fn, args, opts){
     opts = opts || {};
     if(opts.key) pendingKeys.set(opts.key, (pendingKeys.get(opts.key)||0)+1);
-    queue.push({fn, args, key:opts.key||null, reconcile:opts.reconcile||null});
+    queue.push({fn, args, key:opts.key||null, reconcile:opts.reconcile||null, attempts:0});
     pump();
   }
 
@@ -91,39 +96,77 @@
       if(needRefresh){ needRefresh=false; refresh(); }
       return;
     }
-    sending = true; setSync('zapisywanie…');
+    sending = true;
+    setSync(queue[0].attempts ? 'ponawiam…' : 'zapisywanie…');
     const job = queue.shift();
     let settled = false;
+    currentShip = { at: Date.now() };
 
-    function finish(res, failed){
+    /** Jedyne wyjście z zapisu — odporne na wyjątki, nigdy nie zostawia sending=true. */
+    function settle(outcome){
       if(settled) return; settled = true;
+      clearTimeout(watchdog);
+      currentShip = null; currentSettle = null;
+      sending = false;                       // NAJPIERW odblokuj kolejkę — nic poniżej tego nie cofnie
+
+      // nieudany, ale bezpieczny do ponowienia zapis -> jedna automatyczna powtórka
+      if(!outcome.ok && job.attempts === 0 && RETRIABLE.has(job.fn)){
+        job.attempts = 1;
+        queue.unshift(job);                  // klucz pending zostaje policzony — to wciąż ta sama operacja
+        pump();
+        return;
+      }
+
       if(job.key){
         const c = (pendingKeys.get(job.key)||1) - 1;
         if(c > 0) pendingKeys.set(job.key, c); else pendingKeys.delete(job.key);
       }
-      if(!failed && job.reconcile && !isPending(job.key)){
-        job.reconcile(res);          // ostatnia operacja dla bytu — stosujemy prawdę serwera
-      } else if(!isPending(job.key)){
-        safeRender();                // zgaś kręciołek "zapisuję" przy bycie
+
+      try{
+        if(outcome.ok){
+          if(job.reconcile && !isPending(job.key)){
+            job.reconcile(outcome.res);      // ostatnia operacja dla bytu — stosujemy prawdę serwera
+          } else if(!isPending(job.key)){
+            safeRender();                    // zgaś kręciołek "zapisuję" przy bycie
+          }
+        } else {
+          toast(outcome.msg || 'Nie udało się zapisać — dosynchronizuję');
+          needRefresh = true;                // optymistyczna zmiana mogła być błędna — skoryguje ją odświeżenie
+          if(!isPending(job.key)) safeRender();
+        }
+      } catch(e){
+        needRefresh = true;                  // wyjątek w reconcile/render nie może ubić kolejki
       }
-      sending = false; pump();
+      pump();
     }
+    currentSettle = settle;
 
     const watchdog = setTimeout(()=>{
-      needRefresh = true;
-      toast('Serwer długo nie odpowiada — dosynchronizuję');
-      finish(null, true);
+      settle({ok:false, msg:'Serwer długo nie odpowiada — dosynchronizuję'});
     }, WATCHDOG_MS);
 
-    google.script.run
-      .withSuccessHandler(res=>{ clearTimeout(watchdog); finish(res, false); })
-      .withFailureHandler(err=>{
-        clearTimeout(watchdog);
-        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się zapisać');
-        needRefresh = true;   // optymistyczna zmiana mogła być błędna — cofnie ją odświeżenie
-        finish(null, true);
-      })
-      [job.fn](...job.args);   // wywołanie NA skonfigurowanym runnerze (bez .apply z podmianą this)
+    try{
+      google.script.run
+        .withSuccessHandler(res=>{ settle({ok:true, res}); })
+        .withFailureHandler(err=>{
+          settle({ok:false, msg: err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się zapisać'});
+        })
+        [job.fn](...job.args);   // wywołanie NA skonfigurowanym runnerze (bez .apply z podmianą this)
+    } catch(e){
+      settle({ok:false, msg:'Błąd połączenia — dosynchronizuję'});
+    }
+  }
+
+  /**
+   * Ratunek na zaginione odpowiedzi przy uśpionych timerach (telefon w kieszeni,
+   * karta w tle): sprawdzane co 3 s ORAZ przy każdym dotknięciu ekranu i powrocie
+   * do karty. Jeśli zapis wisi dłużej niż watchdog + margines, domykamy go ręcznie —
+   * jedno tapnięcie zawsze przywraca aplikację do życia, bez odświeżania strony.
+   */
+  function checkStuck(){
+    if(sending && currentShip && currentSettle && Date.now() - currentShip.at > WATCHDOG_MS + 3000){
+      currentSettle({ok:false, msg:'Połączenie zerwane — dosynchronizuję'});
+    }
   }
 
   /* =========================================================
@@ -168,9 +211,16 @@
      RENDER
      ========================================================= */
   function render(){
-    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
-    gear.classList.toggle('on',state.admin);
-    viewEl.innerHTML = state.view==='today' ? renderToday() : renderHistory();
+    try{
+      document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
+      gear.classList.toggle('on',state.admin);
+      viewEl.innerHTML = state.view==='today' ? renderToday() : renderHistory();
+    } catch(e){
+      // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
+      viewEl.innerHTML = '<div class="empty">Coś poszło nie tak — odświeżam dane…</div>';
+      needRefresh = true;
+      if(!sending && !queue.length) refresh();
+    }
   }
 
   /** Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie kolumny ostatni_spacer. */
@@ -405,12 +455,20 @@
   function openEntry(id, clickedBtn){
     viewEl.querySelectorAll('.entry').forEach(el=>el.classList.add('hidden'));
     viewEl.querySelectorAll('[data-act="reserve"]').forEach(b=>b.classList.remove('hidden'));
-    viewEl.querySelector(`[data-entry="${id}"]`).classList.remove('hidden');
+    const entry = viewEl.querySelector(`[data-entry="${id}"]`);
+    const input = viewEl.querySelector(`[data-input="${id}"]`);
+    if(!entry || !input){ render(); return; }   // DOM nieaktualny — przerysuj zamiast wybuchać
+    entry.classList.remove('hidden');
     clickedBtn.classList.add('hidden');
-    viewEl.querySelector(`[data-input="${id}"]`).focus();
+    input.focus();
   }
 
   viewEl.addEventListener('click',e=>{
+    try{ handleAction(e); }
+    catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!sending && !queue.length) refresh(); }
+  });
+
+  function handleAction(e){
     const btn=e.target.closest('[data-act]'); if(!btn) return;
     const act=btn.dataset.act;
     const id=btn.dataset.id?Number(btn.dataset.id):null;
@@ -468,7 +526,7 @@
       render();
       enqueue('removeTask',[id,state.pin],{reconcile:applyFull_});
     }
-  });
+  }
 
   viewEl.addEventListener('keydown',e=>{
     if(e.key!=='Enter') return;
@@ -485,12 +543,21 @@
   });
 
   /* =========================================================
-     START + AUTO-ODŚWIEŻANIE
+     START + AUTO-ODŚWIEŻANIE + SAMOLECZENIE
      ========================================================= */
   document.getElementById('today').textContent=todayStr();
   refresh();
   // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
   setInterval(()=>{ if(!document.hidden && !sending && !queue.length && !busyEditing()) refresh(); }, 15000);
-  // powrót do karty (np. odblokowanie telefonu) = natychmiastowe odświeżenie
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !sending && !queue.length && !busyEditing()) refresh(); });
+  // strażnik zawieszonych zapisów: cyklicznie...
+  setInterval(checkStuck, 3000);
+  // ...i przy każdym dotknięciu ekranu (działa nawet gdy przeglądarka uśpiła timery)
+  document.addEventListener('pointerdown', checkStuck, true);
+  document.addEventListener('touchstart', checkStuck, true);
+  // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden) return;
+    checkStuck();
+    if(!sending && !queue.length && !busyEditing()) refresh();
+  });
 </script>
