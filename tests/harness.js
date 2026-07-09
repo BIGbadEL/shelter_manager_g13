@@ -44,7 +44,7 @@ function buildApp(opts){
   const script = extract('Script.html','script');
   const errors = [];
   window.addEventListener('error', e => errors.push(e.error && e.error.message || e.message));
-  const exposed = script + '\n;window.__dbg = () => ({sending, queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>d.status+":"+d.who), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { if(currentShip) currentShip.at = 0; };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__state = state;';
+  const exposed = script + '\n;window.__dbg = () => ({sending, queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>d.status+":"+d.who), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { if(currentShip) currentShip.at = 0; };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render(); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__state = state;';
   try { window.eval(exposed); } catch(e){ errors.push('EVAL: '+e.message); }
 
   return {
@@ -73,7 +73,7 @@ function buildApp(opts){
   };
 }
 
-const dogFree     = (o)=>Object.assign({id:1,name:'Borys',ident:'',box:'',dif:'easy',status:'free',who:'',time:'',lastWalk:''},o);
+const dogFree     = (o)=>Object.assign({id:1,name:'Borys',ident:'',box:'',dif:'easy',status:'free',who:'',time:'',lastWalk:'',note:'',walks:1,who1:'',time1:''},o);
 const dogReserved = (who)=>dogFree({status:'reserved',who});
 const dogWalked   = (who,time)=>dogFree({status:'walked',who,time:time||'14:00'});
 

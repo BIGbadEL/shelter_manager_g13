@@ -13,7 +13,7 @@
     dogs:[], tasks:[], history:[],
     today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
     view:"today", admin:false, pin:null, loaded:false,
-    editId:null,           // pies aktualnie edytowany w trybie prowadzącej
+    editId:null,           // pies aktualnie edytowany w trybie edycji
   };
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
@@ -68,7 +68,7 @@
   let currentSettle = null;     // ratunkowe domknięcie trwającego zapisu (checkStuck)
 
   /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','setTaskDone','updateDog','removeDog','removeTask']);
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask']);
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -179,7 +179,7 @@
   function safeRender(){ if(!busyEditing()) render(); }
 
   /**
-   * Pełny stan z serwera (akcje prowadzącej). Gdy w kolejce czekają
+   * Pełny stan z serwera (akcje edycyjne). Gdy w kolejce czekają
    * kolejne zapisy, nie nadpisujemy nim nowszych lokalnych zmian —
    * dosynchronizujemy się dopiero po opróżnieniu kolejki.
    */
@@ -232,13 +232,28 @@
     return `<span class="miss">⚠ ${txt}</span>`;
   }
 
+  /** Ile z wymaganych spacerów już odbytych. */
+  function walksDone(dog){ return (dog.who1?1:0) + (dog.status==='walked'?1:0); }
+
   function dogMeta(dog){
     const bits=[];
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
+    const pills=[];
+    if(dog.walks===2){
+      const done=walksDone(dog);
+      pills.push(`<span class="twice">🐾 spacery ${done}/2</span>`);
+      if(dog.who1) bits.push(`1. spacer: ${esc(dog.who1)} · ${esc(dog.time1)}`);
+    }
     const miss=missBadge(dog);
-    if(!bits.length && !miss) return '';
-    return `<div class="dogmeta">${bits.join(' · ')}${miss?(bits.length?' ':'')+miss:''}</div>`;
+    if(miss) pills.push(miss);
+    if(!bits.length && !pills.length) return '';
+    return `<div class="dogmeta">${pills.join(' ')}${pills.length&&bits.length?' ':''}${bits.join(' · ')}</div>`;
+  }
+
+  /** Jednodniowa notatka przy psie (znika przy nocnym resecie). */
+  function dogNote(dog){
+    return dog.note ? `<div class="note">📌 ${esc(dog.note)}</div>` : '';
   }
 
   function renderTasks(){
@@ -274,6 +289,13 @@
           <select data-ef="dif">${opts}</select>
         </div>
         <div class="adminrow">
+          <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka na dziś (znika o 22:00)">
+          <select data-ef="walks">
+            <option value="1" ${dog.walks!==2?'selected':''}>1 spacer dziennie</option>
+            <option value="2" ${dog.walks===2?'selected':''}>2 spacery dziennie</option>
+          </select>
+        </div>
+        <div class="adminrow">
           <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
           <button class="btn ghost" data-act="editCancel">Anuluj</button>
         </div>
@@ -289,13 +311,15 @@
     const adm = state.admin
       ? `<button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
          <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
-    const meta=dogMeta(dog);
+    const meta=dogMeta(dog)+dogNote(dog);
 
     if(dog.status==='free'){
       return `<li class="dog" style="border-left-color:${dm.color}">
         <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
-        <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button></div>
+        <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button>${
+          dog.who1 ? `<button class="btn ghost" data-act="undoFirst" data-id="${dog.id}">Cofnij 1. spacer</button>` : ''
+        }</div>
         <div class="entry hidden" data-entry="${dog.id}">
           <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
           <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
@@ -322,7 +346,7 @@
 
   function renderAdminAddBox(){
     return `<div class="adminbox">
-      <h3>TRYB PROWADZĄCEJ — dodaj psa</h3>
+      <h3>Dodaj psa</h3>
       <div class="adminrow">
         <input type="text" id="newName" maxlength="40" placeholder="Imię (może być puste)">
         <input type="text" id="newIdent" maxlength="20" placeholder="Nr identyfikacyjny">
@@ -396,9 +420,25 @@
 
   function doWalk(id){
     const dog=findDog(id); if(!dog) return;
-    dog.status='walked'; dog.time=localHM();
+    if(dog.walks===2 && !dog.who1){
+      // pierwszy z dwóch spacerów: zapisz i zwolnij psa na drugi
+      dog.who1=dog.who; dog.time1=localHM();
+      dog.status='free'; dog.who=''; dog.time='';
+    } else {
+      dog.status='walked'; dog.time=localHM();
+    }
     render();
     enqueue('markWalked',[id,''],{key:keyDog(id),reconcile:res=>{
+      if(res && res.dog) replaceDog(res.dog);
+      safeRender();
+    }});
+  }
+
+  function doUndoFirst(id){
+    const dog=findDog(id); if(!dog || !dog.who1) return;
+    dog.who1=''; dog.time1='';
+    render();
+    enqueue('undoFirstWalk',[id],{key:keyDog(id),reconcile:res=>{
       if(res && res.dog) replaceDog(res.dog);
       safeRender();
     }});
@@ -482,15 +522,16 @@
     }
     if(act==='walk') doWalk(id);
     if(act==='free') doFree(id);
+    if(act==='undoFirst') doUndoFirst(id);
 
     /* --- wolontariusze: zadania (✕ ma własny data-act, więc tu nie wpada) --- */
     if(act==='taskToggle') doTaskToggle(id);
 
-    /* --- prowadząca (rzadkie akcje — pełna synchronizacja z serwerem) --- */
+    /* --- tryb edycji (rzadkie akcje — pełna synchronizacja z serwerem) --- */
     if(act==='edit'){ state.editId=id; render(); }
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
-      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif')};
+      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),note:ef('note'),walks:Number(ef('walks'))===2?2:1};
       if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
       const dog=findDog(id);
       if(dog) Object.assign(dog, fields);           // optymistycznie od razu

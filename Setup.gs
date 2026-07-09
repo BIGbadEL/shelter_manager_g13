@@ -16,9 +16,9 @@ function setup() {
   if (dogs.getLastRow() === 0) {
     dogs.getRange(1, 1, 1, DOG_WIDTH).setValues([DOG_HEADERS]);
     dogs.getRange(2, 1, 3, DOG_WIDTH).setValues([
-      [1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', ''],
-      [2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', ''],
-      [3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', ''],  // nowy pies: jeszcze bez imienia
+      [1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', '', '', 1, '', ''],
+      [2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', '', '', 2, '', ''],  // pies na 2 spacery dziennie
+      [3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', '', '', 1, '', ''],  // nowy pies: jeszcze bez imienia
     ]);
     dogs.setFrozenRows(1);
   }
@@ -53,6 +53,10 @@ function migrate() {
     dogs.getRange(1, DOG.BOX).setValue('boks');
     dogs.getRange(1, DOG.LAST_WALK).setValue('ostatni_spacer');
   }
+  if (dogs && String(dogs.getRange(1, DOG.NOTE).getValue()) !== 'notatka') {
+    // kolumny dodane później: notatka | spacery | kto1 | godzina1
+    dogs.getRange(1, DOG.NOTE, 1, 4).setValues([['notatka', 'spacery', 'kto1', 'godzina1']]);
+  }
   setup();   // dołoży brakujące zakładki i formaty
 }
 
@@ -63,7 +67,7 @@ function migrate() {
 function applyTextFormats_() {
   const s = ss_();
   const textCols = [
-    [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK]],
+    [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1]],
     [SHEETS.HIST,  [HIST.DATE, HIST.TIME]],
     [SHEETS.TASKS, [TASK.DATE]],
   ];

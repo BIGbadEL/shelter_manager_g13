@@ -24,8 +24,8 @@ function readHistory_() {
 /**
  * Uruchamiany przez wyzwalacz czasowy (zakłada go installTriggers() — patrz Setup.gs).
  * Robi trzy rzeczy:
- *   1. wyprowadzone psy -> Historia + data w kolumnie ostatni_spacer,
- *   2. wszystkie psy z powrotem na "wolny",
+ *   1. odbyte spacery (oba u psów 2-spacerowych) -> Historia + data w ostatni_spacer,
+ *   2. wszystkie psy z powrotem na "wolny", jednodniowe notatki znikają,
  *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień.
  * Do testów można uruchomić ręcznie z edytora.
  */
@@ -47,14 +47,23 @@ function archiveAndResetDogs_() {
   const toHist = [];
 
   vals.forEach(r => {
-    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) {
-      const label = dogLabel_(String(r[DOG.NAME - 1] || ''), String(r[DOG.IDENT - 1] || ''), r[DOG.ID - 1]);
-      toHist.push([today, label, String(r[DOG.WHO - 1] || ''), cellTime_(r[DOG.TIME - 1])]);
-      r[DOG.LAST_WALK - 1] = today;             // zapamiętaj datę ostatniego spaceru
+    const label = dogLabel_(String(r[DOG.NAME - 1] || ''), String(r[DOG.IDENT - 1] || ''), r[DOG.ID - 1]);
+    let walkedAny = false;
+    if (String(r[DOG.WHO1 - 1] || '') !== '') {          // pierwszy z dwóch spacerów
+      toHist.push([today, label, String(r[DOG.WHO1 - 1]), cellTime_(r[DOG.TIME1 - 1])]);
+      walkedAny = true;
     }
+    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) {   // spacer (jedyny lub drugi)
+      toHist.push([today, label, String(r[DOG.WHO - 1] || ''), cellTime_(r[DOG.TIME - 1])]);
+      walkedAny = true;
+    }
+    if (walkedAny) r[DOG.LAST_WALK - 1] = today;         // zapamiętaj datę ostatniego spaceru
     r[DOG.STATUS - 1] = STATUS.FREE;
     r[DOG.WHO - 1] = '';
     r[DOG.TIME - 1] = '';
+    r[DOG.NOTE - 1] = '';                                // notatka żyje tylko jeden dzień
+    r[DOG.WHO1 - 1] = '';
+    r[DOG.TIME1 - 1] = '';
   });
 
   if (toHist.length) {
