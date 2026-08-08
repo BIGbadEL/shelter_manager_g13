@@ -18,6 +18,12 @@
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
 
+  /**
+   * Imię ostatnio wpisane na tym telefonie — podpowiadane przy kolejnych psach.
+   * Kto bierze trzy psy pod rząd, wpisuje je raz, potem tylko potwierdza.
+   */
+  let lastWho = '';
+
   /* =========================================================
      DROBIAZGI
      ========================================================= */
@@ -55,6 +61,35 @@
   function setSync(txt){ document.getElementById('sync').textContent = txt; }
 
   /* =========================================================
+     DIAGNOSTYKA (ukryta: 5 tapnięć w datę u góry)
+     Pokazuje czasy przelotu ostatnich wywołań — jedyny sposób,
+     żeby na telefonie odróżnić "wisi serwer" od "wisi przeglądarka".
+     ========================================================= */
+  const callLog = [];
+  function logCall(fn, ms, outcome){
+    callLog.unshift({ t: localHM(), fn, ms, outcome });
+    if(callLog.length > 30) callLog.pop();
+    if(diagOpen) renderDiag();
+  }
+  let diagOpen = false, diagTaps = 0, diagTapAt = 0;
+  function renderDiag(){
+    const box = document.getElementById('diag');
+    if(!box) return;
+    box.classList.toggle('hidden', !diagOpen);
+    if(!diagOpen) return;
+    const rows = callLog.map(c=>
+      `<div class="diagrow"><span>${c.t}</span><b>${esc(c.fn)}</b><span>${c.ms} ms</span><span>${esc(c.outcome)}</span></div>`
+    ).join('') || '<div class="diagrow">Brak wywołań.</div>';
+    box.innerHTML = `<div class="diaghead">Diagnostyka — czasy odpowiedzi serwera</div>${rows}`;
+  }
+  document.getElementById('today').addEventListener('click',()=>{
+    const now = Date.now();
+    diagTaps = (now - diagTapAt < 1200) ? diagTaps + 1 : 1;
+    diagTapAt = now;
+    if(diagTaps >= 5){ diagTaps = 0; diagOpen = !diagOpen; renderDiag(); }
+  });
+
+  /* =========================================================
      KOLEJKA ZAPISÓW
      Interfejs jest optymistyczny: klik zmienia stan lokalny od razu,
      a zapis idzie w tle. Kolejka pilnuje, żeby leciał JEDEN zapis naraz
@@ -62,10 +97,18 @@
      że nawet zaginiona odpowiedź niczego nie zawiesi na stałe.
      ========================================================= */
   const queue = [];
-  let sending = false;
+  /**
+   * Zapisy w drodze, po jednym na "tor" (tor = byt: dog:1, task:3, _full).
+   * RÓŻNE psy jadą RÓWNOLEGLE, ten sam pies zawsze po kolei.
+   * Wcześniej leciał jeden zapis naraz w całej aplikacji — przy rezerwacji
+   * kilku psów pod rząd każdy czekał na poprzedni (Apps Script to 1-3 s na
+   * wywołanie), więc trzeci klik potrafił wisieć ~10 s zanim w ogóle wyruszył.
+   */
+  const inflight = new Map();   // lane -> {at, settle, fn}
+  const MAX_INFLIGHT = 4;       // sensowny sufit, żeby nie zalać Apps Scriptu
   let needRefresh = false;      // po błędzie/watchdogu dosynchronizuj, gdy kolejka się opróżni
-  let currentShip = null;       // {at} — kiedy wysłano trwający zapis
-  let currentSettle = null;     // ratunkowe domknięcie trwającego zapisu (checkStuck)
+
+  function isSending(){ return inflight.size > 0; }
 
   /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
   const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask']);
@@ -85,29 +128,41 @@
   function enqueue(fn, args, opts){
     opts = opts || {};
     if(opts.key) pendingKeys.set(opts.key, (pendingKeys.get(opts.key)||0)+1);
-    queue.push({fn, args, key:opts.key||null, reconcile:opts.reconcile||null, attempts:0});
+    queue.push({
+      fn, args,
+      key: opts.key||null,
+      lane: opts.key || '_full',      // akcje edycyjne (pełny stan) trzymamy na jednym torze
+      reconcile: opts.reconcile||null,
+      attempts: 0,
+    });
     pump();
   }
 
+  /** Wysyła co się da: wolne tory ruszają równolegle, zajęte czekają w kolejce. */
   function pump(){
-    if(sending) return;
-    if(!queue.length){
+    for(let i=0; i<queue.length && inflight.size < MAX_INFLIGHT; ){
+      if(inflight.has(queue[i].lane)){ i++; continue; }   // ten byt ma już zapis w drodze
+      ship(queue.splice(i,1)[0]);
+    }
+    if(!inflight.size && !queue.length){
       setSync('');
       if(needRefresh){ needRefresh=false; refresh(); }
-      return;
+    } else {
+      setSync('zapisywanie…');
     }
-    sending = true;
-    setSync(queue[0].attempts ? 'ponawiam…' : 'zapisywanie…');
-    const job = queue.shift();
-    let settled = false;
-    currentShip = { at: Date.now() };
+  }
 
-    /** Jedyne wyjście z zapisu — odporne na wyjątki, nigdy nie zostawia sending=true. */
+  function ship(job){
+    let settled = false;
+    const slot = { at: Date.now(), settle: null, fn: job.fn };
+    inflight.set(job.lane, slot);
+
+    /** Jedyne wyjście z zapisu — odporne na wyjątki, nigdy nie zostawia zajętego toru. */
     function settle(outcome){
       if(settled) return; settled = true;
       clearTimeout(watchdog);
-      currentShip = null; currentSettle = null;
-      sending = false;                       // NAJPIERW odblokuj kolejkę — nic poniżej tego nie cofnie
+      inflight.delete(job.lane);             // NAJPIERW zwolnij tor — nic poniżej tego nie cofnie
+      logCall(job.fn, Date.now() - slot.at, outcome.ok ? 'ok' : (outcome.msg||'błąd'));
 
       // nieudany, ale bezpieczny do ponowienia zapis -> jedna automatyczna powtórka
       if(!outcome.ok && job.attempts === 0 && RETRIABLE.has(job.fn)){
@@ -139,7 +194,7 @@
       }
       pump();
     }
-    currentSettle = settle;
+    slot.settle = settle;
 
     const watchdog = setTimeout(()=>{
       settle({ok:false, msg:'Serwer długo nie odpowiada — dosynchronizuję'});
@@ -164,9 +219,12 @@
    * jedno tapnięcie zawsze przywraca aplikację do życia, bez odświeżania strony.
    */
   function checkStuck(){
-    if(sending && currentShip && currentSettle && Date.now() - currentShip.at > WATCHDOG_MS + 3000){
-      currentSettle({ok:false, msg:'Połączenie zerwane — dosynchronizuję'});
-    }
+    const now = Date.now();
+    [...inflight.values()].forEach(slot=>{
+      if(slot.settle && now - slot.at > WATCHDOG_MS + 3000){
+        slot.settle({ok:false, msg:'Połączenie zerwane — dosynchronizuję'});
+      }
+    });
   }
 
   /* =========================================================
@@ -189,10 +247,10 @@
   }
 
   function refresh(){
-    if(sending || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
+    if(isSending() || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
     google.script.run
       .withSuccessHandler(res=>{
-        if(sending || queue.length) return;   // w międzyczasie ruszył zapis
+        if(isSending() || queue.length) return;   // w międzyczasie ruszył zapis
         applyData(res); safeRender();
       })
       .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
@@ -219,7 +277,7 @@
       // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
       viewEl.innerHTML = '<div class="empty">Coś poszło nie tak — odświeżam dane…</div>';
       needRefresh = true;
-      if(!sending && !queue.length) refresh();
+      if(!isSending() && !queue.length) refresh();
     }
   }
 
@@ -321,7 +379,7 @@
           dog.who1 ? `<button class="btn ghost" data-act="undoFirst" data-id="${dog.id}">Cofnij 1. spacer</button>` : ''
         }</div>
         <div class="entry hidden" data-entry="${dog.id}">
-          <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
+          <input type="text" maxlength="40" placeholder="Twoje imię" value="${esc(lastWho)}" data-input="${dog.id}">
           <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
         </div></li>`;
     }
@@ -501,11 +559,12 @@
     entry.classList.remove('hidden');
     clickedBtn.classList.add('hidden');
     input.focus();
+    if(input.value) input.select();   // podpowiedziane imię łatwo nadpisać
   }
 
   viewEl.addEventListener('click',e=>{
     try{ handleAction(e); }
-    catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!sending && !queue.length) refresh(); }
+    catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!isSending() && !queue.length) refresh(); }
   });
 
   function handleAction(e){
@@ -518,6 +577,7 @@
     if(act==='confirm'){
       const el=viewEl.querySelector(`[data-input="${id}"]`); const val=el.value.trim();
       if(!val){ el.focus(); return; }
+      lastWho = val;
       doReserve(id, val);
     }
     if(act==='walk') doWalk(id);
@@ -571,16 +631,11 @@
 
   viewEl.addEventListener('keydown',e=>{
     if(e.key!=='Enter') return;
-    if(e.target.matches('[data-input]')){
-      const id=e.target.dataset.input;
-      viewEl.querySelector(`[data-act="confirm"][data-id="${id}"]`).click();
-    }
-    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox'){
-      viewEl.querySelector('[data-act="add"]').click();
-    }
-    if(e.target.id==='newTask'){
-      viewEl.querySelector('[data-act="taskAdd"]').click();
-    }
+    // przycisk mógł zniknąć między renderami — brak guzika nie może wywalić handlera
+    const hit = sel => { const b = viewEl.querySelector(sel); if(b) b.click(); };
+    if(e.target.matches('[data-input]')) hit(`[data-act="confirm"][data-id="${e.target.dataset.input}"]`);
+    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox') hit('[data-act="add"]');
+    if(e.target.id==='newTask') hit('[data-act="taskAdd"]');
   });
 
   /* =========================================================
@@ -589,7 +644,7 @@
   document.getElementById('today').textContent=todayStr();
   refresh();
   // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
-  setInterval(()=>{ if(!document.hidden && !sending && !queue.length && !busyEditing()) refresh(); }, 15000);
+  setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
   // strażnik zawieszonych zapisów: cyklicznie...
   setInterval(checkStuck, 3000);
   // ...i przy każdym dotknięciu ekranu (działa nawet gdy przeglądarka uśpiła timery)
@@ -599,6 +654,6 @@
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden) return;
     checkStuck();
-    if(!sending && !queue.length && !busyEditing()) refresh();
+    if(!isSending() && !queue.length && !busyEditing()) refresh();
   });
 </script>
