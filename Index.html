@@ -15,7 +15,7 @@
     </div>
     <div class="meta">
       <span id="today">…</span>
-      <span class="reset-note">↺ czyści się o 22:00</span>
+      <span class="reset-note" id="resetNote">↺ czyści się o 22:00</span>
       <span class="sync" id="sync"></span>
     </div>
     <div class="pinrow hidden" id="pinrow">
@@ -28,6 +28,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="today">Dziś</button>
     <button class="tab" data-tab="history">Historia</button>
+    <button class="tab hidden" data-tab="diag" id="tabDiag">Panel</button>
   </div>
 
   <div id="view"><div class="empty">Ładowanie…</div></div>
@@ -36,11 +37,8 @@
     <b>Kolor po lewej = trudność psa.</b> <b>Zarezerwuj</b> = biorę go dziś.
     <b>Wyprowadzony ✓</b> = spacer odbyty, wpada do historii.
     Zadania odhaczamy stuknięciem; nieodhaczone przechodzą na kolejny dzień.
-    Lista zeruje się co wieczór o 22:00.
+    Lista zeruje się codziennie o <span id="resetNoteFoot">22:00</span>.
   </footer>
-
-  <!-- ukryta diagnostyka: 5 tapnięć w datę -->
-  <div class="diag hidden" id="diag"></div>
 
   <div class="toast" id="toast"></div>
 

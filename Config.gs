@@ -49,3 +49,10 @@ const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
 
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
+
+/**
+ * Domyślna godzina nocnego czyszczenia listy (0–23).
+ * To tylko wartość startowa — prowadząca zmienia ją z panelu w trybie edycji,
+ * a wtedy zapisuje się w Script Properties (patrz Settings.gs).
+ */
+const DEFAULT_RESET_HOUR = 22;

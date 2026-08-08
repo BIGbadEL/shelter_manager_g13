@@ -19,10 +19,28 @@ function readHistory_() {
     .reverse();   // najnowsze na górze
 }
 
-/* ---------- RESET O 22:00 ---------- */
+/* ---------- NOCNY RESET ---------- */
 
 /**
- * Uruchamiany przez wyzwalacz czasowy (zakłada go installTriggers() — patrz Setup.gs).
+ * Data, pod którą archiwizujemy spacery — czyli dzień, KTÓRY WŁAŚNIE SIĘ SKOŃCZYŁ.
+ *
+ * Przy resecie wieczorem (domyślne 22:00) to po prostu dziś. Ale godzina jest
+ * ustawialna z panelu: reset o 3:00 czy 6:00 wypada już następnego dnia
+ * kalendarzowego, a spacery odbyły się poprzedniego — bez tej korekty wpadłyby
+ * do Historii pod złą datą i pies wyglądałby na wyprowadzonego dzisiaj.
+ * Granicę stawiamy w południe: reset przed 12:00 zamyka dzień poprzedni.
+ */
+function archiveDate_() {
+  const now = new Date();
+  const hour = Number(Utilities.formatDate(now, tz_(), 'H'));
+  if (hour >= 12) return today_();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return Utilities.formatDate(yesterday, tz_(), 'yyyy-MM-dd');
+}
+
+/**
+ * Uruchamiany przez wyzwalacz czasowy o godzinie z ustawień
+ * (zakłada go installTriggers() — patrz Setup.gs i Settings.gs).
  * Robi trzy rzeczy:
  *   1. odbyte spacery (oba u psów 2-spacerowych) -> Historia + data w ostatni_spacer,
  *   2. wszystkie psy z powrotem na "wolny", jednodniowe notatki znikają,
@@ -42,7 +60,7 @@ function archiveAndResetDogs_() {
   const last = sh.getLastRow();
   if (last < 2) return;
 
-  const today = today_();
+  const today = archiveDate_();
   const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
   const toHist = [];
 

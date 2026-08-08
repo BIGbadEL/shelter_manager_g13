@@ -122,11 +122,19 @@
   footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.55;}
   footer b{color:var(--ink);}
 
-  /* ---------- diagnostyka (ukryta, 5 tapnięć w datę) ---------- */
-  .diag{margin-top:18px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;
-    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
-  .diaghead{font-weight:700;color:var(--ink);margin-bottom:6px;}
-  .diagrow{display:flex;gap:10px;padding:2px 0;}
-  .diagrow b{color:var(--ink);font-weight:700;min-width:92px;}
-  .diagrow span:last-child{margin-left:auto;}
+  /* ---------- zakładka Panel (ustawienia + diagnostyka) ---------- */
+  .panelbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-top:12px;}
+  .panelbox h3{margin:0 0 9px;font-size:13.5px;font-weight:800;color:var(--forest);}
+  .panelbox .lbl{font-size:13px;color:var(--ink);font-weight:600;flex:1;}
+  .panelbox select{min-width:104px;}
+  .hint{margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted);}
+  .diag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
+  .diagrow{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--line);}
+  .diagrow:last-child{border-bottom:0;}
+  .diagrow b{color:var(--ink);font-weight:700;min-width:88px;}
+  .diagrow span:last-child{margin-left:auto;text-align:right;}
+
+  /* datę tapie się 5x — nie pozwól przeglądarce zamienić tego w zaznaczanie/zoom */
+  #today{touch-action:manipulation;-webkit-user-select:none;user-select:none;
+    padding:2px 0;-webkit-tap-highlight-color:transparent;}
 </style>

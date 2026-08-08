@@ -3,7 +3,7 @@
  *
  * Na świeżym arkuszu uruchom ręcznie, RAZ, w tej kolejności:
  *   1. setup()            — tworzy zakładki, nagłówki, formaty, przykładowe psy
- *   2. installTriggers()  — zakłada wyzwalacz resetu o 22:00
+ *   2. installTriggers()  — zakłada wyzwalacz resetu (domyślnie 22:00)
  *
  * Masz już arkusz z danymi ze starszej wersji? Zamiast setup() uruchom migrate().
  */
@@ -79,9 +79,12 @@ function applyTextFormats_() {
 }
 
 /**
- * Zakłada dzienny wyzwalacz endOfDay (22:00–23:00 czasu polskiego).
+ * Zakłada dzienny wyzwalacz endOfDay o godzinie z ustawień (patrz Settings.gs).
  * BEZ NIEGO Historia pozostaje pusta, a lista nie zeruje się w nocy.
  * Bezpieczna do wielokrotnego uruchomienia — najpierw usuwa duplikaty.
+ *
+ * Uwaga Apps Script: `atHour(h)` to okno h:00–h:59, nie punkt czasowy.
+ * Wywoływana ponownie przy każdej zmianie godziny z panelu.
  */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
@@ -91,7 +94,7 @@ function installTriggers() {
   ScriptApp.newTrigger('endOfDay')
     .timeBased()
     .everyDays(1)
-    .atHour(22)
+    .atHour(resetHour_())
     .inTimezone(TIMEZONE)
     .create();
 }

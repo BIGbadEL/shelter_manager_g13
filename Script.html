@@ -12,8 +12,11 @@
   const state = {
     dogs:[], tasks:[], history:[],
     today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
-    view:"today", admin:false, pin:null, loaded:false,
+    view:"today",          // today | history | diag
+    admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie edycji
+    resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
+    diag:null,             // dane serwerowe do zakładki "Panel"
   };
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
@@ -61,33 +64,39 @@
   function setSync(txt){ document.getElementById('sync').textContent = txt; }
 
   /* =========================================================
-     DIAGNOSTYKA (ukryta: 5 tapnięć w datę u góry)
-     Pokazuje czasy przelotu ostatnich wywołań — jedyny sposób,
-     żeby na telefonie odróżnić "wisi serwer" od "wisi przeglądarka".
+     LOG WYWOŁAŃ (zasila zakładkę "Panel")
      ========================================================= */
   const callLog = [];
   function logCall(fn, ms, outcome){
     callLog.unshift({ t: localHM(), fn, ms, outcome });
     if(callLog.length > 30) callLog.pop();
-    if(diagOpen) renderDiag();
+    if(state.view==='diag') safeRender();
   }
-  let diagOpen = false, diagTaps = 0, diagTapAt = 0;
-  function renderDiag(){
-    const box = document.getElementById('diag');
-    if(!box) return;
-    box.classList.toggle('hidden', !diagOpen);
-    if(!diagOpen) return;
-    const rows = callLog.map(c=>
-      `<div class="diagrow"><span>${c.t}</span><b>${esc(c.fn)}</b><span>${c.ms} ms</span><span>${esc(c.outcome)}</span></div>`
-    ).join('') || '<div class="diagrow">Brak wywołań.</div>';
-    box.innerHTML = `<div class="diaghead">Diagnostyka — czasy odpowiedzi serwera</div>${rows}`;
-  }
-  document.getElementById('today').addEventListener('click',()=>{
-    const now = Date.now();
-    diagTaps = (now - diagTapAt < 1200) ? diagTaps + 1 : 1;
-    diagTapAt = now;
-    if(diagTaps >= 5){ diagTaps = 0; diagOpen = !diagOpen; renderDiag(); }
-  });
+
+  /**
+   * Awaryjne wejście do panelu bez PIN-u: 5 tapnięć w datę u góry.
+   * Liczymy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa
+   * zjadana przez rozpoznawanie gestów (zaznaczanie tekstu, double-tap), więc
+   * część kliknięć nigdy nie dolatywała i licznik nie dochodził do pięciu.
+   */
+  let tapCount = 0, tapAt = 0;
+  (function bindDiagGesture(){
+    const el = document.getElementById('today');
+    if(!el) return;
+    const bump = ()=>{
+      const now = Date.now();
+      tapCount = (now - tapAt < 2000) ? tapCount + 1 : 1;
+      tapAt = now;
+      if(tapCount >= 5){
+        tapCount = 0;
+        state.view = (state.view==='diag') ? 'today' : 'diag';
+        render();
+        if(state.view==='diag'){ toast('Panel diagnostyczny'); fetchDiag(); }
+      }
+    };
+    el.addEventListener('pointerdown', bump);
+    if(!window.PointerEvent) el.addEventListener('touchstart', bump);   // starsze WebView
+  })();
 
   /* =========================================================
      KOLEJKA ZAPISÓW
@@ -111,7 +120,7 @@
   function isSending(){ return inflight.size > 0; }
 
   /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask']);
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour']);
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -232,6 +241,16 @@
      ========================================================= */
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+    if(typeof res.resetHour === 'number'){ state.resetHour = res.resetHour; showResetHour(); }
+  }
+
+  /** Nagłówek i stopka mówią o godzinie czyszczenia — musi iść za ustawieniem. */
+  function showResetHour(){
+    const hh = String(state.resetHour).padStart(2,'0') + ':00';
+    const a = document.getElementById('resetNote');
+    const b = document.getElementById('resetNoteFoot');
+    if(a) a.textContent = '↺ czyści się o ' + hh;
+    if(b) b.textContent = hh;
   }
   /** Render, który nie wyrywa nikomu klawiatury spod palców. */
   function safeRender(){ if(!busyEditing()) render(); }
@@ -268,17 +287,49 @@
   /* =========================================================
      RENDER
      ========================================================= */
+  /**
+   * Ostatni wyrenderowany HTML. Telefon najmocniej odczuwa nie samo generowanie
+   * stringa, tylko przeparsowanie i przeliczenie układu po podmianie innerHTML —
+   * a odświeżanie co 15 s najczęściej nic nie zmienia. Gdy HTML jest identyczny,
+   * nie dotykamy DOM w ogóle.
+   */
+  let lastHtml = null;
+  function invalidateHtml(){ lastHtml = null; }   // po ręcznej zmianie DOM poza render()
+
   function render(){
     try{
       document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
+      const tabDiag = document.getElementById('tabDiag');
+      if(tabDiag) tabDiag.classList.toggle('hidden', !state.admin);
       gear.classList.toggle('on',state.admin);
-      viewEl.innerHTML = state.view==='today' ? renderToday() : renderHistory();
+
+      const html = state.view==='history' ? renderHistory()
+                 : state.view==='diag'    ? renderDiagView()
+                 : renderToday();
+      if(html !== lastHtml){ viewEl.innerHTML = html; lastHtml = html; }
     } catch(e){
       // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
       viewEl.innerHTML = '<div class="empty">Coś poszło nie tak — odświeżam dane…</div>';
+      lastHtml = null;
       needRefresh = true;
       if(!isSending() && !queue.length) refresh();
     }
+  }
+
+  /**
+   * Podmienia JEDEN kafelek psa zamiast przerysowywać całą listę.
+   * Przy 30 psach pełny render to 30 kafelków do sparsowania i ułożenia od nowa
+   * przy każdym kliknięciu — na telefonie to widoczne szarpnięcie.
+   */
+  function patchDog(id){
+    if(state.view!=='today' || state.editId!==null){ render(); return; }
+    const li  = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
+    const dog = findDog(id);
+    if(!li || !dog){ render(); return; }
+    li.outerHTML = renderDog(dog);
+    const cnt = viewEl.querySelector('.count');
+    if(cnt) cnt.innerHTML = countLine();
+    invalidateHtml();
   }
 
   /** Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie kolumny ostatni_spacer. */
@@ -372,19 +423,19 @@
     const meta=dogMeta(dog)+dogNote(dog);
 
     if(dog.status==='free'){
-      return `<li class="dog" style="border-left-color:${dm.color}">
+      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
         <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button>${
           dog.who1 ? `<button class="btn ghost" data-act="undoFirst" data-id="${dog.id}">Cofnij 1. spacer</button>` : ''
         }</div>
         <div class="entry hidden" data-entry="${dog.id}">
-          <input type="text" maxlength="40" placeholder="Twoje imię" value="${esc(lastWho)}" data-input="${dog.id}">
+          <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
           <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
         </div></li>`;
     }
     if(dog.status==='reserved'){
-      return `<li class="dog" style="border-left-color:${dm.color}">
+      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
         <div class="row"><span class="name">${label}</span>
           <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
@@ -394,7 +445,7 @@
           <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
         </div></li>`;
     }
-    return `<li class="dog walked" style="border-left-color:${dm.color}">
+    return `<li class="dog walked" data-dog="${dog.id}" style="border-left-color:${dm.color}">
       <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
       ${meta}
       <div class="status"><span class="who">✓ ${esc(dog.who)} · ${esc(dog.time)}</span>
@@ -421,10 +472,15 @@
     </div>`;
   }
 
+  /** Podsumowanie nad listą — osobno, bo podmieniamy je też przy patchDog(). */
+  function countLine(){
+    const c = st => state.dogs.filter(x=>x.status===st).length;
+    return `<b>${c('reserved')}</b> zarezerwowane · <b>${c('walked')}</b> wyprowadzone · <b>${c('free')}</b> wolne`;
+  }
+
   function renderToday(){
     if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
     const d=state.dogs;
-    const count = st => d.filter(x=>x.status===st).length;
 
     let html=`
       <div class="diflegend">
@@ -433,7 +489,7 @@
         <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
       </div>
       ${renderTasks()}
-      <div class="count"><b>${count('reserved')}</b> zarezerwowane · <b>${count('walked')}</b> wyprowadzone · <b>${count('free')}</b> wolne</div>
+      <div class="count">${countLine()}</div>
       <ul>`;
     d.forEach(dog=>{
       html += (state.admin && state.editId===dog.id) ? renderEditForm(dog) : renderDog(dog);
@@ -441,6 +497,69 @@
     html+=`</ul>`;
     if(state.admin) html+=renderAdminAddBox();
     return html;
+  }
+
+  /* =========================================================
+     PANEL (zakładka widoczna w trybie edycji + 5 tapnięć w datę)
+     Ustawienia aplikacji + surowe dane do diagnozy "czy wisi serwer,
+     czy przeglądarka" — na telefonie nie ma innego sposobu, żeby to rozstrzygnąć.
+     ========================================================= */
+  function hourOptions(sel){
+    let o = '';
+    for(let h=0; h<24; h++){
+      const hh = String(h).padStart(2,'0') + ':00';
+      o += `<option value="${h}" ${h===sel?'selected':''}>${hh}</option>`;
+    }
+    return o;
+  }
+
+  function renderDiagView(){
+    const d = state.diag;
+    const settings = state.admin ? `
+      <div class="panelbox">
+        <h3>Ustawienia</h3>
+        <div class="adminrow">
+          <label class="lbl" for="resetHour">Godzina czyszczenia listy</label>
+          <select id="resetHour">${hourOptions(state.resetHour)}</select>
+        </div>
+        <div class="hint">Reset wykonuje się w ciągu tej godziny (Google uruchamia wyzwalacze
+        w oknie ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59).
+        Wtedy spacery trafiają do Historii, psy wracają na „wolny", a notatki znikają.</div>
+      </div>` : '';
+
+    const serverRows = d ? `
+      <div class="diagrow"><b>wyzwalacz resetu</b><span>${d.triggerInstalled ? 'aktywny ('+d.triggerCount+')' : 'BRAK — uruchom installTriggers()'}</span></div>
+      <div class="diagrow"><b>godzina resetu</b><span>${String(d.resetHour).padStart(2,'0')}:00</span></div>
+      <div class="diagrow"><b>czas serwera</b><span>${esc(d.serverDate)} ${esc(d.serverTime)}</span></div>
+      <div class="diagrow"><b>strefa</b><span>${esc(d.timezone)}</span></div>
+      <div class="diagrow"><b>psy / zadania</b><span>${d.dogCount} / ${d.taskCount}</span></div>
+      <div class="diagrow"><b>wpisy historii</b><span>${d.histCount}</span></div>`
+      : `<div class="diagrow"><span>${state.admin ? 'Pobieram…' : 'Dane serwera tylko w trybie edycji.'}</span></div>`;
+
+    const rows = callLog.map(c=>
+      `<div class="diagrow"><span>${c.t}</span><b>${esc(c.fn)}</b><span>${c.ms} ms</span><span>${esc(c.outcome)}</span></div>`
+    ).join('') || '<div class="diagrow"><span>Brak wywołań w tej sesji.</span></div>';
+
+    return `${settings}
+      <div class="panelbox">
+        <h3>Stan serwera</h3>
+        <div class="diag">${serverRows}</div>
+      </div>
+      <div class="panelbox">
+        <h3>Ostatnie wywołania</h3>
+        <div class="hint">Czas przelotu tam i z powrotem. Powyżej ~3000 ms wina jest po stronie
+        Apps Scriptu; „zerwane"/„nie odpowiada" wskazuje na przeglądarkę albo sieć.</div>
+        <div class="diag">${rows}</div>
+        <div class="diagrow"><b>w locie / w kolejce</b><span>${inflight.size} / ${queue.length}</span></div>
+      </div>`;
+  }
+
+  function fetchDiag(){
+    if(!state.admin) return;
+    google.script.run
+      .withSuccessHandler(res=>{ state.diag = res; if(state.view==='diag') safeRender(); })
+      .withFailureHandler(()=>{})
+      .getDiagnostics(state.pin);
   }
 
   function renderHistory(){
@@ -465,14 +584,14 @@
   function doReserve(id, who){
     const dog=findDog(id); if(!dog || dog.status!=='free') return;
     dog.status='reserved'; dog.who=who; dog.time='';
-    render();
+    patchDog(id);
     enqueue('reserve',[id,who],{key:keyDog(id),reconcile:res=>{
       if(!res || !res.dog){ safeRender(); return; }
       replaceDog(res.dog);
       if(!(res.dog.status==='reserved' && res.dog.who===who)){
         toast('Ubiegł Cię ktoś inny — pies już zajęty');
-        render();               // konflikt pokazujemy od razu
-      } else safeRender();
+        patchDog(id);           // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
+      } else if(!busyEditing()) patchDog(id);
     }});
   }
 
@@ -485,30 +604,30 @@
     } else {
       dog.status='walked'; dog.time=localHM();
     }
-    render();
+    patchDog(id);
     enqueue('markWalked',[id,''],{key:keyDog(id),reconcile:res=>{
       if(res && res.dog) replaceDog(res.dog);
-      safeRender();
+      if(!busyEditing()) patchDog(id);
     }});
   }
 
   function doUndoFirst(id){
     const dog=findDog(id); if(!dog || !dog.who1) return;
     dog.who1=''; dog.time1='';
-    render();
+    patchDog(id);
     enqueue('undoFirstWalk',[id],{key:keyDog(id),reconcile:res=>{
       if(res && res.dog) replaceDog(res.dog);
-      safeRender();
+      if(!busyEditing()) patchDog(id);
     }});
   }
 
   function doFree(id){
     const dog=findDog(id); if(!dog) return;
     dog.status='free'; dog.who=''; dog.time='';
-    render();
+    patchDog(id);
     enqueue('setFree',[id],{key:keyDog(id),reconcile:res=>{
       if(res && res.dog) replaceDog(res.dog);
-      safeRender();
+      if(!busyEditing()) patchDog(id);
     }});
   }
 
@@ -526,10 +645,15 @@
     const t=e.target.closest('.tab'); if(!t) return;
     state.view=t.dataset.tab; render();
     if(state.view==='history') fetchHistory();
+    if(state.view==='diag') fetchDiag();
   });
 
   gear.addEventListener('click',()=>{
-    if(state.admin){ state.admin=false; state.editId=null; render(); return; }
+    if(state.admin){
+      state.admin=false; state.editId=null; state.diag=null;
+      if(state.view==='diag') state.view='today';   // zakładka znika razem z trybem edycji
+      render(); return;
+    }
     document.getElementById('pinrow').classList.toggle('hidden');
     document.getElementById('pinErr').classList.add('hidden');
     const p=document.getElementById('pinInput'); p.value=''; p.focus();
@@ -542,6 +666,7 @@
       if(ok){ state.admin=true; state.pin=pin;
         document.getElementById('pinrow').classList.add('hidden');
         document.getElementById('pinErr').classList.add('hidden'); render();
+        if(state.view==='diag') fetchDiag();
       } else { document.getElementById('pinErr').classList.remove('hidden'); }
     }).checkPin(pin);
   }
@@ -556,11 +681,24 @@
     const entry = viewEl.querySelector(`[data-entry="${id}"]`);
     const input = viewEl.querySelector(`[data-input="${id}"]`);
     if(!entry || !input){ render(); return; }   // DOM nieaktualny — przerysuj zamiast wybuchać
+    invalidateHtml();            // DOM zmieniony poza render() — cache HTML nieaktualny
     entry.classList.remove('hidden');
     clickedBtn.classList.add('hidden');
+    if(!input.value && lastWho) input.value = lastWho;   // podpowiedź z tej sesji
     input.focus();
-    if(input.value) input.select();   // podpowiedziane imię łatwo nadpisać
+    if(input.value) input.select();                      // ...łatwa do nadpisania
   }
+
+  /** Zmiana godziny czyszczenia — select nie emituje 'click', tylko 'change'. */
+  viewEl.addEventListener('change',e=>{
+    if(e.target.id!=='resetHour') return;
+    const h = Number(e.target.value);
+    state.resetHour = h; showResetHour();          // optymistycznie: etykiety od razu
+    enqueue('setResetHour',[h,state.pin],{key:'settings',reconcile:res=>{
+      applyFull_(res);
+      fetchDiag();                                  // wyzwalacz mógł się przełożyć
+    }});
+  });
 
   viewEl.addEventListener('click',e=>{
     try{ handleAction(e); }
