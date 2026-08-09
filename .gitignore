@@ -1,1 +1,10 @@
 node_modules/
+
+# token OAuth do clasp — normalnie leży w katalogu domowym, ale gdyby kiedyś
+# wylądował tutaj (clasp --auth .), nie ma prawa trafić do repozytorium
+.clasprc.json
+
+# wskazanie na konkretny projekt Apps Script — rzecz maszyny i konta, nie kodu.
+# Repozytorium jest na GitHubie, a identyfikator skryptu nie ma powodu tam być.
+# Jak go odtworzyć: README, sekcja o wdrożeniu.
+.clasp.json

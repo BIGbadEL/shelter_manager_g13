@@ -149,12 +149,24 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
 
 ## Wdrożenie
 
-1. Podmień zmienione pliki w edytorze Apps Script.
-2. Przy zmianie struktury arkusza: uruchom `migrate()` (dokłada kolumny i formaty,
-   danych nie rusza). Przy pustym projekcie: `setup()`.
+Pliki jadą przez **clasp** (`npm run deploy -- <deploymentId> -d "opis"`), nie przez
+kopiowanie do edytora. Szczegóły i konfiguracja raz-na-maszynę: README.
+
+1. `npm run deploy -- <deploymentId>` — testy, wysyłka plików i nowa wersja
+   **istniejącego** wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
+2. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny
+   i formaty, danych nie rusza). Przy pustym projekcie: `setup()`.
 3. `installTriggers()` — bez tego nie ma nocnego resetu.
-4. **Zarządzaj wdrożeniami → edytuj → Nowa wersja.** Bez tego zmiany nie wchodzą.
-5. Ustawienia: „wykonaj jako: ja", „dostęp: wszyscy". Strefa `Europe/Warsaw`.
+4. Ustawienia web appki: „wykonaj jako: ja", „dostęp: wszyscy". Strefa `Europe/Warsaw`.
+
+Pułapki clasp:
+- **`clasp clone` ściąga pliki z serwera i nadpisuje lokalne** — nigdy go nie używaj
+  w tym repo. `.clasp.json` piszemy ręcznie, ruch idzie wyłącznie lokalnie → Apps Script.
+- **`clasp deploy` bez `-i` tworzy NOWE wdrożenie pod NOWYM adresem.** Stary link
+  wolontariuszy zostałby wtedy na starej wersji. Stąd `redeploy <deploymentId>`.
+- **`.claspignore` jest krytyczny** — bez niego `tests/*.js` (z `require`) wyjadą jako
+  pliki projektu Apps Script. Po dodaniu nowego pliku sprawdź `npm run files`.
+- clasp nie odpala funkcji: `migrate()` / `installTriggers()` nadal ręcznie z edytora.
 
 Nowy plik `.gs` albo nowe uprawnienie (np. tworzenie wyzwalaczy) wymaga **ponownej
 autoryzacji** przy pierwszym uruchomieniu.

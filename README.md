@@ -50,7 +50,62 @@ Dwa harnessy. Frontendowy ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, k
 4. Uruchom ręcznie **`installTriggers()`** — bez tego Historia będzie pusta, a lista nie wyzeruje się o 22:00.
 5. Wdróż: *Aplikacja internetowa*, „wykonaj jako: ja", „dostęp: wszyscy".
 
-Zmiany w kodzie wchodzą na link dopiero po: *Zarządzaj wdrożeniami → edytuj → Nowa wersja*.
+## Wdrożenie jedną komendą (clasp)
+
+Kopiowanie zawartości plików do edytora Apps Script zastępuje [clasp](https://github.com/google/clasp) —
+oficjalne CLI Google. Do repozytorium należą `.claspignore` (lista plików, które w ogóle jadą
+na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w repo.
+
+**Konfiguracja, raz na maszynę:**
+
+1. Włącz Apps Script API na swoim koncie: <https://script.google.com/home/usersettings>.
+2. Zaloguj się (otworzy przeglądarkę): `npx clasp login`.
+3. Weź identyfikator skryptu z edytora Apps Script (*Ustawienia projektu → Identyfikator skryptu*)
+   i zapisz go w pliku `.clasp.json` w katalogu projektu:
+   ```json
+   { "scriptId": "TUTAJ_IDENTYFIKATOR_SKRYPTU", "rootDir": "." }
+   ```
+   > **Nie używaj `clasp clone`.** Clone ściąga pliki **z serwera** i nadpisuje lokalne —
+   > skasowałby zmiany, których jeszcze nie wysłałeś. `.clasp.json` piszemy ręcznie,
+   > a ruch idzie tylko w jedną stronę: lokalnie → Apps Script.
+
+   `.clasp.json` jest celowo w `.gitignore` — wskazuje konkretny projekt na konkretnym
+   koncie, więc każda maszyna zakłada go sobie sama tym jednym krokiem.
+4. Sprawdź identyfikator wdrożenia (ten sam, który jest w linku do aplikacji): `npm run deployments`.
+
+**Potem, przy każdej zmianie:**
+
+```bash
+npm run deploy -- AKfycb...TWOJE_ID_WDROZENIA -d "co się zmieniło"
+```
+
+To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki i podbija wersję *istniejącego*
+wdrożenia — link do aplikacji zostaje ten sam. Czerwony test przerywa całość, więc zepsuty kod
+nie ma jak wyjechać do wolontariuszy.
+
+Pomocnicze: `npm run files` (co dokładnie poleci na serwer — warto zerknąć po dodaniu plików),
+`npm run push` (sama wysyłka, bez nowej wersji — zmiany widać wtedy tylko w edytorze, **nie** na linku),
+`npm run deployments` (lista wdrożeń z numerami wersji — po wdrożeniu numer przy Twoim ID musi wzrosnąć).
+
+Czego clasp **nie** robi: nie uruchamia `setup()`, `migrate()` ani `installTriggers()`.
+Te odpalasz nadal ręcznie z edytora, i tylko wtedy, gdy zmieniła się struktura arkusza
+albo godzina resetu.
+
+**Uwaga:** `clasp deploy` bez `-i`/`redeploy` tworzy **nowe** wdrożenie z **nowym adresem** —
+stary link wolontariuszy przestałby dostawać zmiany. Dlatego `npm run deploy` używa `redeploy`
+z konkretnym identyfikatorem.
+
+### Windows / PowerShell
+
+`node` to plik `.exe` i działa od razu, ale `npm` i `npx` w PowerShellu są shimami `.ps1` —
+przy domyślnej polityce `Restricted` odbijają się o „running scripts is disabled on this system".
+Dwa wyjścia:
+
+- bez zmian w systemie: wołaj `npm.cmd` / `npx.cmd` (shim `.ps1` zostaje ominięty),
+- na stałe: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` — skrypty utworzone lokalnie
+  ruszają, ściągnięte z sieci nadal wymagają podpisu; bez uprawnień administratora.
+
+Terminal otwarty przed instalacją Node nie zna jeszcze nowego `PATH` — wystarczy nowe okno.
 
 ## Migracja istniejącego arkusza
 

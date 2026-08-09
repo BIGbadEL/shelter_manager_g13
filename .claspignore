@@ -1,0 +1,11 @@
+# Do Apps Script jedzie WYŁĄCZNIE to, co niżej odznaczone przez "!".
+# Bez tego clasp wrzuciłby tests/*.js jako pliki projektu Apps Script
+# (a one robią require(...) i nie mają prawa tam działać), plus node_modules.
+# Sprawdź listę przed wysyłką:  npm run files
+**/**
+
+!appsscript.json
+!*.gs
+!Index.html
+!Styles.html
+!Script.html
