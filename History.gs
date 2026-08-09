@@ -4,11 +4,40 @@
 
 /* ---------- ODCZYT ---------- */
 
+/**
+ * Numer wiersza, od którego zaczyna się ostatnie HISTORY_DAYS dni.
+ *
+ * Historia rośnie bez końca — przy trzydziestu psach to kilkanaście tysięcy
+ * wierszy rocznie — a telefon nie ma powodu ciągnąć jej w całości przy każdym
+ * wejściu w zakładkę. Czytamy więc najpierw samą kolumnę dat (jeden zakres,
+ * jedna kolumna), idziemy od dołu i liczymy RÓŻNE dni; dopiero wyliczony
+ * kawałek pobieramy w pełnej szerokości. W arkuszu nic nie znika.
+ *
+ * Dni liczymy, zamiast brać stałą liczbę wierszy, bo liczba spacerów na dzień
+ * zależy od wielkości grupy — "ostatnie 400 wierszy" raz znaczyłoby miesiąc,
+ * a raz trzy dni.
+ */
+function historyStartRow_(sh, last) {
+  const dates = sh.getRange(2, HIST.DATE, last - 1, 1).getValues();
+  const seen = {};
+  let days = 0;
+  for (let i = dates.length - 1; i >= 0; i--) {
+    const d = cellDate_(dates[i][0]);
+    if (!d || seen[d]) continue;
+    if (days === HISTORY_DAYS) return i + 3;   // ten dzień już się nie mieści; blok zaczyna się wiersz niżej
+    seen[d] = true;
+    days++;
+  }
+  return 2;                                    // dni jest mniej niż limit — bierzemy wszystko
+}
+
 function readHistory_() {
   const sh = ss_().getSheetByName(SHEETS.HIST);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, HIST_WIDTH).getValues()
+  const start = historyStartRow_(sh, last);
+  if (start > last) return [];
+  return sh.getRange(start, 1, last - start + 1, HIST_WIDTH).getValues()
     .filter(r => r[HIST.DATE - 1] !== '' && r[HIST.DATE - 1] !== null)
     .map(r => ({
       date: cellDate_(r[HIST.DATE - 1]),
@@ -17,6 +46,13 @@ function readHistory_() {
       time: cellTime_(r[HIST.TIME - 1]),
     }))
     .reverse();   // najnowsze na górze
+}
+
+/** Ile wpisów Historia ma naprawdę — do panelu, gdzie liczy się komplet, nie widok. */
+function histCount_() {
+  const sh = ss_().getSheetByName(SHEETS.HIST);
+  const last = sh.getLastRow();
+  return last < 2 ? 0 : last - 1;
 }
 
 /* ---------- NOCNY RESET ---------- */

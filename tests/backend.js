@@ -18,14 +18,19 @@ function dogRow(o){
           o.who||'', o.time||'', o.lastWalk||'', o.note||'', o.walks||1,
           o.who1||'', o.time1||'', o.noteUntil||''];
 }
+/** PIN nie jest już w kodzie — każdy test podstawia własny przez właściwości skryptu. */
+const TEST_PIN = '4321';
+
 function build(dogs, opts){
-  return makeContext(Object.assign({
-    sheets: [
+  opts = opts || {};
+  return makeContext(Object.assign({}, opts, {
+    sheets: opts.sheets || [
       { name:'Psy',      rows: [DOG_HEADERS, ...dogs.map(dogRow)] },
       { name:'Historia', rows: [HIST_HEADERS] },
       { name:'Zadania',  rows: [TASK_HEADERS] },
     ],
-  }, opts||{}));
+    props: Object.assign({ pin: TEST_PIN }, opts.props),
+  }));
 }
 const noteOf = (env,i)=>env.sheets['Psy']._data[i][9];
 const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
@@ -70,8 +75,8 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
 /* ---------- B4: termin z przeszłości nie zostaje zapisany ---------- */
 (()=>{
   console.log('B4: walidacja terminu przy zapisie psa');
-  const env = build([{id:1, name:'Borys'}], {props:{}, now:'2026-08-05T10:00:00+02:00'});
-  const PIN = env.conf.PIN;   // z Config.gs — testy przeżywają zmianę PIN-u przed wdrożeniem
+  const env = build([{id:1, name:'Borys'}], {now:'2026-08-05T10:00:00+02:00'});
+  const PIN = TEST_PIN;
 
   env.api.updateDog(1, {name:'Borys', note:'Coś', noteUntil:'2026-08-01', dif:'easy', walks:1}, PIN);
   check('data z przeszłości odrzucona', untilOf(env,1)==='', JSON.stringify(untilOf(env,1)));
@@ -111,7 +116,7 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
 (()=>{
   console.log('B6: setResetHour przekłada wyzwalacz');
   const env = build([{id:1, name:'Borys'}]);
-  const PIN = env.conf.PIN;
+  const PIN = TEST_PIN;
   check('domyślnie 22', env.api.resetHour_()===22, String(env.api.resetHour_()));
 
   env.api.installTriggers();
@@ -189,6 +194,82 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
   check('bez slotu: 1. spacer jak dotąd',
     old.sheets['Psy']._data[1][11]==='Ania' && old.sheets['Psy']._data[1][5]==='free',
     JSON.stringify(old.sheets['Psy']._data[1]));
+})();
+
+/* ---------- B9: PIN mieszka we właściwościach skryptu, nie w kodzie ---------- */
+(()=>{
+  console.log('B9: PIN z właściwości skryptu');
+  const env = build([{id:1, name:'Borys'}]);
+  check('dobry PIN przechodzi', env.api.checkPin(TEST_PIN)===true);
+  check('zły PIN odrzucony', env.api.checkPin('0000')===false);
+  check('pusty PIN odrzucony', env.api.checkPin('')===false);
+  check('stare 1234 to już zwykły zły PIN', env.api.checkPin('1234')===false);
+
+  // bez ustawionej właściwości tryb edycji jest po prostu zamknięty
+  const bare = makeContext({ sheets: [
+    { name:'Psy',      rows:[DOG_HEADERS] },
+    { name:'Historia', rows:[HIST_HEADERS] },
+    { name:'Zadania',  rows:[TASK_HEADERS] },
+  ]});
+  check('brak właściwości: pin_() puste', bare.api.pin_()==='');
+  check('brak właściwości: checkPin zawsze false',
+    bare.api.checkPin('')===false && bare.api.checkPin('1234')===false);
+  let threw = false;
+  try{ bare.api.addDog({name:'X'}, '1234'); }catch(e){ threw = true; }
+  check('brak właściwości: akcja edycyjna rzuca', threw);
+  check('brak właściwości: setup() nie wywala się', (()=>{ try{ bare.api.setup(); return true; }catch(e){ return false; } })());
+
+  // ...i żeby nikt tego nie cofnął przez przypadek: w źródłach nie ma PIN-u
+  const fs = require('fs'), path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const src = ['Config.gs','Utils.gs','Settings.gs','WebApp.gs','Setup.gs']
+    .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  check('brak stałej PIN w kodzie', !/const\s+PIN\s*=/.test(src));
+  check('żaden plik nie zaszywa PIN-u', !/PIN\s*=\s*['"][0-9]+['"]/.test(src));
+})();
+
+/* ---------- B10: Historia oddaje tylko ostatnie dni ---------- */
+(()=>{
+  console.log('B10: Historia ograniczona do ostatnich dni');
+  const DAYS = 20;                       // dwadzieścia dni po dwa spacery
+  const rows = [HIST_HEADERS];
+  for(let d = 1; d <= DAYS; d++){
+    const date = '2026-07-' + String(d).padStart(2,'0');
+    rows.push([date, 'Borys', 'Ala', '10:00']);
+    rows.push([date, 'Luna',  'Ola', '17:00']);
+  }
+  const histSheets = h => [
+    { name:'Psy',      rows:[DOG_HEADERS] },
+    { name:'Historia', rows:h },
+    { name:'Zadania',  rows:[TASK_HEADERS] },
+  ];
+
+  const env = build([], { sheets: histSheets(rows) });
+  const limit = env.conf.HISTORY_DAYS;
+  const hist = env.api.readHistory_();
+  const dni = hist.map(e => e.date).filter((d,i,a) => a.indexOf(d) === i);
+
+  check('dokładnie tyle dni, ile limit', dni.length===limit, JSON.stringify(dni));
+  check('najnowszy dzień na górze', hist[0].date==='2026-07-20', hist[0] && hist[0].date);
+  check('najstarszy pokazany zgadza się z limitem',
+    dni[dni.length-1]==='2026-07-'+String(DAYS-limit+1).padStart(2,'0'), JSON.stringify(dni));
+  check('dzień sprzed okna odcięty', dni.indexOf('2026-07-01')<0, JSON.stringify(dni));
+  check('komplet wpisów z okna', hist.length===limit*2, String(hist.length));
+  check('getHistory niesie limit dla interfejsu', env.api.getHistory().days===limit);
+  check('panel liczy KOMPLET z arkusza, nie wycinek',
+    env.api.histCount_()===DAYS*2, String(env.api.histCount_()));
+  check('diagnostyka pokazuje komplet',
+    env.api.getDiagnostics(TEST_PIN).histCount===DAYS*2);
+
+  // dni mniej niż limit — widać wszystko, nic się nie gubi
+  const small = build([], { sheets: histSheets([HIST_HEADERS,
+    ['2026-07-01','Borys','Ala','10:00'], ['2026-07-02','Luna','Ola','11:00']]) });
+  check('mało dni: wszystko widoczne', small.api.readHistory_().length===2,
+    JSON.stringify(small.api.readHistory_()));
+
+  const empty = build([], { sheets: histSheets([HIST_HEADERS]) });
+  check('pusta historia: pusta lista', empty.api.readHistory_().length===0);
+  check('pusta historia: licznik zero', empty.api.histCount_()===0);
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

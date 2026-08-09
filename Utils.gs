@@ -29,9 +29,15 @@ function withLock_(fn) {
   }
 }
 
-/** Rzuca błędem (widocznym w interfejsie jako toast), gdy PIN się nie zgadza. */
+/**
+ * Rzuca błędem (widocznym w interfejsie jako toast), gdy PIN się nie zgadza.
+ * Brak ustawionego PIN-u to nie jest "PIN pusty przechodzi" — to zamknięte
+ * drzwi plus komunikat, co zrobić, żeby je otworzyć.
+ */
 function requirePin_(pin) {
-  if (String(pin) !== String(PIN)) throw new Error('Zły PIN');
+  const real = pin_();
+  if (!real) throw new Error('PIN nie jest ustawiony — dodaj właściwość skryptu „pin”');
+  if (String(pin) !== real) throw new Error('Zły PIN');
 }
 
 /** Numer wiersza o danym id (kolumna A) albo -1. */

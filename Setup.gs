@@ -36,6 +36,18 @@ function setup() {
   }
 
   applyTextFormats_();
+  warnIfNoPin_();
+}
+
+/**
+ * Tryb edycji stoi na właściwości skryptu `pin`, której nie ma w kodzie.
+ * Na świeżym projekcie łatwo o niej zapomnieć i zobaczyć tylko „Zły PIN",
+ * więc mówimy o tym wprost w miejscu, przez które i tak się przechodzi.
+ */
+function warnIfNoPin_() {
+  if (pin_()) return;
+  console.log('UWAGA: PIN trybu edycji nie jest ustawiony, więc tryb edycji jest niedostępny.\n' +
+              'Ustawienia projektu -> Właściwości skryptu -> dodaj właściwość "pin" o własnej wartości.');
 }
 
 /**

@@ -22,9 +22,9 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 
 | plik | rola |
 |---|---|
-| `Config.gs` | PIN, nazwy zakładek, mapy kolumn, limity długości, strefa, domyślna godzina resetu |
+| `Config.gs` | nazwy zakładek, mapy kolumn, limity długości, strefa, domyślna godzina resetu, okno Historii |
 | `Utils.gs` | pomocnicze: `withLock_`, `requirePin_`, konwersje dat/godzin, walidacje |
-| `Settings.gs` | godzina czyszczenia listy (Script Properties) + przekładanie wyzwalacza |
+| `Settings.gs` | Script Properties: PIN (`pin_()`) i godzina czyszczenia + przekładanie wyzwalacza |
 | `Setup.gs` | `setup()`, `migrate()`, `installTriggers()` |
 | `WebApp.gs` | `doGet()`, `include()`, `getData()`, `getDiagnostics()`, `getHistory()`, `checkPin()` |
 | `Dogs.gs` | odczyt psów + akcje na psach |
@@ -58,6 +58,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 - Akcje wolontariuszy zwracają **tylko zmieniony wiersz** (`{dog}` / `{ok}`), nie pełny
   stan trzech zakładek. Akcje edycyjne mogą zwracać pełny stan.
 - Akcje edycyjne wymagają PIN-u przez `requirePin_(pin)`.
+- **PIN nie istnieje w kodzie.** Siedzi we właściwości skryptu `pin` (`pin_()` w `Settings.gs`),
+  bez wartości domyślnej: nieustawiony = tryb edycji zamknięty. Nigdy nie wpisuj PIN-u
+  do pliku „na chwilę" — pierwszy commit czyni go publicznym na zawsze, a `git rm`
+  tego nie cofa. Testy tego pilnują (B9 skanuje źródła).
+- **Historia jedzie do przeglądarki tylko za ostatnie `HISTORY_DAYS` dni.** Arkusz trzyma
+  komplet. Liczniki w panelu mają pokazywać komplet (`histCount_()`), nie widoczny wycinek.
 
 ## Architektura frontendu
 
@@ -88,7 +94,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **227 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **263 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`)
@@ -105,7 +111,8 @@ i dopiero czerwony wynik uznaj za dowód, że test faktycznie pilnuje tej regres
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery,
 S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin notatki,
-S39 numer spaceru w `markWalked`, B1–B6 backend, B7–B8 idempotencja `markWalked`.
+S39 numer spaceru w `markWalked`, S40–S42 widok Historii, B1–B6 backend,
+B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 okno Historii.
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -154,10 +161,12 @@ kopiowanie do edytora. Szczegóły i konfiguracja raz-na-maszynę: README.
 
 1. `npm run deploy -- <deploymentId>` — testy, wysyłka plików i nowa wersja
    **istniejącego** wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
-2. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny
+2. **Właściwość skryptu `pin`** (Ustawienia projektu → Właściwości skryptu) — bez niej
+   tryb edycji jest zamknięty. Ustawiana raz, poza kodem i poza repozytorium.
+3. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny
    i formaty, danych nie rusza). Przy pustym projekcie: `setup()`.
-3. `installTriggers()` — bez tego nie ma nocnego resetu.
-4. Ustawienia web appki: „wykonaj jako: ja", „dostęp: wszyscy". Strefa `Europe/Warsaw`.
+4. `installTriggers()` — bez tego nie ma nocnego resetu.
+5. Ustawienia web appki: „wykonaj jako: ja", „dostęp: wszyscy". Strefa `Europe/Warsaw`.
 
 Pułapki clasp:
 - **`clasp clone` ściąga pliki z serwera i nadpisuje lokalne** — nigdy go nie używaj
@@ -174,8 +183,10 @@ autoryzacji** przy pierwszym uruchomieniu.
 ## Stan i rzeczy otwarte
 
 - Testy na żywo ze Stefanem wypadły pozytywnie. Kolejny test z większą grupą.
-- **PIN nadal `1234`** w `Config.gs` — tymczasowy, był wysyłany WhatsAppem.
-  Do zmiany po fazie testów i przekazania prowadzącej inną drogą.
+- **PIN wyjęty z kodu** do właściwości skryptu `pin`. Uwaga: `1234` zostaje w historii
+  gita na zawsze, więc samo przeniesienie nic nie daje — liczy się to, że w Apps Script
+  ustawiona jest **inna, nowa wartość**, i że trafiła do prowadzącej kanałem innym
+  niż WhatsApp, którym szła poprzednia.
 - Kartki zostają jako zapas na czas testów.
 
 ## Jak ze mną pracować

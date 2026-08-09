@@ -36,14 +36,16 @@ function getDiagnostics(pin) {
     serverDate: today_(),
     dogCount: readDogs_().length,
     taskCount: readTasks_().length,
-    histCount: readHistory_().length,
+    histCount: histCount_(),      // komplet z arkusza, nie tylko widoczny wycinek
   };
 }
 
+/** `days` idzie z serwera, żeby interfejs nie musiał znać limitu drugi raz. */
 function getHistory() {
-  return { history: readHistory_() };
+  return { history: readHistory_(), days: HISTORY_DAYS };
 }
 
 function checkPin(pin) {
-  return String(pin) === String(PIN);
+  const real = pin_();
+  return !!real && String(pin) === real;
 }

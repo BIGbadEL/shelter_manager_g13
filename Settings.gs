@@ -9,6 +9,16 @@
  */
 
 const PROP_RESET_HOUR = 'resetHour';
+const PROP_PIN = 'pin';
+
+/**
+ * PIN trybu edycji. Pusto = nie ustawiono, czyli tryb edycji niedostępny.
+ * Świadomie bez wartości domyślnej — PIN wpisany w kod jest publiczny
+ * od pierwszego commita (patrz komentarz w Config.gs).
+ */
+function pin_() {
+  return String(PropertiesService.getScriptProperties().getProperty(PROP_PIN) || '');
+}
 
 /** Godzina nocnego resetu (0–23). Brak ustawienia = wartość domyślna z Config.gs. */
 function resetHour_() {

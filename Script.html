@@ -16,6 +16,7 @@
     admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie edycji
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
+    historyDays:14,        // ile ostatnich dni Historii przysyła serwer (limit z Config.gs)
     diag:null,             // dane serwerowe do zakładki "Panel"
   };
   const viewEl = document.getElementById('view');
@@ -280,6 +281,7 @@
   function fetchHistory(){
     google.script.run.withSuccessHandler(res=>{
       state.history=res.history;
+      if(typeof res.days === 'number') state.historyDays=res.days;
       if(state.view==='history') render();
     }).getHistory();
   }
@@ -601,6 +603,8 @@
       items.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
       html+=`</div>`;
     });
+    // bez tej linijki starsze dni wyglądałyby na skasowane, a one po prostu zostały w arkuszu
+    html+=`<div class="hist-note">Pokazane ostatnie ${state.historyDays} dni. Pełny zapis jest w arkuszu.</div>`;
     return html;
   }
 

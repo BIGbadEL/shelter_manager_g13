@@ -8,8 +8,19 @@
  *   3. dopisz odczyt/zapis w Dogs.gs lub Tasks.gs.
  */
 
-/** >>> USTAW PRZED WDROŻENIEM <<<  PIN trybu edycji. */
-const PIN = '1234';   // <--- ZMIEŃ na własny PIN
+/**
+ * PIN trybu edycji NIE JEST W KODZIE — mieszka we właściwościach skryptu,
+ * tak samo jak godzina resetu (patrz Settings.gs, `pin_()`).
+ *
+ * Ustawienie / zmiana, bez wdrażania i bez śladu w repozytorium:
+ *   Apps Script -> Ustawienia projektu -> Właściwości skryptu
+ *   -> właściwość `pin`, wartość = Twój PIN.
+ *
+ * Dopóki właściwość nie jest ustawiona, tryb edycji jest niedostępny
+ * (`checkPin` zwraca false, akcje edycyjne rzucają błędem). Celowo nie ma tu
+ * żadnej wartości domyślnej: każdy PIN wpisany w kod trafiłby do historii gita
+ * i przestałby być tajemnicą w chwili pierwszego commita.
+ */
 
 /** Nazwy zakładek arkusza. */
 const SHEETS = {
@@ -50,6 +61,14 @@ const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
 
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
+
+/**
+ * Ile ostatnich dni Historii dostaje przeglądarka.
+ * Arkusz trzyma komplet i nic z niego nie znika — to tylko granica tego,
+ * co ma sens ładować na telefon. Bez niej po roku szłoby tam kilkanaście
+ * tysięcy wierszy przy każdym wejściu w zakładkę.
+ */
+const HISTORY_DAYS = 14;
 
 /**
  * Domyślna godzina nocnego czyszczenia listy (0–23).

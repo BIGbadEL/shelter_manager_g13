@@ -26,6 +26,8 @@ function makeSheet(name, rows){
       return 0;
     },
     getMaxColumns(){ return widthOf(); },
+    // używane przez applyTextFormats_() — bez tego setup()/migrate() nie dawały się przetestować
+    getMaxRows(){ return Math.max(data.length, 1); },
     insertColumnsAfter(after, n){ data.forEach(r=>{ pad(r, after); for(let i=0;i<n;i++) r.splice(after,0,''); }); },
     setFrozenRows(){},
     appendRow(row){ data.push(row.slice()); },
@@ -121,8 +123,9 @@ function makeContext(opts){
   const expose = `
     ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, setResetHour,
                           resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup,
-                          reserve, markWalked, setFree, undoFirstWalk };
-    ;globalThis.__conf = { PIN, DOG, DOG_WIDTH, DOG_HEADERS };
+                          reserve, markWalked, setFree, undoFirstWalk,
+                          readHistory_, getHistory, histCount_, checkPin, requirePin_, pin_ };
+    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
   return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers };

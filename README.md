@@ -7,9 +7,9 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | Plik | Rola |
 |---|---|
 | `appsscript.json` | manifest projektu — strefa czasowa Europe/Warsaw, ustawienia web appki |
-| `Config.gs` | PIN, nazwy zakładek, układ kolumn, limity — jedyne miejsce edycji przy zmianach struktury |
+| `Config.gs` | nazwy zakładek, układ kolumn, limity, okno Historii — jedyne miejsce edycji przy zmianach struktury |
 | `Utils.gs` | wspólne pomocnicze (blokada zapisu, konwersje dat/godzin, walidacje) |
-| `Settings.gs` | godzina czyszczenia listy (Script Properties) + przekładanie wyzwalacza |
+| `Settings.gs` | Script Properties: PIN i godzina czyszczenia listy + przekładanie wyzwalacza |
 | `Setup.gs` | `setup()`, `migrate()`, `installTriggers()`, formaty tekstowe kolumn |
 | `WebApp.gs` | `doGet()`, `include()`, API odczytu (`getData`, `getHistory`, `checkPin`) |
 | `Dogs.gs` | psy: odczyt + akcje wolontariuszy i prowadzącej |
@@ -18,7 +18,7 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios6`) + harness backendu na atrapie arkusza (`backend.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios7`) + harness backendu na atrapie arkusza (`backend.js`) |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`
@@ -45,7 +45,8 @@ Dwa harnessy. Frontendowy ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, k
 ## Uruchomienie od zera
 
 1. Wklej wszystkie pliki do projektu Apps Script przypiętego do arkusza (nazwy plików HTML muszą być dokładnie `Index`, `Styles`, `Script`).
-2. W `Config.gs` ustaw własny `PIN`.
+2. Ustaw PIN: *Ustawienia projektu → Właściwości skryptu → dodaj właściwość `pin`* o własnej wartości.
+   Bez niej tryb edycji jest zamknięty (patrz niżej — PIN celowo nie istnieje w kodzie).
 3. Uruchom ręcznie **`setup()`** (zakładki + formaty + przykładowe psy).
 4. Uruchom ręcznie **`installTriggers()`** — bez tego Historia będzie pusta, a lista nie wyzeruje się o 22:00.
 5. Wdróż: *Aplikacja internetowa*, „wykonaj jako: ja", „dostęp: wszyscy".
@@ -119,6 +120,35 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, a zapis
 
 **Wygaszanie starych odpowiedzi**: każdy pies/zadanie ma licznik zapisów w drodze (`pendingKeys`). Odpowiedź serwera jest stosowana tylko wtedy, gdy dotyczy **ostatniej** operacji dla danego bytu — starsza odpowiedź (np. na „zarezerwuj”, gdy lokalnie już kliknięto „zwolnij”) jest ignorowana. Dzięki temu przy szybkich sekwencjach widok nigdy nie „przeskakuje” wstecz. Dopóki byt ma zapis w drodze, przy jego nazwie kręci się dyskretny wskaźnik „zapisuję…”; pełny stan z akcji prowadzącej również czeka z nadpisaniem, aż kolejka się opróżni.
 
+## PIN trybu edycji
+
+PIN **nie istnieje w kodzie**. Mieszka we właściwości skryptu `pin` — tam, gdzie godzina
+czyszczenia (*Apps Script → Ustawienia projektu → Właściwości skryptu*). Zmiana nie wymaga
+wdrożenia i nie zostawia śladu w repozytorium.
+
+Nie ma wartości domyślnej i nie będzie: PIN wpisany do pliku trafia do historii gita przy
+pierwszym commicie i przestaje być tajemnicą — usunięcie go późniejszym commitem niczego
+nie cofa, bo stara wersja pliku zostaje w historii. Dopóki właściwość nie jest ustawiona,
+`checkPin` zwraca `false`, akcje edycyjne rzucają błędem, a `setup()` wypisuje o tym
+komunikat w logu. Wolontariusze nie odczuwają tego wcale — ich część aplikacji nie używa PIN-u.
+
+Warto wiedzieć: `checkPin` to publiczny endpoint bez limitu prób, więc czterocyfrowy PIN
+broni się głównie tym, że nikt nie zna adresu aplikacji. Dłuższa wartość kosztuje tyle samo.
+
+## Historia — ostatnie 14 dni
+
+Zakładka „Historia" dostaje z serwera **ostatnie `HISTORY_DAYS` dni** (domyślnie 14,
+`Config.gs`). Arkusz trzyma komplet i nic z niego nie znika — to tylko granica tego,
+co ma sens ładować na telefon: przy trzydziestu psach Historia rośnie o kilkanaście
+tysięcy wierszy rocznie, a wcześniej całość szła do przeglądarki przy każdym wejściu
+w zakładkę.
+
+Serwer czyta najpierw samą kolumnę dat, idzie od dołu i liczy **różne dni** — dopiero
+wyliczony kawałek pobiera w pełnej szerokości. Dni, a nie stała liczba wierszy, bo liczba
+spacerów dziennie zależy od wielkości grupy: „ostatnie 400 wierszy" raz znaczyłoby miesiąc,
+a raz trzy dni. Na dole listy widnieje informacja o zakresie, żeby starsze dni nie wyglądały
+na skasowane. Licznik wpisów w Panelu pokazuje **komplet** z arkusza, nie widoczny wycinek.
+
 ## Godzina czyszczenia listy
 
 Domyślnie 22:00 (`DEFAULT_RESET_HOUR` w `Config.gs`). Prowadząca zmienia ją bez ruszania kodu: **⚙️ + PIN → zakładka „Panel" → Ustawienia**. Wybór zapisuje się w Script Properties i od razu **przekłada wyzwalacz** `endOfDay` (`setResetHour()` w `Settings.gs`).
@@ -142,6 +172,15 @@ Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wted
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
 
 ## Naprawione bugi (changelog)
+
+**PIN w kodzie i Historia bez granicy:**
+- **PIN leżał jako stała w `Config.gs`**, czyli w repozytorium na GitHubie — kto zaglądał
+  do kodu, miał tryb edycji. Teraz jest właściwością skryptu, bez wartości domyślnej.
+  Samo przeniesienie nie wystarczy: stara wartość zostaje w historii gita, więc liczy się
+  ustawienie **nowej**.
+- **Historia szła do przeglądarki w całości** przy każdym wejściu w zakładkę — rosnąca
+  bez końca lista, którą telefon musiał pobrać i przerobić. Teraz jedzie ostatnie 14 dni,
+  a serwer czyta tylko odpowiedni kawałek arkusza zamiast wszystkiego.
 
 **Ponawiany zapis psuł pierwszy z dwóch spacerów:**
 - Wolontariusz odhaczał 1. spacer psa 2-spacerowego, zapis dochodził do arkusza, ale odpowiedź
