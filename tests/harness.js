@@ -50,7 +50,9 @@ function buildApp(opts){
   const script = extract('Script.html','script');
   const errors = [];
   window.addEventListener('error', e => errors.push(e.error && e.error.message || e.message));
-  const exposed = script + '\n;window.__dbg = () => ({sending: isSending(), queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>d.status+":"+d.who), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { [...inflight.values()].forEach(s=>{ s.at = 0; }); };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render(); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__state = state;';
+  const exposed = script + '\n;window.__dbg = () => ({sending: isSending(), queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>d.status+":"+d.who), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { [...inflight.values()].forEach(s=>{ s.at = 0; }); };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render(); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__state = state;'
+    + '\n;window.__settle = () => { lastTapAt = 0; render(); };'          // udaje ciszę po dotknięciu ekranu
+    + '\n;window.__order = () => [...viewEl.querySelectorAll("li.dog")].map(li => Number(li.dataset.dog));';
   try { window.eval(exposed); } catch(e){ errors.push('EVAL: '+e.message); }
 
   return {

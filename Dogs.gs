@@ -202,6 +202,66 @@ function updateDog(id, data, pin) {
   });
 }
 
+/** Dozwolona liczba spacerów dziennie. Śmieci odrzucamy, zamiast po cichu naprawiać. */
+function validWalks_(walks) {
+  const w = Number(walks);
+  if (w !== 1 && w !== 2) throw new Error('Liczba spacerów musi wynosić 1 albo 2');
+  return w;
+}
+
+/**
+ * Przestawia CAŁĄ listę na 1 albo 2 spacery dziennie.
+ * Schronisko dopuszcza drugi spacer przy upałach, decyzja bywa z godziny na
+ * godzinę, a przeklikiwanie trzydziestu psów z osobna odpada.
+ *
+ * Sama kolumna to za mało, bo w środku dnia część psów ma już coś odbyte:
+ *  - włączamy 2 spacery: pies „wyprowadzony" (miał jeden spacer) staje się psem
+ *    po PIERWSZYM z dwóch — wraca na „wolny", a odbyty spacer ląduje w kto1/godzina1,
+ *    dokładnie tak, jak zapisałby to markWalked;
+ *  - wracamy do 1 spaceru: pies „wolny" po pierwszym z dwóch ma swoje z głowy,
+ *    więc staje się „wyprowadzony" tym właśnie spacerem.
+ *
+ * Czego NIE ruszamy: psów zarezerwowanych (ktoś je właśnie prowadzi — zmiana
+ * statusu pod ręką wolontariusza byłaby wrogim gestem) oraz psa, który ma już
+ * oba spacery odbyte (skasowanie kto1 zabrałoby Historii jeden z nich).
+ *
+ * Wywołanie dwa razy z tą samą wartością nie zmienia niczego drugi raz —
+ * dlatego zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
+ */
+function setAllWalks(walks, pin) {
+  requirePin_(pin);
+  const w = validWalks_(walks);
+  return withLock_(() => {
+    const sh = ss_().getSheetByName(SHEETS.DOGS);
+    const last = sh.getLastRow();
+    if (last < 2) return getData();
+
+    const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
+    vals.forEach(r => {
+      if (r[DOG.ID - 1] === '' || r[DOG.ID - 1] === null) return;
+      const status = String(r[DOG.STATUS - 1]);
+      const firstDone = String(r[DOG.WHO1 - 1] || '') !== '';
+      r[DOG.WALKS - 1] = w;
+
+      if (w === 2 && status === STATUS.WALKED && !firstDone) {
+        r[DOG.WHO1 - 1]  = String(r[DOG.WHO - 1] || '');
+        r[DOG.TIME1 - 1] = cellTime_(r[DOG.TIME - 1]);
+        r[DOG.STATUS - 1] = STATUS.FREE;
+        r[DOG.WHO - 1] = '';
+        r[DOG.TIME - 1] = '';
+      } else if (w === 1 && status === STATUS.FREE && firstDone) {
+        r[DOG.WHO - 1]  = String(r[DOG.WHO1 - 1] || '');
+        r[DOG.TIME - 1] = cellTime_(r[DOG.TIME1 - 1]);
+        r[DOG.STATUS - 1] = STATUS.WALKED;
+        r[DOG.WHO1 - 1] = '';
+        r[DOG.TIME1 - 1] = '';
+      }
+    });
+    sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
+    return getData();
+  });
+}
+
 function removeDog(id, pin) {
   requirePin_(pin);
   return withLock_(() => {

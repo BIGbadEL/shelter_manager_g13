@@ -79,6 +79,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
   w `try/catch` z samonaprawą. Tor zwalniany **przed** jakąkolwiek logiką odpowiedzi.
+- **Kolejność kafelków: wolne → zarezerwowane → wyprowadzone**, ale przeliczana wyłącznie
+  wtedy, gdy nikt nie jest w trakcie (`canReorder()`: zero zapisów w drodze, nic nie jest
+  otwarte do edycji, `REORDER_QUIET_MS` = 4 s ciszy po ostatnim dotknięciu ekranu).
+  Klik zmienia kafelek **w miejscu** przez `patchDog()`; lista układa się dopiero po ciszy,
+  z timera umówionego w `markTap()`. Gdyby sortować od razu, pies uciekałby spod palca
+  w środku akcji — a wolontariusz stoi wtedy z psem na smyczy.
 - **Oszczędne renderowanie.** Akcja na psie podmienia tylko jego kafelek (`patchDog()`)
   plus linijkę podsumowania. Pełny render porównuje HTML z poprzednim i przy braku
   różnic nie dotyka DOM. Ręczna zmiana DOM (otwarcie pola „Twoje imię") unieważnia
@@ -94,7 +100,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **263 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **323 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`)
@@ -111,8 +117,10 @@ i dopiero czerwony wynik uznaj za dowód, że test faktycznie pilnuje tej regres
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery,
 S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin notatki,
-S39 numer spaceru w `markWalked`, S40–S42 widok Historii, B1–B6 backend,
-B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 okno Historii.
+S39 numer spaceru w `markWalked`, S40–S42 widok Historii, S43–S45 kolejność kafelków
+i jej zamrożenie, S46 przełącznik dwóch spacerów, B1–B6 backend, B7–B8 idempotencja
+`markWalked`, B9 PIN z właściwości, B10 okno Historii, B11–B12 `setAllWalks`,
+B13–B14 pełny dzień psa 2-spacerowego i cofanie.
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -188,6 +196,14 @@ autoryzacji** przy pierwszym uruchomieniu.
   ustawiona jest **inna, nowa wartość**, i że trafiła do prowadzącej kanałem innym
   niż WhatsApp, którym szła poprzednia.
 - Kartki zostają jako zapas na czas testów.
+- **Do zrobienia: kolorystyka w pełnym słońcu.** Zgłoszone z terenu — na dworze, przy
+  ostrym świetle, kontrast jest za słaby i ekranu nie da się odczytać. Dotyczy palety
+  w `Styles.html` (`--paper`, `--card`, `--muted`, kolory trudności). Świadomie odłożone,
+  nie jest zapomniane. Przy tym temacie pamiętaj, że rozjaśnianie tła nie wystarczy —
+  liczy się kontrast tekstu i to, żeby kolory trudności dało się rozróżnić w słońcu.
+- **Do rozstrzygnięcia:** na kafelku psa 2-spacerowego wciąż jest `1. spacer: Ania · 10:15`.
+  Godzinę z kafelka „wyprowadzony" usunęliśmy jako zbędną — ta linijka jest tego samego
+  rodzaju i przy włączonym trybie dwóch spacerów robi się jej dużo.
 
 ## Jak ze mną pracować
 

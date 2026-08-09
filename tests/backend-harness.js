@@ -123,7 +123,7 @@ function makeContext(opts){
   const expose = `
     ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, setResetHour,
                           resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup,
-                          reserve, markWalked, setFree, undoFirstWalk,
+                          reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
                           readHistory_, getHistory, histCount_, checkPin, requirePin_, pin_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS };
   `;

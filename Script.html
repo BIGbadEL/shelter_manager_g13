@@ -121,7 +121,7 @@
   function isSending(){ return inflight.size > 0; }
 
   /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour']);
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour','setAllWalks']);
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -284,6 +284,54 @@
       if(typeof res.days === 'number') state.historyDays=res.days;
       if(state.view==='history') render();
     }).getHistory();
+  }
+
+  /* =========================================================
+     KOLEJNOŚĆ KAFELKÓW
+     Wolne na górze, zarezerwowane pod nimi, wyprowadzone na dole.
+
+     Sęk nie w tym, JAK posortować, tylko KIEDY. Gdyby lista układała się
+     w chwili kliknięcia, pies uciekałby spod palca w środku akcji — a wolontariusz
+     stoi z psem na smyczy i nie ma jak dojść, co się właśnie stało. Dlatego
+     kolejność jest zamrożona, dopóki cokolwiek się dzieje: trwa zapis, otwarte
+     jest pole z imieniem albo ekran był dotykany przed chwilą. Kliknięty kafelek
+     zmienia się w miejscu (patchDog), a lista układa się dopiero wtedy, gdy ręce
+     znieruchomieją — więc seria szybkich rezerwacji idzie bez ani jednego skoku.
+     ========================================================= */
+  const GROUP = { free:0, reserved:1, walked:2 };
+  const REORDER_QUIET_MS = 4000;   // tyle ciszy po ostatnim dotknięciu ekranu
+  let order = [];                  // id psów w kolejności wyświetlania
+  let lastTapAt = 0;
+  let reorderTimer = null;
+
+  function groupOf(dog){ const g = GROUP[dog.status]; return g === undefined ? 0 : g; }
+
+  function canReorder(){
+    if(pendingKeys.size || queue.length || inflight.size) return false;
+    if(busyEditing()) return false;
+    return (Date.now() - lastTapAt) > REORDER_QUIET_MS;
+  }
+
+  /** Dotknięcie ekranu odsuwa przestawienie listy i umawia je na później. */
+  function markTap(){
+    lastTapAt = Date.now();
+    clearTimeout(reorderTimer);
+    reorderTimer = setTimeout(()=>{ if(canReorder()) safeRender(); }, REORDER_QUIET_MS + 200);
+  }
+
+  /** Psy w kolejności do wyświetlenia. Nową kolejność liczymy tylko wtedy, gdy wolno. */
+  function orderedDogs(){
+    if(canReorder()){
+      const base = new Map(state.dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
+      order = state.dogs.slice()
+        .sort((a,b)=> groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
+        .map(d=>d.id);
+    }
+    const byId = new Map(state.dogs.map(d=>[d.id,d]));
+    const out = [];
+    order.forEach(id=>{ const d = byId.get(id); if(d){ out.push(d); byId.delete(id); } });
+    byId.forEach(d=>out.push(d));   // pies spoza zapamiętanej kolejności (np. świeżo dodany) na koniec
+    return out;
   }
 
   /* =========================================================
@@ -477,7 +525,7 @@
     return `<li class="dog walked" data-dog="${dog.id}" style="border-left-color:${dm.color}">
       <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
       ${meta}
-      <div class="status"><span class="who">✓ ${esc(dog.who)} · ${esc(dog.time)}</span>
+      <div class="status"><span class="who">✓ ${esc(dog.who)}</span>
         <button class="btn ghost spacer" data-act="free" data-id="${dog.id}">Cofnij</button>
       </div></li>`;
   }
@@ -509,7 +557,7 @@
 
   function renderToday(){
     if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
-    const d=state.dogs;
+    const d=orderedDogs();
 
     let html=`
       <div class="diflegend">
@@ -554,6 +602,17 @@
         <div class="hint">Reset wykonuje się w ciągu tej godziny (Google uruchamia wyzwalacze
         w oknie ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59).
         Wtedy spacery trafiają do Historii, psy wracają na „wolny", a notatki znikają.</div>
+      </div>
+      <div class="panelbox">
+        <h3>Spacery dla wszystkich psów</h3>
+        <div class="adminrow">
+          <button class="btn add-btn" data-act="allWalks" data-walks="2">Wszystkie po 2 spacery</button>
+          <button class="btn ghost" data-act="allWalks" data-walks="1">Wszystkie po 1 spacerze</button>
+        </div>
+        <div class="hint">Do przestawienia całej listy naraz, gdy upał pozwala na drugi spacer.
+        Pies, który dziś już był wyprowadzony, przechodzi wtedy na „po pierwszym z dwóch"
+        i wraca na listę wolnych; przy powrocie do jednego spaceru dzieje się odwrotnie.
+        Psów, które ktoś właśnie prowadzi, to nie dotyka.</div>
       </div>` : '';
 
     const serverRows = d ? `
@@ -798,6 +857,15 @@
       el.value='';
       enqueue('addTask',[text,state.pin],{reconcile:applyFull_});
     }
+    if(act==='allWalks'){
+      const w = Number(btn.dataset.walks)===2 ? 2 : 1;
+      if(!confirm(w===2 ? 'Ustawić DWA spacery dziennie dla wszystkich psów?'
+                        : 'Wrócić do JEDNEGO spaceru dziennie dla wszystkich psów?')) return;
+      enqueue('setAllWalks',[w,state.pin],{reconcile:res=>{
+        applyFull_(res);
+        toast(w===2 ? 'Wszystkie psy: 2 spacery' : 'Wszystkie psy: 1 spacer');
+      }});
+    }
     if(act==='taskRemove'){
       const t=state.tasks.find(x=>x.id===id);
       if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
@@ -825,9 +893,11 @@
   setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
   // strażnik zawieszonych zapisów: cyklicznie...
   setInterval(checkStuck, 3000);
-  // ...i przy każdym dotknięciu ekranu (działa nawet gdy przeglądarka uśpiła timery)
-  document.addEventListener('pointerdown', checkStuck, true);
-  document.addEventListener('touchstart', checkStuck, true);
+  // ...i przy każdym dotknięciu ekranu (działa nawet gdy przeglądarka uśpiła timery).
+  // Przy okazji każde dotknięcie odsuwa przestawienie listy — patrz markTap().
+  function onTouch(){ checkStuck(); markTap(); }
+  document.addEventListener('pointerdown', onTouch, true);
+  document.addEventListener('touchstart', onTouch, true);
   // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden) return;

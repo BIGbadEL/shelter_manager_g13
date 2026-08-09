@@ -272,5 +272,138 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
   check('pusta historia: licznik zero', empty.api.histCount_()===0);
 })();
 
+/* ---------- B11: włączenie dwóch spacerów dla wszystkich ---------- */
+(()=>{
+  console.log('B11: setAllWalks(2) dla całej listy');
+  const env = build([
+    {id:1, name:'Borys'},                                                    // wolny
+    {id:2, name:'Luna', status:'walked', who:'Ala', time:'11:00'},           // już wyprowadzony
+    {id:3, name:'Rex',  status:'reserved', who:'Ola'},                       // ktoś go właśnie prowadzi
+    {id:4, name:'Cyra', walks:2, status:'walked', who:'Ela', time:'17:00',
+           who1:'Iza', time1:'09:00'},                                       // ma już oba spacery
+  ]);
+  env.api.setAllWalks(2, TEST_PIN);
+  const dogs = env.api.readDogs_();
+  const byId = id => dogs.filter(d => d.id === id)[0];
+
+  check('wszystkie psy po 2 spacery', dogs.every(d => d.walks === 2),
+    JSON.stringify(dogs.map(d => d.walks)));
+  check('wolny zostaje wolny', byId(1).status==='free' && byId(1).who1==='', JSON.stringify(byId(1)));
+  check('wyprowadzony wraca na wolny z pierwszym spacerem',
+    byId(2).status==='free' && byId(2).who1==='Ala' && byId(2).time1==='11:00' && byId(2).who==='',
+    JSON.stringify(byId(2)));
+  check('zarezerwowanego nie ruszamy', byId(3).status==='reserved' && byId(3).who==='Ola',
+    JSON.stringify(byId(3)));
+  check('psa po obu spacerach nie ruszamy',
+    byId(4).status==='walked' && byId(4).who==='Ela' && byId(4).who1==='Iza', JSON.stringify(byId(4)));
+
+  // zapis jest ponawiany po zaginionej odpowiedzi — powtórka nie ma prawa nic zmienić
+  const before = JSON.stringify(env.api.readDogs_());
+  env.api.setAllWalks(2, TEST_PIN);
+  check('powtórka niczego nie rusza', JSON.stringify(env.api.readDogs_())===before);
+
+  let threw = false;
+  try{ env.api.setAllWalks(2, 'zly-pin'); }catch(e){ threw = true; }
+  check('bez PIN-u ani rusz', threw);
+  [0, 3, 'abc', null].forEach(bad => {
+    let t = false;
+    try{ env.api.setAllWalks(bad, TEST_PIN); }catch(e){ t = true; }
+    check('odrzucona wartość ' + JSON.stringify(bad), t);
+  });
+})();
+
+/* ---------- B12: powrót do jednego spaceru ---------- */
+(()=>{
+  console.log('B12: setAllWalks(1) i Historia po powrocie');
+  const env = build([
+    {id:1, name:'Borys', walks:2, who1:'Ala', time1:'08:00'},                     // wolny po 1. z dwóch
+    {id:2, name:'Luna',  walks:2, status:'reserved', who:'Ola', who1:'Iza', time1:'08:30'},
+    {id:3, name:'Rex',   walks:2, status:'walked', who:'Ela', time:'17:00', who1:'Zu', time1:'09:00'},
+  ]);
+  env.api.setAllWalks(1, TEST_PIN);
+  const dogs = env.api.readDogs_();
+  const byId = id => dogs.filter(d => d.id === id)[0];
+
+  check('wszystkie psy po 1 spacerze', dogs.every(d => d.walks === 1));
+  check('po pierwszym z dwóch staje się wyprowadzony',
+    byId(1).status==='walked' && byId(1).who==='Ala' && byId(1).time==='08:00' && byId(1).who1==='',
+    JSON.stringify(byId(1)));
+  check('zarezerwowanego nie ruszamy', byId(2).status==='reserved' && byId(2).who==='Ola' && byId(2).who1==='Iza',
+    JSON.stringify(byId(2)));
+  check('pies po obu spacerach zachowuje oba', byId(3).who==='Ela' && byId(3).who1==='Zu',
+    JSON.stringify(byId(3)));
+
+  // najważniejsze: przełączenie trybu nie może zgubić odbytego spaceru
+  env.api.endOfDay();
+  const hist = env.sheets['Historia']._data.slice(1).filter(r => r[0]);
+  check('cztery wpisy w Historii', hist.length===4, JSON.stringify(hist));
+  check('spacer Ali zachowany', hist.some(r => r[2]==='Ala' && r[3]==='08:00'), JSON.stringify(hist));
+  check('pierwszy spacer Luny zachowany', hist.some(r => r[2]==='Iza'), JSON.stringify(hist));
+  check('oba spacery Rexa', hist.filter(r => r[1]==='Rex').length===2, JSON.stringify(hist));
+})();
+
+/* ---------- B13: pełny dzień psa 2-spacerowego na prawdziwym backendzie ---------- */
+(()=>{
+  console.log('B13: dwa spacery — pełny dzień i archiwizacja');
+  const env = build([{id:1, name:'Borys', walks:2}]);
+  env.api.reserve(1, 'Ania');
+  check('zarezerwowany', env.api.readDogs_()[0].status==='reserved');
+
+  env.api.markWalked(1, '', 1);
+  let d = env.api.readDogs_()[0];
+  check('po 1. spacerze znów wolny, spacer zapisany',
+    d.status==='free' && d.who==='' && d.who1==='Ania', JSON.stringify(d));
+
+  env.api.reserve(1, 'Bartek');
+  d = env.api.readDogs_()[0];
+  check('druga rezerwacja obok pierwszego spaceru',
+    d.status==='reserved' && d.who==='Bartek' && d.who1==='Ania', JSON.stringify(d));
+
+  env.api.markWalked(1, '', 2);
+  d = env.api.readDogs_()[0];
+  check('po 2. spacerze wyprowadzony', d.status==='walked' && d.who==='Bartek' && d.who1==='Ania',
+    JSON.stringify(d));
+
+  env.api.endOfDay();
+  const hist = env.sheets['Historia']._data.slice(1).filter(r => r[0]);
+  check('oba spacery w Historii, osobno i z osobami',
+    hist.length===2 && hist[0][2]==='Ania' && hist[1][2]==='Bartek', JSON.stringify(hist));
+  const after = env.api.readDogs_()[0];
+  check('po nocy wolny i wyzerowany',
+    after.status==='free' && after.who==='' && after.who1==='' && after.time1==='', JSON.stringify(after));
+  check('data ostatniego spaceru zapisana', after.lastWalk==='2026-08-04', String(after.lastWalk));
+  check('tryb dwóch spacerów przeżywa noc', after.walks===2);
+})();
+
+/* ---------- B14: pomyłki w trybie dwóch spacerów ---------- */
+(()=>{
+  console.log('B14: cofanie przy dwóch spacerach');
+  const env = build([{id:1, name:'Borys', walks:2}]);
+  env.api.reserve(1, 'Ania');
+  env.api.markWalked(1, '', 1);
+  env.api.undoFirstWalk(1);
+  const d = env.api.readDogs_()[0];
+  check('cofnięty 1. spacer znika bez śladu',
+    d.who1==='' && d.time1==='' && d.status==='free', JSON.stringify(d));
+
+  // dzień, w którym pies dostał tylko pierwszy spacer
+  env.api.reserve(1, 'Ola');
+  env.api.markWalked(1, '', 1);
+  env.api.endOfDay();
+  const hist = env.sheets['Historia']._data.slice(1).filter(r => r[0]);
+  check('sam pierwszy spacer trafia do Historii', hist.length===1 && hist[0][2]==='Ola',
+    JSON.stringify(hist));
+
+  // zwolnienie DRUGIEJ rezerwacji nie może skasować pierwszego spaceru
+  const env2 = build([{id:1, name:'Luna', walks:2}]);
+  env2.api.reserve(1, 'Ania');
+  env2.api.markWalked(1, '', 1);
+  env2.api.reserve(1, 'Bartek');
+  env2.api.setFree(1);
+  const d2 = env2.api.readDogs_()[0];
+  check('po zwolnieniu 2. rezerwacji pierwszy spacer żyje',
+    d2.status==='free' && d2.who==='' && d2.who1==='Ania', JSON.stringify(d2));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

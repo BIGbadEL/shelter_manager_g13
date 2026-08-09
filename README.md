@@ -18,7 +18,7 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios7`) + harness backendu na atrapie arkusza (`backend.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios8`) + harness backendu na atrapie arkusza (`backend.js`) |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`
@@ -164,6 +164,39 @@ Trzecia zakładka obok „Dziś" i „Historii", widoczna **tylko w trybie edycj
 
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
+## Kolejność psów na liście
+
+Wolne na górze, zarezerwowane pod nimi, wyprowadzone na dole — w obrębie grupy zostaje
+kolejność z arkusza.
+
+Cała trudność jest w tym, **kiedy** przestawiać. Gdyby lista układała się w chwili kliknięcia,
+pies uciekałby spod palca w środku akcji, a wolontariusz stoi wtedy z psem na smyczy i nie ma
+jak dojść, co się właśnie stało. Dlatego kolejność jest zamrożona, dopóki cokolwiek się dzieje:
+trwa zapis, otwarte jest pole z imieniem albo ekran był dotykany w ciągu ostatnich 4 sekund.
+Kliknięty kafelek zmienia się **w miejscu**, a lista układa się dopiero wtedy, gdy ręce
+znieruchomieją. Seria pięciu rezerwacji pod rząd idzie więc bez ani jednego skoku — łącznie
+z odświeżeniem w tle, które trafi akurat w środek serii.
+
+## Dwa spacery dla wszystkich jednym kliknięciem
+
+Przy upałach schronisko dopuszcza drugi spacer, a decyzja bywa z godziny na godzinę —
+przeklikiwanie trzydziestu psów z osobna odpada. W **Panelu** (tryb edycji) są dwa przyciski:
+*Wszystkie po 2 spacery* i *Wszystkie po 1 spacerze*.
+
+Przełącznik nie ogranicza się do przestawienia kolumny, bo w środku dnia część psów ma już
+coś odbyte:
+
+- **włączamy dwa spacery** — pies dziś wyprowadzony staje się psem po *pierwszym z dwóch*:
+  wraca na listę wolnych, a odbyty spacer ląduje w `kto1`/`godzina1`, dokładnie tak, jak
+  zapisałoby to zwykłe odhaczenie;
+- **wracamy do jednego** — pies wolny po pierwszym z dwóch ma swoje z głowy, więc staje się
+  wyprowadzony tym właśnie spacerem.
+
+Nietykalne zostają dwie grupy: psy właśnie prowadzone (zmiana statusu pod ręką wolontariusza
+byłaby wrogim gestem) oraz psy z obydwoma spacerami odbytymi — skasowanie `kto1` zabrałoby
+Historii jeden ze spacerów. Wywołanie dwa razy z tą samą wartością nie zmienia niczego drugi
+raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
+
 ## Notatki i dwa spacery
 
 - **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy najbliższym czyszczeniu — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
@@ -172,6 +205,14 @@ Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wted
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
 
 ## Naprawione bugi (changelog)
+
+**Pierwszy feedback z terenu:**
+- **Godzina spaceru zniknęła z kafelka** psa wyprowadzonego. Nie niosła nic, czego
+  wolontariusz potrzebuje na liście, a zagęszczała kafelek. W Historii, gdzie ma sens,
+  zostaje.
+- **Psy układają się według stanu** — wolne, zarezerwowane, wyprowadzone — ale nigdy
+  w chwili kliknięcia (patrz wyżej: kolejność zamrożona na czas akcji).
+- **Dwa spacery dla całej listy jednym kliknięciem** zamiast trzydziestu wejść w edycję psa.
 
 **PIN w kodzie i Historia bez granicy:**
 - **PIN leżał jako stała w `Config.gs`**, czyli w repozytorium na GitHubie — kto zaglądał
