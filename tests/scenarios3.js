@@ -92,4 +92,42 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   check('footer bez "wyznaczone osoby"', !/wyznaczone/.test(idx));
 })();
 
+/* ---------- S39: klient mówi serwerowi, KTÓRY to spacer ---------- */
+(()=>{
+  console.log('S39: markWalked niesie numer spaceru');
+  const app = buildApp();
+  app.seed({dogs:[dog2({status:'reserved',who:'Ania'})], tasks:[], today:'2026-07-08'});
+
+  app.click('[data-act="walk"]');                       // pierwszy z dwóch
+  check('slot 1 przy pierwszym spacerze',
+    app.pending[0].fn==='markWalked' && app.pending[0].args[2]===1, JSON.stringify(app.pending[0].args));
+
+  // odpowiedź ginie -> ponowienie MUSI nieść ten sam slot, inaczej serwer zrobi 2/2
+  app.window.__force();
+  app.window.document.dispatchEvent(new app.window.Event('pointerdown'));
+  const retry = app.pending[app.pending.length-1];
+  check('ponowienie z tym samym slotem',
+    retry.fn==='markWalked' && retry.args[2]===1, JSON.stringify(retry.args));
+  app.pending.shift();                                  // pierwsza odpowiedź już nie wróci
+  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});
+
+  // drugi spacer — inna osoba
+  app.click('[data-act="reserve"]'); app.type('[data-input="1"]','Bartek'); app.click('[data-act="confirm"]');
+  app.respondNext({dog: dog2({status:'reserved',who:'Bartek',who1:'Ania',time1:'10:15'})});
+  app.click('[data-act="walk"]');
+  check('slot 2 przy drugim spacerze',
+    app.pending[0].fn==='markWalked' && app.pending[0].args[2]===2, JSON.stringify(app.pending[0].args));
+  app.respondNext({dog: dog2({status:'walked',who:'Bartek',time:'15:40',who1:'Ania',time1:'10:15'})});
+  check('kolejka pusta', drained(app), JSON.stringify(app.state()));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  // pies 1-spacerowy zawsze odhacza ostatni spacer
+  const solo = buildApp();
+  solo.seed({dogs:[dogReserved('Ala')], tasks:[], today:'2026-07-08'});
+  solo.click('[data-act="walk"]');
+  check('pies 1-spacerowy: slot 2', solo.pending[0].args[2]===2, JSON.stringify(solo.pending[0].args));
+  solo.respondNext({dog: dogWalked('Ala','14:00')});
+  check('1-spacerowy bez błędów', solo.errors.length===0, solo.errors.join('; '));
+})();
+
 process.exit(failures ? 1 : 0);

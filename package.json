@@ -1,0 +1,11 @@
+{
+  "name": "g13-spacery",
+  "private": true,
+  "description": "Testy aplikacji G13 Spacery. Sam kod aplikacji mieszka w Apps Script — npm jest tu wyłącznie po to, żeby dało się uruchomić harnessy.",
+  "scripts": {
+    "test": "node tests/scenarios.js && node tests/scenarios2.js && node tests/scenarios3.js && node tests/scenarios4.js && node tests/scenarios5.js && node tests/scenarios6.js && node tests/backend.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

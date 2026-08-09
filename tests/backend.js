@@ -136,5 +136,60 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
   check('bez PIN-u ani rusz', threw && env.api.resetHour_()===6);
 })();
 
+/* ---------- B7: powtórzony markWalked (zaginiona odpowiedź + auto-retry) ---------- */
+(()=>{
+  console.log('B7: powtórzony markWalked nie psuje psa 2-spacerowego');
+  const statusOf = env => env.sheets['Psy']._data[1][5];
+  const whoOf    = env => env.sheets['Psy']._data[1][6];
+  const who1Of   = env => env.sheets['Psy']._data[1][11];
+
+  const env = build([{id:1, name:'Borys', walks:2, status:'reserved', who:'Ania'}]);
+  env.api.markWalked(1, '', 1);                 // pierwszy z dwóch spacerów
+  check('1. spacer zapisany', who1Of(env)==='Ania' && statusOf(env)==='free',
+    JSON.stringify(env.sheets['Psy']._data[1]));
+
+  // odpowiedź zginęła po drodze -> klient ponawia DOKŁADNIE to samo wywołanie
+  const again = env.api.markWalked(1, '', 1);
+  check('powtórka nie robi z psa wyprowadzonego', statusOf(env)==='free', String(statusOf(env)));
+  check('powtórka nie gubi 1. spacerowicza', who1Of(env)==='Ania', String(who1Of(env)));
+  check('powtórka nie wpisuje pustego "kto"', whoOf(env)==='', JSON.stringify(whoOf(env)));
+  check('powtórka oddaje prawdziwy stan', again.dog.status==='free' && again.dog.who1==='Ania',
+    JSON.stringify(again.dog));
+
+  // drugi spacer bierze kto inny — i jego odpowiedź też ginie
+  env.api.reserve(1, 'Bartek');
+  env.api.markWalked(1, '', 2);
+  check('2. spacer -> wyprowadzony', statusOf(env)==='walked' && whoOf(env)==='Bartek',
+    JSON.stringify(env.sheets['Psy']._data[1]));
+  env.api.markWalked(1, '', 2);
+  check('powtórka 2. spaceru nic nie zmienia', statusOf(env)==='walked' && whoOf(env)==='Bartek',
+    JSON.stringify(env.sheets['Psy']._data[1]));
+
+  // w Historii mają wylądować dokładnie dwa spacery, oba z osobą
+  env.api.endOfDay();
+  const hist = env.sheets['Historia']._data.slice(1).filter(r => r[0]);
+  check('dwa wpisy w Historii', hist.length===2, JSON.stringify(hist));
+  check('oba z osobą', hist.every(r => String(r[2]) !== ''), JSON.stringify(hist));
+})();
+
+/* ---------- B8: pies 1-spacerowy i wywołanie bez slotu ---------- */
+(()=>{
+  console.log('B8: slot 2 na psie 1-spacerowym + zgodność ze starym klientem');
+  const env = build([{id:1, name:'Borys', status:'reserved', who:'Ala'}]);
+  env.api.markWalked(1, '', 2);
+  const time = env.sheets['Psy']._data[1][7];
+  env.api.markWalked(1, '', 2);                 // ponowienie po zaginionej odpowiedzi
+  check('1-spacerowy: powtórka zachowuje osobę i godzinę',
+    env.sheets['Psy']._data[1][5]==='walked' && env.sheets['Psy']._data[1][6]==='Ala'
+    && env.sheets['Psy']._data[1][7]===time, JSON.stringify(env.sheets['Psy']._data[1]));
+
+  // karta otwarta jeszcze przed tym wdrożeniem wysyła wywołanie bez slotu
+  const old = build([{id:1, name:'Luna', walks:2, status:'reserved', who:'Ania'}]);
+  old.api.markWalked(1, '');
+  check('bez slotu: 1. spacer jak dotąd',
+    old.sheets['Psy']._data[1][11]==='Ania' && old.sheets['Psy']._data[1][5]==='free',
+    JSON.stringify(old.sheets['Psy']._data[1]));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

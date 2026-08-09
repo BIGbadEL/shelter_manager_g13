@@ -30,9 +30,15 @@ Konwencja: funkcje z sufiksem `_` są prywatne (niewywoływalne z przeglądarki)
 ## Testy
 
 ```bash
-npm install jsdom
-for f in scenarios scenarios2 scenarios3 scenarios4 scenarios5 scenarios6 backend; do node tests/$f.js; done
+npm install
 ```
+
+```bash
+npm test
+```
+
+Wymaga Node (sprawdzone na 24 LTS). `jsdom` to jedyna zależność i służy wyłącznie harnessom —
+kod aplikacji mieszka w Apps Script i o npm nie wie. Pojedynczy zestaw: `node tests/backend.js`.
 
 Dwa harnessy. Frontendowy ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, klika jak człowiek i pozwala sterować tym, kiedy (i czy w ogóle) odpowie „serwer". Backendowy (`backend-harness.js`) uruchamia prawdziwe pliki `.gs` na atrapie arkusza z zamrożonym zegarem — dzięki temu logikę nocnego resetu da się sprawdzić o dowolnej porze i dacie, bez czekania do 22:00.
 
@@ -81,6 +87,18 @@ Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wted
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
 
 ## Naprawione bugi (changelog)
+
+**Ponawiany zapis psuł pierwszy z dwóch spacerów:**
+- Wolontariusz odhaczał 1. spacer psa 2-spacerowego, zapis dochodził do arkusza, ale odpowiedź
+  ginęła po drodze (telefon w kieszeni, mrugnięcie sieci — scenariusz, pod który powstało całe
+  samoleczenie). Watchdog ponawiał wtedy `markWalked`, a serwer widział już wypełnione `kto1`
+  i szedł gałęzią „drugi spacer": pies robił się **wyprowadzony 2/2 po jednym spacerze**,
+  z pustym „kto", a do Historii wpadał wpis bez osoby. Drugiego spaceru nikt już nie brał.
+  Klient przekazuje teraz numer spaceru (`slot`), a serwer na powtórzonym wywołaniu oddaje
+  stan i niczego nie zapisuje — `markWalked` jest idempotentne w obie strony.
+- Bug siedział na styku warstw: harness frontendu odpowiada atrapą serwera, harness backendu
+  nie zna kolejki ponowień, więc żaden osobno nie mógł go zobaczyć. Doszły testy po obu
+  stronach (S39 oraz B7–B8), sprawdzone na starym kodzie — na nim są czerwone.
 
 **Termin ważności notatki:**
 - Notatka znikała *zawsze* przy najbliższym czyszczeniu, więc rzeczy planowane z wyprzedzeniem („w niedzielę spacer zapoznawczy”, wpisane w środę) nie dożywały swojego dnia. Doszła opcjonalna kolumna `notatka_do`; `endOfDay()` czyści notatkę tylko wtedy, gdy termin jest pusty albo już minął. Brak daty = dokładnie stare zachowanie.

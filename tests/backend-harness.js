@@ -120,7 +120,8 @@ function makeContext(opts){
   // kontekstu, a nie jako pole sandboxa — to, czego testy potrzebują, wystawiamy jawnie.
   const expose = `
     ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, setResetHour,
-                          resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup };
+                          resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup,
+                          reserve, markWalked, setFree, undoFirstWalk };
     ;globalThis.__conf = { PIN, DOG, DOG_WIDTH, DOG_HEADERS };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });

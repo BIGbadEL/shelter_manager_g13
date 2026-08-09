@@ -624,7 +624,11 @@
 
   function doWalk(id){
     const dog=findDog(id); if(!dog) return;
-    if(dog.walks===2 && !dog.who1){
+    // KTÓRY to spacer — wiemy tylko tutaj, w chwili kliknięcia, i musimy to powiedzieć
+    // serwerowi. Bez tego automatyczne ponowienie po zaginionej odpowiedzi robiło
+    // z pierwszego spaceru pełne 2/2 z pustym "kto" (markWalked jest w RETRIABLE).
+    const first = dog.walks===2 && !dog.who1;
+    if(first){
       // pierwszy z dwóch spacerów: zapisz i zwolnij psa na drugi
       dog.who1=dog.who; dog.time1=localHM();
       dog.status='free'; dog.who=''; dog.time='';
@@ -632,7 +636,7 @@
       dog.status='walked'; dog.time=localHM();
     }
     patchDog(id);
-    enqueue('markWalked',[id,''],{key:keyDog(id),reconcile:res=>{
+    enqueue('markWalked',[id,'',first?1:2],{key:keyDog(id),reconcile:res=>{
       if(res && res.dog) replaceDog(res.dog);
       if(!busyEditing()) patchDog(id);
     }});

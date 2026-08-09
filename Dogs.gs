@@ -74,32 +74,46 @@ function reserve(id, name) {
  * Pies na 2 spacery dziennie: pierwszy spacer zapisuje się w kto1/godzina1,
  * a pies wraca na "wolny" (do wzięcia drugi raz). Dopiero drugi spacer
  * przechodzi w pełny status "wyprowadzony".
+ *
+ * `slot` mówi, KTÓRY spacer odhaczamy: 1 = pierwszy z dwóch, 2 = ostatni
+ * (jedyny albo drugi). Klient wie to w chwili kliknięcia i musi to powiedzieć,
+ * bo to jedyne, co czyni ten zapis idempotentnym — a jest on automatycznie
+ * ponawiany po zaginionej odpowiedzi (na telefonie to codzienność).
+ * Bez slotu ponowienie pierwszego spaceru trafiało w gałąź "drugi spacer"
+ * (kto1 było już wypełnione) i robiło z psa wyprowadzonego 2/2 z pustym "kto",
+ * a do Historii wpadał wpis bez osoby. Brak slotu = stare zachowanie, dla
+ * karty otwartej jeszcze przed tym wdrożeniem.
  */
-function markWalked(id, name) {
+function markWalked(id, name, slot) {
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row < 0) return { dog: null };
     const r = readDogRow_(sh, row);
-    const who = clean_(name) || String(r[DOG.WHO - 1] || '');
     const needsTwo = Number(r[DOG.WALKS - 1]) === 2;
     const firstDone = String(r[DOG.WHO1 - 1] || '') !== '';
+    const first = needsTwo && (slot == null ? !firstDone : Number(slot) === 1);
 
-    if (needsTwo && !firstDone) {
-      r[DOG.WHO1 - 1] = who;
+    if (first) {
+      // powtórka zapisu, który już przeszedł — oddaj prawdę, niczego nie ruszaj
+      if (firstDone) return { dog: mapDogRow_(r) };
+      r[DOG.WHO1 - 1] = clean_(name) || String(r[DOG.WHO - 1] || '');
       r[DOG.TIME1 - 1] = now_();
       r[DOG.STATUS - 1] = STATUS.FREE;
       r[DOG.WHO - 1] = '';
       r[DOG.TIME - 1] = '';
       sh.getRange(row, DOG.STATUS, 1, 3).setValues([[STATUS.FREE, '', '']]);
       sh.getRange(row, DOG.WHO1, 1, 2).setValues([[r[DOG.WHO1 - 1], r[DOG.TIME1 - 1]]]);
-    } else {
-      r[DOG.STATUS - 1] = STATUS.WALKED;
-      r[DOG.WHO - 1] = who;
-      r[DOG.TIME - 1] = now_();
-      sh.getRange(row, DOG.STATUS, 1, 3)
-        .setValues([[r[DOG.STATUS - 1], r[DOG.WHO - 1], r[DOG.TIME - 1]]]);
+      return { dog: mapDogRow_(r) };
     }
+
+    // jw. — powtórzony ostatni spacer nie może przestawiać godziny ani imienia
+    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) return { dog: mapDogRow_(r) };
+    r[DOG.STATUS - 1] = STATUS.WALKED;
+    r[DOG.WHO - 1] = clean_(name) || String(r[DOG.WHO - 1] || '');
+    r[DOG.TIME - 1] = now_();
+    sh.getRange(row, DOG.STATUS, 1, 3)
+      .setValues([[r[DOG.STATUS - 1], r[DOG.WHO - 1], r[DOG.TIME - 1]]]);
     return { dog: mapDogRow_(r) };
   });
 }
