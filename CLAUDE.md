@@ -79,7 +79,14 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
   w `try/catch` z samonaprawą. Tor zwalniany **przed** jakąkolwiek logiką odpowiedzi.
-- **Kolejność kafelków: wolne → zarezerwowane → wyprowadzone**, ale przeliczana wyłącznie
+- **Kolejność kafelków: najpierw dorobek (`walksDone`), potem status.** Góra listy to
+  zawsze to, co dziś jeszcze nie zrobione. Sam status nie wystarcza, bo przy dwóch
+  spacerach „wolny" znaczy dwie różne rzeczy: pies, który nie wyszedł ani razu, i pies
+  po pierwszym spacerze. Ten drugi schodzi pod psy bez żadnego spaceru — także pod
+  **zarezerwowane**, bo tam spacer jest wciąż przed nami, a nie za nami. Dopiero wewnątrz
+  tego samego dorobku idzie status (wolny → zarezerwowany → wyprowadzony), a na końcu
+  kolejność z arkusza. Dla psów jednospacerowych wychodzi dokładnie to, co dotąd.
+  Kolejność jest przeliczana wyłącznie
   wtedy, gdy nikt nie jest w trakcie (`canReorder()`: zero zapisów w drodze, nic nie jest
   otwarte do edycji, `REORDER_QUIET_MS` = 4 s ciszy po ostatnim dotknięciu ekranu).
   Klik zmienia kafelek **w miejscu** przez `patchDog()`; lista układa się dopiero po ciszy,
@@ -118,7 +125,7 @@ i dopiero czerwony wynik uznaj za dowód, że test faktycznie pilnuje tej regres
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery,
 S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin notatki,
 S39 numer spaceru w `markWalked`, S40–S42 widok Historii, S43–S45 kolejność kafelków
-i jej zamrożenie, S46 przełącznik dwóch spacerów, B1–B6 backend, B7–B8 idempotencja
+i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów, B1–B6 backend, B7–B8 idempotencja
 `markWalked`, B9 PIN z właściwości, B10 okno Historii, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie.
 

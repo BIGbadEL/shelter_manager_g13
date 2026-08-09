@@ -319,12 +319,23 @@
     reorderTimer = setTimeout(()=>{ if(canReorder()) safeRender(); }, REORDER_QUIET_MS + 200);
   }
 
-  /** Psy w kolejności do wyświetlenia. Nową kolejność liczymy tylko wtedy, gdy wolno. */
+  /**
+   * Psy w kolejności do wyświetlenia. Nową kolejność liczymy tylko wtedy, gdy wolno.
+   *
+   * Najpierw liczy się, ILE SPACERÓW PIES MA JUŻ ODBYTYCH — góra listy to zawsze
+   * to, co dziś jeszcze nie zrobione. Sam status nie wystarczy, bo przy dwóch
+   * spacerach „wolny" znaczy dwie różne rzeczy: pies, który nie wyszedł ani razu,
+   * i pies, który ma już jeden spacer i czeka na drugi. Ten drugi ma schodzić pod
+   * psy bez żadnego spaceru — także pod te zarezerwowane, bo tam spacer wciąż
+   * jest przed nami, a nie za nami. Dopiero wewnątrz tego samego dorobku idzie
+   * status (wolny przed zarezerwowanym przed wyprowadzonym), a na końcu kolejność
+   * z arkusza. Dla psów jednospacerowych daje to dokładnie to, co dotąd.
+   */
   function orderedDogs(){
     if(canReorder()){
       const base = new Map(state.dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
       order = state.dogs.slice()
-        .sort((a,b)=> groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
+        .sort((a,b)=> walksDone(a)-walksDone(b) || groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
         .map(d=>d.id);
     }
     const byId = new Map(state.dogs.map(d=>[d.id,d]));

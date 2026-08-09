@@ -166,8 +166,15 @@ Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wted
 
 ## Kolejność psów na liście
 
-Wolne na górze, zarezerwowane pod nimi, wyprowadzone na dole — w obrębie grupy zostaje
-kolejność z arkusza.
+Najpierw liczy się, **ile spacerów pies ma już odbytych** — góra listy to zawsze to, co
+dziś jeszcze nie zrobione. Dopiero wewnątrz tego samego dorobku idzie status: wolne,
+zarezerwowane, wyprowadzone; a na końcu kolejność z arkusza.
+
+Sam status nie wystarcza, bo przy dwóch spacerach „wolny" znaczy dwie różne rzeczy: pies,
+który nie wyszedł ani razu, i pies po pierwszym spacerze, czekający na drugi. Ten drugi
+schodzi pod psy bez żadnego spaceru — także pod **zarezerwowane**, bo tam spacer jest
+wciąż przed nami, a nie za nami. Dla psów jednospacerowych wychodzi z tego dokładnie
+to samo, co przy sortowaniu po samym statusie.
 
 Cała trudność jest w tym, **kiedy** przestawiać. Gdyby lista układała się w chwili kliknięcia,
 pies uciekałby spod palca w środku akcji, a wolontariusz stoi wtedy z psem na smyczy i nie ma
@@ -212,6 +219,10 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
   zostaje.
 - **Psy układają się według stanu** — wolne, zarezerwowane, wyprowadzone — ale nigdy
   w chwili kliknięcia (patrz wyżej: kolejność zamrożona na czas akcji).
+- **Sortowanie po samym statusie mieszało szyki przy dwóch spacerach.** Pies po pierwszym
+  z dwóch wraca na „wolny", więc lądował na samej górze, nad psami, które nie wyszły
+  jeszcze ani razu — a bywało, że i nad zarezerwowanymi, które dopiero czekały na spacer.
+  Pierwszym kryterium jest teraz liczba odbytych spacerów, status dopiero drugim.
 - **Dwa spacery dla całej listy jednym kliknięciem** zamiast trzydziestu wejść w edycję psa.
 
 **PIN w kodzie i Historia bez granicy:**

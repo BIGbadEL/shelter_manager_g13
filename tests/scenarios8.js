@@ -130,5 +130,53 @@ const tap = app => app.window.document.dispatchEvent(new app.window.Event('point
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
+/* ---------- S47: przy dwóch spacerach liczy się dorobek, nie sam status ---------- */
+(()=>{
+  console.log('S47: pies po pierwszym spacerze schodzi pod psy bez spaceru');
+  const app = buildApp();
+  const d2 = o => dogFree(Object.assign({walks:2}, o));
+
+  // układ 1:1 z listy zgłoszonej z terenu
+  app.seed({dogs:[
+    d2({id:1, name:'Barwik'}),
+    d2({id:2, name:'Freja'}),
+    d2({id:3, name:'Finito',  who1:'Joanna',   time1:'19:59'}),                    // wolny, ale po 1. spacerze
+    d2({id:4, name:'Lego'}),
+    d2({id:5, name:'Marvel'}),
+    d2({id:6, name:'Witkacy', status:'reserved', who:'Grzesiek',
+        who1:'Grzesiek', time1:'20:00'}),                                          // zarezerwowany po 1. spacerze
+    d2({id:7, name:'Bibi',    status:'reserved', who:'Grzesiek'}),                  // zarezerwowany, bez spaceru
+    d2({id:8, name:'Ever',    status:'reserved', who:'Joanna'}),                    // j.w.
+    d2({id:9, name:'Siena',   status:'walked',   who:'Grzesiek',
+        who1:'Joanna', time1:'19:59'}),                                            // komplet 2/2
+  ], tasks:[], today:'2026-08-10'});
+
+  const o = app.window.__order();
+  const at = id => o.indexOf(id);
+  check('pełna kolejność', ord(app)==='[1,2,4,5,7,8,3,6,9]', ord(app));
+  check('Finito (1/2) pod Lego (0/2)',      at(3) > at(4), ord(app));
+  check('Finito (1/2) pod Everem (0/2)',    at(3) > at(8), ord(app));
+  check('Witkacy (1/2) pod Bibi (0/2)',     at(6) > at(7), ord(app));
+  check('Witkacy (1/2) pod Everem (0/2)',   at(6) > at(8), ord(app));
+  check('wolny przed zarezerwowanym w tym samym dorobku', at(5) < at(7), ord(app));
+  check('Finito (1/2) nad Witkacym (1/2, zajęty)', at(3) < at(6), ord(app));
+  check('komplet 2/2 na samym dole', at(9)===o.length-1, ord(app));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
+/* ---------- S48: psy jednospacerowe zachowują dotychczasową kolejność ---------- */
+(()=>{
+  console.log('S48: tryb jednego spaceru bez zmian');
+  const app = buildApp();
+  app.seed({dogs:[
+    dogFree({id:1, name:'A', status:'walked', who:'Ala'}),
+    dogFree({id:2, name:'B'}),
+    dogFree({id:3, name:'C', status:'reserved', who:'Ola'}),
+    dogFree({id:4, name:'D'}),
+  ], tasks:[], today:'2026-08-10'});
+  check('wolne, zarezerwowany, wyprowadzony', ord(app)==='[2,4,3,1]', ord(app));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
