@@ -1,17 +1,23 @@
 // Harness: ładuje prawdziwy Index+Styles+Script w jsdom, klika jak człowiek,
 // a odpowiedzi "serwera" dostarczamy ręcznie w dowolnej kolejności.
 const fs = require('fs');
+const path = require('path');
 const { JSDOM } = require('jsdom');
 
+// pliki aplikacji leżą piętro wyżej niż tests/ — liczone od tego pliku,
+// żeby testy działały z dowolnego katalogu i na dowolnej maszynie
+const ROOT = path.join(__dirname, '..');
+const src_ = (file)=>fs.readFileSync(path.join(ROOT, file),'utf8');
+
 function extract(file, tag){
-  const src = fs.readFileSync(`/home/claude/g13/${file}`,'utf8');
+  const src = src_(file);
   const m = src.match(new RegExp(`<${tag}>([\\s\\S]*)</${tag}>`));
   return m[1];
 }
 
 function buildApp(opts){
   opts = opts || {};
-  const bodyHtml = fs.readFileSync('/home/claude/g13/Index.html','utf8')
+  const bodyHtml = src_('Index.html')
     .match(/<body>([\s\S]*)<\?!= include\('Script'\); \?>/)[1];
 
   const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${bodyHtml}</body></html>`, {
@@ -73,8 +79,8 @@ function buildApp(opts){
   };
 }
 
-const dogFree     = (o)=>Object.assign({id:1,name:'Borys',ident:'',box:'',dif:'easy',status:'free',who:'',time:'',lastWalk:'',note:'',walks:1,who1:'',time1:''},o);
+const dogFree     = (o)=>Object.assign({id:1,name:'Borys',ident:'',box:'',dif:'easy',status:'free',who:'',time:'',lastWalk:'',note:'',walks:1,who1:'',time1:'',noteUntil:''},o);
 const dogReserved = (who)=>dogFree({status:'reserved',who});
 const dogWalked   = (who,time)=>dogFree({status:'walked',who,time:time||'14:00'});
 
-module.exports = { buildApp, dogFree, dogReserved, dogWalked };
+module.exports = { buildApp, dogFree, dogReserved, dogWalked, ROOT };

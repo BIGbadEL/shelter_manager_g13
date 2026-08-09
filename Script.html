@@ -360,9 +360,30 @@
     return `<div class="dogmeta">${pills.join(' ')}${pills.length&&bits.length?' ':''}${bits.join(' · ')}</div>`;
   }
 
-  /** Jednodniowa notatka przy psie (znika przy nocnym resecie). */
+  const WEEKDAY_TO = ['niedzieli','poniedziałku','wtorku','środy','czwartku','piątku','soboty'];
+
+  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08". */
+  function untilLabel(iso){
+    const d = new Date(iso+'T12:00:00');
+    if(isNaN(d.getTime())) return '';
+    const ago = daysAgo(iso);
+    if(ago === null) return '';        // brak daty serwera — nie ma jak policzyć "za ile dni"
+    const ahead = -ago;
+    if(ahead <= 0) return 'do dziś';
+    if(ahead === 1) return 'do jutra';
+    if(ahead <= 6) return 'do ' + WEEKDAY_TO[d.getDay()];
+    return 'do ' + String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0');
+  }
+
+  /**
+   * Notatka przy psie. Bez terminu znika przy najbliższym czyszczeniu (domyślnie),
+   * z terminem dostaje odznakę i dotrwa do wskazanego dnia włącznie.
+   */
   function dogNote(dog){
-    return dog.note ? `<div class="note">📌 ${esc(dog.note)}</div>` : '';
+    if(!dog.note) return '';
+    const lab = dog.noteUntil ? untilLabel(dog.noteUntil) : '';
+    const pill = lab ? ` <span class="until">${esc(lab)}</span>` : '';
+    return `<div class="note">📌 ${esc(dog.note)}${pill}</div>`;
   }
 
   function renderTasks(){
@@ -398,12 +419,18 @@
           <select data-ef="dif">${opts}</select>
         </div>
         <div class="adminrow">
-          <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka na dziś (znika o 22:00)">
+          <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka (np. zdjęcia o 12:00)">
+        </div>
+        <div class="adminrow">
+          <input type="date" data-ef="noteUntil" value="${esc(dog.noteUntil||'')}" min="${esc(state.today||'')}">
           <select data-ef="walks">
             <option value="1" ${dog.walks!==2?'selected':''}>1 spacer dziennie</option>
             <option value="2" ${dog.walks===2?'selected':''}>2 spacery dziennie</option>
           </select>
         </div>
+        <div class="hint">Pusta data = notatka znika przy najbliższym czyszczeniu, jak dotąd.
+        Datę ustaw tylko wtedy, gdy notatka ma dotrwać do konkretnego dnia — np. w środę
+        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.</div>
         <div class="adminrow">
           <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
           <button class="btn ghost" data-act="editCancel">Anuluj</button>
@@ -729,8 +756,13 @@
     if(act==='edit'){ state.editId=id; render(); }
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
-      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),note:ef('note'),walks:Number(ef('walks'))===2?2:1};
+      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),
+                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,noteUntil:ef('noteUntil')};
       if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
+      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // data bez notatki nic nie znaczy
+      if(fields.noteUntil && state.today && fields.noteUntil < state.today){
+        toast('Data notatki nie może być z przeszłości'); return;
+      }
       const dog=findDog(id);
       if(dog) Object.assign(dog, fields);           // optymistycznie od razu
       state.editId=null;

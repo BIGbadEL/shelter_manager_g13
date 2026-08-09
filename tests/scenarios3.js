@@ -1,4 +1,4 @@
-const { buildApp, dogFree, dogReserved, dogWalked } = require('./harness');
+const { buildApp, dogFree, dogReserved, dogWalked, ROOT } = require('./harness');
 let failures = 0;
 function check(name, cond, extra){
   if(cond){ console.log('  OK  ' + name); }
@@ -82,9 +82,9 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
 /* ---------- S18: porządki UI ---------- */
 (()=>{
   console.log('S18: nazewnictwo i footer');
-  const fs=require('fs');
-  const idx=fs.readFileSync('/home/claude/g13/Index.html','utf8');
-  const scr=fs.readFileSync('/home/claude/g13/Script.html','utf8');
+  const fs=require('fs'), path=require('path');
+  const idx=fs.readFileSync(path.join(ROOT,'Index.html'),'utf8');
+  const scr=fs.readFileSync(path.join(ROOT,'Script.html'),'utf8');
   check('brak "prowadzącej" w Index', !/prowadząc/i.test(idx));
   check('brak "PROWADZĄCEJ" w Script (UI)', !/PROWADZĄCEJ/.test(scr));
   check('placeholder to samo "PIN"', /placeholder="PIN"/.test(idx));

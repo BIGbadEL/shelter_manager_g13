@@ -43,7 +43,7 @@ function archiveDate_() {
  * (zakłada go installTriggers() — patrz Setup.gs i Settings.gs).
  * Robi trzy rzeczy:
  *   1. odbyte spacery (oba u psów 2-spacerowych) -> Historia + data w ostatni_spacer,
- *   2. wszystkie psy z powrotem na "wolny", jednodniowe notatki znikają,
+ *   2. wszystkie psy z powrotem na "wolny", notatki bez terminu znikają,
  *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień.
  * Do testów można uruchomić ręcznie z edytora.
  */
@@ -79,7 +79,12 @@ function archiveAndResetDogs_() {
     r[DOG.STATUS - 1] = STATUS.FREE;
     r[DOG.WHO - 1] = '';
     r[DOG.TIME - 1] = '';
-    r[DOG.NOTE - 1] = '';                                // notatka żyje tylko jeden dzień
+    // notatka bez terminu żyje jeden dzień; z terminem — do tego dnia włącznie
+    const until = cellDate_(r[DOG.NOTE_UNTIL - 1]);
+    if (!until || until <= today) {
+      r[DOG.NOTE - 1] = '';
+      r[DOG.NOTE_UNTIL - 1] = '';
+    }
     r[DOG.WHO1 - 1] = '';
     r[DOG.TIME1 - 1] = '';
   });

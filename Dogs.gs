@@ -26,6 +26,7 @@ function mapDogRow_(r) {
     walks:    Number(r[DOG.WALKS - 1]) === 2 ? 2 : 1,
     who1:     String(r[DOG.WHO1 - 1] || ''),
     time1:    cellTime_(r[DOG.TIME1 - 1]),
+    noteUntil: cellDate_(r[DOG.NOTE_UNTIL - 1]),
   };
 }
 
@@ -134,6 +135,19 @@ function setFree(id) {
 
 /* ---------- AKCJE EDYCYJNE — chronione PIN-em (zwracają pełny stan) ---------- */
 
+/**
+ * Termin ważności notatki ('yyyy-MM-dd' albo '').
+ * Pusto oznacza zachowanie domyślne: notatka znika przy najbliższym czyszczeniu.
+ * Data z przeszłości albo bez notatki nie ma sensu — normalizujemy do pustej,
+ * żeby w arkuszu nie zostawały terminy, których nikt już nie zobaczy.
+ */
+function noteUntil_(v, note) {
+  const s = clean_(v, 10);
+  if (!note || !s) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return s < today_() ? '' : s;
+}
+
 /** Wymusza: pies musi mieć imię LUB identyfikator (nowy pies bywa bez imienia). */
 function dogFields_(data) {
   const name  = clean_(data && data.name,  MAX_LEN.NAME);
@@ -142,7 +156,8 @@ function dogFields_(data) {
   const note  = clean_(data && data.note,  MAX_LEN.NOTE);
   const walks = Number(data && data.walks) === 2 ? 2 : 1;
   if (!name && !ident) throw new Error('Podaj imię lub nr identyfikacyjny');
-  return { name, ident, box, dif: validDif_(data && data.dif), note, walks };
+  return { name, ident, box, dif: validDif_(data && data.dif), note, walks,
+           noteUntil: noteUntil_(data && data.noteUntil, note) };
 }
 
 /** data = { name, ident, box, dif } — wszystko opcjonalne poza regułą wyżej. */
@@ -151,7 +166,8 @@ function addDog(data, pin) {
   const d = dogFields_(data);
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
-    sh.appendRow([nextId_(sh), d.name, d.ident, d.box, d.dif, STATUS.FREE, '', '', '', d.note, d.walks, '', '']);
+    sh.appendRow([nextId_(sh), d.name, d.ident, d.box, d.dif, STATUS.FREE, '', '', '',
+                  d.note, d.walks, '', '', d.noteUntil]);
     return getData();
   });
 }
@@ -166,6 +182,7 @@ function updateDog(id, data, pin) {
     if (row > 0) {
       sh.getRange(row, DOG.NAME, 1, 4).setValues([[d.name, d.ident, d.box, d.dif]]);
       sh.getRange(row, DOG.NOTE, 1, 2).setValues([[d.note, d.walks]]);
+      sh.getRange(row, DOG.NOTE_UNTIL).setValue(d.noteUntil);   // kolumna niesąsiadująca z notatką
     }
     return getData();
   });
