@@ -17,6 +17,7 @@
     editId:null,           // pies aktualnie edytowany w trybie edycji
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
     historyDays:14,        // ile ostatnich dni Historii przysyła serwer (limit z Config.gs)
+    env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
   };
   const viewEl = document.getElementById('view');
@@ -243,6 +244,23 @@
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
     if(typeof res.resetHour === 'number'){ state.resetHour = res.resetHour; showResetHour(); }
+    state.env = typeof res.env === 'string' ? res.env : '';
+    showEnv();
+  }
+
+  /**
+   * Pasek „środowisko testowe". Pokazujemy go wszędzie poza produkcją, czyli
+   * wszędzie tam, gdzie serwer NIE powiedział `prod` — brak deklaracji to też
+   * nie-produkcja (patrz env_() w Settings.gs).
+   *
+   * Do czasu pierwszej odpowiedzi serwera pasek zostaje schowany: inaczej
+   * produkcja mignęłaby ostrzeżeniem przy każdym otwarciu strony i po tygodniu
+   * nikt by na nie nie patrzył.
+   */
+  function showEnv(){
+    const bar = document.getElementById('envbar');
+    if(!bar) return;
+    bar.classList.toggle('hidden', !state.loaded || state.env === 'prod');
   }
 
   /** Nagłówek i stopka mówią o godzinie czyszczenia — musi iść za ustawieniem. */
@@ -627,6 +645,7 @@
       </div>` : '';
 
     const serverRows = d ? `
+      <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
       <div class="diagrow"><b>wyzwalacz resetu</b><span>${d.triggerInstalled ? 'aktywny ('+d.triggerCount+')' : 'BRAK — uruchom installTriggers()'}</span></div>
       <div class="diagrow"><b>godzina resetu</b><span>${String(d.resetHour).padStart(2,'0')}:00</span></div>
       <div class="diagrow"><b>czas serwera</b><span>${esc(d.serverDate)} ${esc(d.serverTime)}</span></div>

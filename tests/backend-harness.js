@@ -124,7 +124,7 @@ function makeContext(opts){
     ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, setResetHour,
                           resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup,
                           reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
-                          readHistory_, getHistory, histCount_, checkPin, requirePin_, pin_ };
+                          readHistory_, getHistory, histCount_, checkPin, requirePin_, pin_, env_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });

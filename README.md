@@ -108,6 +108,71 @@ Dwa wyjścia:
 
 Terminal otwarty przed instalacją Node nie zna jeszcze nowego `PATH` — wystarczy nowe okno.
 
+## Środowisko testowe
+
+Dwa osobne projekty Apps Script, każdy z własnym arkuszem, własnym linkiem i własnym PIN-em.
+Kod jest jeden — w tym repozytorium — i jedzie do obu tą samą drogą. Cokolwiek zrobisz
+w teście (rezerwacje, spacery, dodawanie i kasowanie psów), nie dotyka listy, z której
+w tej chwili korzystają wolontariusze.
+
+### Jak poznasz, gdzie jesteś
+
+Aplikacja, która **nie jest** produkcją, dokleja u góry pasiasty pasek „Środowisko testowe".
+Decyduje o tym właściwość skryptu `env`: pasek gaśnie **wyłącznie** przy wartości `prod`.
+
+Kierunek jest celowo odwrotny do odruchu. Projekt testowy powstaje przez skopiowanie
+produkcyjnego i nie ma własnych właściwości — gdyby to test musiał się oznaczać,
+zapomnienie dałoby środowisko testowe wyglądające jak produkcja, a wtedy ktoś kasuje psa
+„na teście", który testem nie jest. Przy tym kierunku zapomnienie daje pasek ostrzegawczy
+na produkcji: widać natychmiast i nikomu to nie szkodzi.
+
+> **Zanim wdrożysz tę zmianę na produkcję**, dodaj tam właściwość `env` = `prod`.
+> Inaczej wolontariusze zobaczą na prawdziwej liście pasek „środowisko testowe".
+
+### Założenie środowiska testowego (raz)
+
+1. Google Drive → arkusz produkcyjny → **Utwórz kopię**, nazwij np. „G13 Spacery — TEST".
+   Kopia zabiera ze sobą skrypt (dostaje własny identyfikator) razem z danymi, więc
+   testujesz na realistycznej liście psów.
+2. W kopii: **Rozszerzenia → Apps Script** → *Ustawienia projektu* → skopiuj
+   **Identyfikator skryptu** i zapisz w `.clasp.test.json` w katalogu projektu
+   (plik jest w `.gitignore`, tak samo jak produkcyjny):
+   ```json
+   { "scriptId": "IDENTYFIKATOR_SKRYPTU_TESTOWEGO", "rootDir": "." }
+   ```
+3. Tamże → **Właściwości skryptu**:
+   - dodaj `pin` (może, a nawet powinien być inny niż produkcyjny),
+   - **sprawdź, czy nie ma właściwości `env`** — jeśli przeniosła się wraz z kopią, usuń ją.
+     To ona decyduje o pasku, więc nie zakładaj, zobacz.
+4. **Wdróż → Nowe wdrożenie → Aplikacja internetowa**, „wykonaj jako: ja", „dostęp: wszyscy".
+   Powstały link to Twój adres testowy; identyfikator wdrożenia pokaże też
+   `npm run deployments:test`.
+5. **Nie uruchamiaj `installTriggers()` w projekcie testowym.** Inaczej testowa lista
+   wyzeruje się wieczorem w środku testów. Nocny reset sprawdzasz, uruchamiając `endOfDay()`
+   ręcznie z edytora — jego logika jest zresztą pokryta testami backendu przy zamrożonym zegarze.
+
+Kopia arkusza **nie zabiera** wyzwalaczy ani wdrożeń. Co do właściwości skryptu — nie zgaduj,
+zajrzyj (punkt 3).
+
+### Codzienna praca
+
+```bash
+npm run deploy:test -- <ID_WDROZENIA_TEST>
+```
+
+Testy, wysyłka plików, nowa wersja wdrożenia testowego. Klikasz w link testowy na telefonie
+i sprawdzasz na żywo, na prawdziwym urządzeniu i prawdziwym zasięgu.
+
+```bash
+npm run deploy -- <ID_WDROZENIA_PROD>
+```
+
+To samo na produkcji, dopiero gdy test wypadł dobrze. Oba wdrożenia są wersjonowane
+osobno, więc produkcja nie zmienia się ani o krok, dopóki sam jej nie ruszysz.
+
+Pomocnicze dla testu: `npm run files:test` (co poleci na serwer), `npm run push:test`
+(sama wysyłka, bez nowej wersji), `npm run deployments:test` (lista wdrożeń z numerami wersji).
+
 ## Migracja istniejącego arkusza
 
 Masz arkusz z danymi ze starszej wersji? Zamiast `setup()` uruchom raz **`migrate()`** — dołoży brakujące kolumny/zakładki i formaty tekstowe, danych nie kasuje. Potem `installTriggers()`.

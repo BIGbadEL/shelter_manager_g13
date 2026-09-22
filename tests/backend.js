@@ -405,5 +405,26 @@ const untilOf = (env,i)=>env.sheets['Psy']._data[i][13];
     d2.status==='free' && d2.who==='' && d2.who1==='Ania', JSON.stringify(d2));
 })();
 
+/* ---------- B15: oznaczenie środowiska ---------- */
+(()=>{
+  console.log('B15: env z właściwości skryptu');
+  const plain = build([{id:1, name:'Borys'}]);
+  check('bez właściwości: env puste', plain.api.env_()==='', JSON.stringify(plain.api.env_()));
+  check('bez właściwości: getData mówi, że to nie prod', plain.api.getData().env !== 'prod',
+    JSON.stringify(plain.api.getData().env));
+
+  const prod = build([{id:1, name:'Borys'}], {props:{env:'prod'}});
+  check('prod: env=prod', prod.api.getData().env==='prod');
+
+  const test = build([{id:1, name:'Borys'}], {props:{env:'test'}});
+  check('test: env=test', test.api.getData().env==='test');
+
+  // panel ma powiedzieć wprost, czego brak oznaczenia oznacza
+  check('diagnostyka nazywa brak oznaczenia',
+    /traktowane jak test/.test(plain.api.getDiagnostics(TEST_PIN).env),
+    plain.api.getDiagnostics(TEST_PIN).env);
+  check('diagnostyka na produkcji', prod.api.getDiagnostics(TEST_PIN).env==='prod');
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

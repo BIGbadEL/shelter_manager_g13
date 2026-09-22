@@ -3,11 +3,15 @@
   "private": true,
   "description": "Testy aplikacji G13 Spacery. Sam kod aplikacji mieszka w Apps Script — npm jest tu wyłącznie po to, żeby dało się uruchomić harnessy.",
   "scripts": {
-    "test": "node tests/scenarios.js && node tests/scenarios2.js && node tests/scenarios3.js && node tests/scenarios4.js && node tests/scenarios5.js && node tests/scenarios6.js && node tests/scenarios7.js && node tests/scenarios8.js && node tests/backend.js",
+    "test": "node tests/scenarios.js && node tests/scenarios2.js && node tests/scenarios3.js && node tests/scenarios4.js && node tests/scenarios5.js && node tests/scenarios6.js && node tests/scenarios7.js && node tests/scenarios8.js && node tests/scenarios9.js && node tests/backend.js",
     "files": "clasp status",
     "push": "clasp push -f",
     "deployments": "clasp list-deployments",
-    "deploy": "npm test && clasp push -f && clasp redeploy"
+    "deploy": "npm test && clasp push -f && clasp redeploy",
+    "files:test": "clasp -P .clasp.test.json status",
+    "push:test": "clasp -P .clasp.test.json push -f",
+    "deployments:test": "clasp -P .clasp.test.json list-deployments",
+    "deploy:test": "npm test && clasp -P .clasp.test.json push -f && clasp -P .clasp.test.json redeploy"
   },
   "devDependencies": {
     "@google/clasp": "^3.3.0",

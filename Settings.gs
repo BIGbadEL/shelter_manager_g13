@@ -10,6 +10,22 @@
 
 const PROP_RESET_HOUR = 'resetHour';
 const PROP_PIN = 'pin';
+const PROP_ENV = 'env';
+
+/**
+ * Które to środowisko. Liczy się dokładnie jedna wartość: `prod`.
+ *
+ * Uwaga na kierunek tej flagi — jest odwrotnie, niż podpowiada odruch.
+ * To PRODUKCJA musi się zadeklarować, a wszystko inne jest testem z urzędu.
+ * Projekt testowy powstaje przez skopiowanie arkusza produkcyjnego i nie ma
+ * własnych właściwości, więc gdyby to test musiał się oznaczać, zapomnienie
+ * dawałoby środowisko testowe wyglądające jak produkcja — a wtedy ktoś kasuje
+ * psa „na teście", który wcale nie jest testem. Przy tym kierunku zapomnienie
+ * daje pasek ostrzegawczy na produkcji: widać od razu i nikomu to nie szkodzi.
+ */
+function env_() {
+  return String(PropertiesService.getScriptProperties().getProperty(PROP_ENV) || '');
+}
 
 /**
  * PIN trybu edycji. Pusto = nie ustawiono, czyli tryb edycji niedostępny.

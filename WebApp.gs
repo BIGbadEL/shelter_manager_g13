@@ -20,7 +20,8 @@ function include(filename) {
  * "od wczoraj" liczyły się w polskiej strefie niezależnie od telefonu.
  */
 function getData() {
-  return { dogs: readDogs_(), tasks: readTasks_(), today: today_(), resetHour: resetHour_() };
+  return { dogs: readDogs_(), tasks: readTasks_(), today: today_(), resetHour: resetHour_(),
+           env: env_() };
 }
 
 /** Dane do panelu diagnostycznego (tylko tryb edycji — stąd PIN). */
@@ -32,6 +33,7 @@ function getDiagnostics(pin) {
     triggerInstalled: t.installed,
     triggerCount: t.count,
     timezone: tz_(),
+    env: env_() || '(nieoznaczone — traktowane jak test)',
     serverTime: now_(),
     serverDate: today_(),
     dogCount: readDogs_().length,

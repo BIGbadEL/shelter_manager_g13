@@ -8,3 +8,6 @@ node_modules/
 # Repozytorium jest na GitHubie, a identyfikator skryptu nie ma powodu tam być.
 # Jak go odtworzyć: README, sekcja o wdrożeniu.
 .clasp.json
+
+# to samo dla środowiska testowego (.clasp.test.json)
+.clasp.*.json

@@ -64,6 +64,11 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   tego nie cofa. Testy tego pilnują (B9 skanuje źródła).
 - **Historia jedzie do przeglądarki tylko za ostatnie `HISTORY_DAYS` dni.** Arkusz trzyma
   komplet. Liczniki w panelu mają pokazywać komplet (`histCount_()`), nie widoczny wycinek.
+- **Środowisko rozpoznajemy po właściwości `env` (`env_()` w `Settings.gs`), a flaga jest
+  odwrócona:** pasek „środowisko testowe" gaśnie wyłącznie przy wartości `prod`, wszystko
+  inne — łącznie z brakiem właściwości — jest testem z urzędu. Projekt testowy to kopia
+  produkcyjnego i nie ma własnych właściwości, więc gdyby to test musiał się oznaczać,
+  zapomnienie dawałoby test wyglądający jak produkcja. **Nie „naprawiaj" tego kierunku.**
 
 ## Architektura frontendu
 
@@ -107,7 +112,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **323 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **355 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`)
@@ -125,9 +130,10 @@ i dopiero czerwony wynik uznaj za dowód, że test faktycznie pilnuje tej regres
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery,
 S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin notatki,
 S39 numer spaceru w `markWalked`, S40–S42 widok Historii, S43–S45 kolejność kafelków
-i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów, B1–B6 backend, B7–B8 idempotencja
-`markWalked`, B9 PIN z właściwości, B10 okno Historii, B11–B12 `setAllWalks`,
-B13–B14 pełny dzień psa 2-spacerowego i cofanie.
+i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów, S49–S52 pasek środowiska testowego,
+B1–B6 backend, B7–B8 idempotencja `markWalked`, B9 PIN z właściwości,
+B10 okno Historii, B11–B12 `setAllWalks`, B13–B14 pełny dzień psa 2-spacerowego
+i cofanie, B15 oznaczenie środowiska.
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -173,6 +179,12 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
 
 Pliki jadą przez **clasp** (`npm run deploy -- <deploymentId> -d "opis"`), nie przez
 kopiowanie do edytora. Szczegóły i konfiguracja raz-na-maszynę: README.
+
+**Dwa środowiska.** Produkcja i test to dwa osobne projekty Apps Script, każdy z własnym
+arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik projektu
+`.clasp.test.json` i własne komendy (`deploy:test`, `push:test`, `files:test`,
+`deployments:test`) — jedyna różnica to `-P .clasp.test.json`. Nowa zmiana idzie najpierw
+na test, na produkcję dopiero po sprawdzeniu na telefonie. Pełna procedura zakładania: README.
 
 1. `npm run deploy -- <deploymentId>` — testy, wysyłka plików i nowa wersja
    **istniejącego** wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
