@@ -72,17 +72,24 @@ na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w re
 
    `.clasp.json` jest celowo w `.gitignore` — wskazuje konkretny projekt na konkretnym
    koncie, więc każda maszyna zakłada go sobie sama tym jednym krokiem.
-4. Sprawdź identyfikator wdrożenia (ten sam, który jest w linku do aplikacji): `npm run deployments`.
+4. Sprawdź, czy wszystko się zgadza: `npm run deployments` musi pokazać wdrożenie
+   z identyfikatorem wpisanym w `deploy:prod` w `package.json` (ten sam ciąg, co w linku do aplikacji).
 
-**Potem, przy każdej zmianie:**
+**Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
 ```bash
-npm run deploy -- AKfycb...TWOJE_ID_WDROZENIA -d "co się zmieniło"
+npm run deploy:prod
 ```
 
 To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki i podbija wersję *istniejącego*
 wdrożenia — link do aplikacji zostaje ten sam. Czerwony test przerywa całość, więc zepsuty kod
-nie ma jak wyjechać do wolontariuszy.
+nie ma jak wyjechać do wolontariuszy. Opis wersji jest opcjonalny: `npm run deploy:prod -- -d "co się zmieniło"`.
+
+Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` — to świadoma decyzja:
+nie ma argumentu, który dałoby się pomylić. Nie są tajemnicą, produkcyjny jest po prostu
+częścią linku, który dostają wolontariusze. Celowo **nie ma** gołego `npm run deploy` —
+każde wdrożenie musi nazwać swoje środowisko, a `tests/tooling.js` pilnuje, żeby komendy
+testowe nie miały jak dotknąć produkcji i odwrotnie.
 
 Pomocnicze: `npm run files` (co dokładnie poleci na serwer — warto zerknąć po dodaniu plików),
 `npm run push` (sama wysyłka, bez nowej wersji — zmiany widać wtedy tylko w edytorze, **nie** na linku),
@@ -93,8 +100,8 @@ Te odpalasz nadal ręcznie z edytora, i tylko wtedy, gdy zmieniła się struktur
 albo godzina resetu.
 
 **Uwaga:** `clasp deploy` bez `-i`/`redeploy` tworzy **nowe** wdrożenie z **nowym adresem** —
-stary link wolontariuszy przestałby dostawać zmiany. Dlatego `npm run deploy` używa `redeploy`
-z konkretnym identyfikatorem.
+stary link wolontariuszy przestałby dostawać zmiany. Dlatego `deploy:prod` i `deploy:test`
+używają `redeploy` z konkretnym identyfikatorem.
 
 ### Windows / PowerShell
 
@@ -157,18 +164,21 @@ zajrzyj (punkt 3).
 ### Codzienna praca
 
 ```bash
-npm run deploy:test -- <ID_WDROZENIA_TEST>
+npm run deploy:test
 ```
 
 Testy, wysyłka plików, nowa wersja wdrożenia testowego. Klikasz w link testowy na telefonie
 i sprawdzasz na żywo, na prawdziwym urządzeniu i prawdziwym zasięgu.
 
 ```bash
-npm run deploy -- <ID_WDROZENIA_PROD>
+npm run deploy:prod
 ```
 
 To samo na produkcji, dopiero gdy test wypadł dobrze. Oba wdrożenia są wersjonowane
 osobno, więc produkcja nie zmienia się ani o krok, dopóki sam jej nie ruszysz.
+
+Na nowej maszynie wystarczy odtworzyć dwa pliki projektu (`.clasp.json`, `.clasp.test.json` —
+oba poza repo) i zalogować clasp; identyfikatory wdrożeń są już w `package.json`.
 
 Pomocnicze dla testu: `npm run files:test` (co poleci na serwer), `npm run push:test`
 (sama wysyłka, bez nowej wersji), `npm run deployments:test` (lista wdrożeń z numerami wersji).

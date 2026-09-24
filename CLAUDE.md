@@ -112,7 +112,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **355 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **375 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`)
@@ -133,7 +133,7 @@ S39 numer spaceru w `markWalked`, S40–S42 widok Historii, S43–S45 kolejnoś�
 i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów, S49–S52 pasek środowiska testowego,
 B1–B6 backend, B7–B8 idempotencja `markWalked`, B9 PIN z właściwości,
 B10 okno Historii, B11–B12 `setAllWalks`, B13–B14 pełny dzień psa 2-spacerowego
-i cofanie, B15 oznaczenie środowiska.
+i cofanie, B15 oznaczenie środowiska, T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -177,17 +177,24 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
 
 ## Wdrożenie
 
-Pliki jadą przez **clasp** (`npm run deploy -- <deploymentId> -d "opis"`), nie przez
-kopiowanie do edytora. Szczegóły i konfiguracja raz-na-maszynę: README.
+Pliki jadą przez **clasp**, nie przez kopiowanie do edytora. Szczegóły i konfiguracja
+raz-na-maszynę: README.
 
 **Dwa środowiska.** Produkcja i test to dwa osobne projekty Apps Script, każdy z własnym
 arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik projektu
 `.clasp.test.json` i własne komendy (`deploy:test`, `push:test`, `files:test`,
-`deployments:test`) — jedyna różnica to `-P .clasp.test.json`. Nowa zmiana idzie najpierw
-na test, na produkcję dopiero po sprawdzeniu na telefonie. Pełna procedura zakładania: README.
+`deployments:test`) — jedyna różnica to `-P .clasp.test.json`. **Kolejność zawsze ta sama:
+`npm run deploy:test` → sprawdzenie na telefonie → `npm run deploy:prod`.**
 
-1. `npm run deploy -- <deploymentId>` — testy, wysyłka plików i nowa wersja
-   **istniejącego** wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
+Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` (decyzja właściciela:
+nie ma argumentu do pomylenia, a produkcyjny i tak jest częścią publicznego linku).
+Celowo **nie ma** gołego `deploy` — każde wdrożenie nazywa swoje środowisko.
+`tests/tooling.js` (T1–T3) pilnuje, że każde wywołanie clasp w komendzie `:test` ma
+`-P .clasp.test.json`, a komendy produkcyjne go nie mają. **Zmieniając skrypty w
+`package.json`, nie omijaj tego testu.**
+
+1. `npm run deploy:prod` — testy, wysyłka plików i nowa wersja **istniejącego**
+   wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
 2. **Właściwość skryptu `pin`** (Ustawienia projektu → Właściwości skryptu) — bez niej
    tryb edycji jest zamknięty. Ustawiana raz, poza kodem i poza repozytorium.
 3. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny
@@ -199,7 +206,8 @@ Pułapki clasp:
 - **`clasp clone` ściąga pliki z serwera i nadpisuje lokalne** — nigdy go nie używaj
   w tym repo. `.clasp.json` piszemy ręcznie, ruch idzie wyłącznie lokalnie → Apps Script.
 - **`clasp deploy` bez `-i` tworzy NOWE wdrożenie pod NOWYM adresem.** Stary link
-  wolontariuszy zostałby wtedy na starej wersji. Stąd `redeploy <deploymentId>`.
+  wolontariuszy zostałby wtedy na starej wersji. Stąd `redeploy <deploymentId>`
+  w obu komendach wdrożeniowych.
 - **`.claspignore` jest krytyczny** — bez niego `tests/*.js` (z `require`) wyjadą jako
   pliki projektu Apps Script. Po dodaniu nowego pliku sprawdź `npm run files`.
 - clasp nie odpala funkcji: `migrate()` / `installTriggers()` nadal ręcznie z edytora.
