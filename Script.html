@@ -10,13 +10,19 @@
   const WATCHDOG_MS = 12000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony (i raz ponawiamy)
 
   const state = {
-    dogs:[], tasks:[], history:[],
-    today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
-    view:"today",          // today | history | diag
+    dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `walks`
+    walks:{},              // stan psa danego dnia: `${data}|${id}` -> {status, who, time, who1, time1}
+    tasks:[],
+    today:null,            // data kalendarzowa serwera (Europe/Warsaw) — do "od wczoraj" i terminów notatek
+    bizDate:null,          // bieżący dzień rezerwacyjny: od godziny resetu, nie od północy (businessDate_)
+    date:null,             // dzień wybrany strzałkami
+    follow:true,           // czy wybrany dzień idzie za bieżącym (po resecie przeskakuje sam)
+    past:{},               // minione dni do podglądu: data -> [{name, who, time}]
+    pastLoading:{},        // data -> kiedy poszło pytanie o nią
+    view:"today",          // today | diag
     admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie edycji
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
-    historyDays:14,        // ile ostatnich dni Historii przysyła serwer (limit z Config.gs)
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
   };
@@ -35,8 +41,36 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
   function findDog(id){ return state.dogs.find(x=>x.id===id); }
-  function replaceDog(d){ const i=state.dogs.findIndex(x=>x.id===d.id); if(i>=0) state.dogs[i]=d; }
   function localHM(){ const d=new Date(); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+  /* ---------- dzień psa ----------
+     Katalog mówi, KIM jest pies; `walks` mówi, co się z nim dzieje KONKRETNEGO DNIA.
+     Brak wpisu = pies tego dnia wolny. Rendering dostaje oba połączone w jeden obiekt,
+     więc kafelki nie muszą wiedzieć, że dni jest więcej niż jeden. */
+  const FREE_WALK = {status:'free', who:'', time:'', who1:'', time1:''};
+  function wkey(date, id){ return date+'|'+id; }
+  function walkOf(date, id){ return state.walks[wkey(date, id)] || FREE_WALK; }
+  function setWalk(date, id, w){
+    state.walks[wkey(date, id)] = {status:w.status||'free', who:w.who||'', time:w.time||'',
+                                   who1:w.who1||'', time1:w.time1||''};
+  }
+  function dogAt(id, date){ const d=findDog(id); return d ? Object.assign({}, d, walkOf(date, id)) : null; }
+  function dogsAt(date){ return state.dogs.map(d=>Object.assign({}, d, walkOf(date, d.id))); }
+
+  /* ---------- daty ---------- */
+  /** Data przesunięta o n dni — arytmetyka kalendarza w UTC, niezależna od strefy telefonu. */
+  function addDays(iso, n){
+    const p=iso.split('-').map(Number);
+    return new Date(Date.UTC(p[0], p[1]-1, p[2]+n)).toISOString().slice(0,10);
+  }
+  function dayDiff(from, to){ return Math.round((Date.parse(to) - Date.parse(from))/864e5); }
+  function isPast(iso){ return !!state.bizDate && iso < state.bizDate; }
+  function isFuture(iso){ return !!state.bizDate && iso > state.bizDate; }
+  function plural(n, one, few, many){
+    if(n===1) return one;
+    const d=n%10, t=n%100;
+    return (d>=2 && d<=4 && !(t>=12 && t<=14)) ? few : many;
+  }
 
   /** Ile dni temu (względem daty serwera) — null gdy brak danych. */
   function daysAgo(iso){
@@ -47,11 +81,6 @@
   function todayStr(){
     try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date());}
     catch(e){return "dziś";}
-  }
-  function fmtDate(iso){
-    // T12:00 zamiast północy — data nie przeskoczy na sąsiedni dzień przy dziwnej strefie telefonu
-    try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(iso+'T12:00:00'));}
-    catch(e){return iso;}
   }
   function toast(msg){
     const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -132,7 +161,8 @@
    * To eliminuje przeskoki przy szybkich sekwencjach (rezerwuj -> zwolnij).
    */
   const pendingKeys = new Map();
-  function keyDog(id){ return 'dog:'+id; }
+  /** Klucz psa to pies I dzień — rezerwacja na dziś i na sobotę to dwa różne byty, jadą równolegle. */
+  function keyDog(id, date){ return 'dog:'+id+'@'+(date||state.date); }
   function keyTask(id){ return 'task:'+id; }
   function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
 
@@ -243,6 +273,18 @@
      ========================================================= */
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+    const prevBiz = state.bizDate;
+    state.bizDate = res.businessDate || res.today;
+    state.walks = {};
+    if(Array.isArray(res.walks)) res.walks.forEach(w=>setWalk(w.date, w.dogId, w));
+    else res.dogs.forEach(d=>setWalk(state.bizDate, d.id, d));   // starszy serwer: stan tylko bieżącego dnia, wpisany w psy
+    if(prevBiz && prevBiz !== state.bizDate) state.past = {};    // wczorajszy „bieżący" dzień jest już miniony
+
+    // Kto pracował na bieżącym dniu, po resecie od razu pracuje na nowym — ale nie
+    // w chwili, gdy wpisuje imię albo edytuje psa: wtedy dojdzie przy kolejnym odświeżeniu.
+    if(!state.date || (state.follow && !busyEditing())) state.date = state.bizDate;
+    if(state.date === state.bizDate) state.follow = true;
+
     if(typeof res.resetHour === 'number'){ state.resetHour = res.resetHour; showResetHour(); }
     state.env = typeof res.env === 'string' ? res.env : '';
     showEnv();
@@ -293,15 +335,38 @@
       })
       .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
       .getData();
-    if(state.view==='history') fetchHistory();
   }
 
-  function fetchHistory(){
-    google.script.run.withSuccessHandler(res=>{
-      state.history=res.history;
-      if(typeof res.days === 'number') state.historyDays=res.days;
-      if(state.view==='history') render();
-    }).getHistory();
+  /**
+   * Minione dni (tylko podgląd) dociągamy blokami po dwa tygodnie wstecz od
+   * wybranego — kolejne stuknięcia strzałką w tył trafiają już w pamięć i nie
+   * czekają na serwer. Dzień, o który pytanie wisi dłużej niż watchdog, wolno
+   * pobrać od nowa; zamrożony ekran „Wczytuję…" nie może się zdarzyć.
+   */
+  const PAST_BLOCK = 14;
+  function fetchPast(date){
+    const now = Date.now();
+    if(state.past[date] || (state.pastLoading[date] && now - state.pastLoading[date] < WATCHDOG_MS)) return;
+    const from = addDays(date, -(PAST_BLOCK-1));
+    const days = [];
+    for(let d=from; d<=date; d=addDays(d,1)) days.push(d);
+    days.forEach(d=>{ state.pastLoading[d] = now; });
+    google.script.run
+      .withSuccessHandler(res=>{
+        const got = {};
+        days.forEach(d=>{ got[d] = []; delete state.pastLoading[d]; });
+        ((res && res.history) || []).forEach(e=>{ if(got[e.date]) got[e.date].push(e); });
+        Object.assign(state.past, got);
+        if(state.view==='today' && isPast(state.date)) safeRender();
+      })
+      .withFailureHandler(()=>{
+        days.forEach(d=>{ delete state.pastLoading[d]; });
+        if(state.view==='today' && state.date===date){
+          viewEl.innerHTML = '<div class="empty">Nie udało się wczytać tego dnia — spróbuj strzałką jeszcze raz.</div>';
+          invalidateHtml();
+        }
+      })
+      .getHistoryDays(from, date);
   }
 
   /* =========================================================
@@ -319,6 +384,7 @@
   const GROUP = { free:0, reserved:1, walked:2 };
   const REORDER_QUIET_MS = 4000;   // tyle ciszy po ostatnim dotknięciu ekranu
   let order = [];                  // id psów w kolejności wyświetlania
+  let orderDate = null;            // dzień, dla którego ta kolejność została policzona
   let lastTapAt = 0;
   let reorderTimer = null;
 
@@ -348,15 +414,20 @@
    * jest przed nami, a nie za nami. Dopiero wewnątrz tego samego dorobku idzie
    * status (wolny przed zarezerwowanym przed wyprowadzonym), a na końcu kolejność
    * z arkusza. Dla psów jednospacerowych daje to dokładnie to, co dotąd.
+   *
+   * Przejście strzałką na inny dzień to cała NOWA lista, nie pies uciekający
+   * spod palca — kolejność liczymy wtedy od razu, bez czekania na ciszę.
    */
   function orderedDogs(){
-    if(canReorder()){
-      const base = new Map(state.dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
-      order = state.dogs.slice()
+    const dogs = dogsAt(state.date);
+    if(orderDate !== state.date || canReorder()){
+      const base = new Map(dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
+      order = dogs.slice()
         .sort((a,b)=> walksDone(a)-walksDone(b) || groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
         .map(d=>d.id);
+      orderDate = state.date;
     }
-    const byId = new Map(state.dogs.map(d=>[d.id,d]));
+    const byId = new Map(dogs.map(d=>[d.id,d]));
     const out = [];
     order.forEach(id=>{ const d = byId.get(id); if(d){ out.push(d); byId.delete(id); } });
     byId.forEach(d=>out.push(d));   // pies spoza zapamiętanej kolejności (np. świeżo dodany) na koniec
@@ -378,13 +449,14 @@
   function render(){
     try{
       document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
+      const tabs = document.getElementById('adminTabs');
+      if(tabs) tabs.classList.toggle('hidden', !state.admin);
       const tabDiag = document.getElementById('tabDiag');
       if(tabDiag) tabDiag.classList.toggle('hidden', !state.admin);
       gear.classList.toggle('on',state.admin);
+      renderDateBar();
 
-      const html = state.view==='history' ? renderHistory()
-                 : state.view==='diag'    ? renderDiagView()
-                 : renderToday();
+      const html = state.view==='diag' ? renderDiagView() : renderDay();
       if(html !== lastHtml){ viewEl.innerHTML = html; lastHtml = html; }
     } catch(e){
       // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
@@ -401,9 +473,9 @@
    * przy każdym kliknięciu — na telefonie to widoczne szarpnięcie.
    */
   function patchDog(id){
-    if(state.view!=='today' || state.editId!==null){ render(); return; }
+    if(state.view!=='today' || state.editId!==null || isPast(state.date)){ render(); return; }
     const li  = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
-    const dog = findDog(id);
+    const dog = dogAt(id, state.date);
     if(!li || !dog){ render(); return; }
     li.outerHTML = renderDog(dog);
     const cnt = viewEl.querySelector('.count');
@@ -411,11 +483,72 @@
     invalidateHtml();
   }
 
-  /** Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie kolumny ostatni_spacer. */
+  /* ---------- pasek dnia ---------- */
+  const WEEKDAYS = ['niedziela','poniedziałek','wtorek','środa','czwartek','piątek','sobota'];
+  function fmtDay(iso){
+    // T12:00 zamiast północy — data nie przeskoczy na sąsiedni dzień przy dziwnej strefie telefonu
+    try{ return new Intl.DateTimeFormat('pl-PL',{day:'numeric',month:'long',year:'numeric'}).format(new Date(iso+'T12:00:00')); }
+    catch(e){ return iso; }
+  }
+  /** "dziś" / "jutro" / "wczoraj" / "za 3 dni" / "3 dni temu" — względem kalendarza, nie dnia rezerwacyjnego. */
+  function relDay(iso){
+    if(!state.today) return '';
+    const n = dayDiff(state.today, iso);
+    if(isNaN(n)) return '';
+    if(n===0) return 'dziś';
+    if(n===1) return 'jutro';
+    if(n===-1) return 'wczoraj';
+    return n>0 ? `za ${n} ${plural(n,'dzień','dni','dni')}` : `${-n} ${plural(-n,'dzień','dni','dni')} temu`;
+  }
+  /**
+   * Pasek żyje poza #view, więc nie bierze udziału w porównywaniu HTML listy —
+   * zmiana dnia to tylko kilka textContent. Poza bieżącym dniem etykieta
+   * jaśnieje i podpowiada powrót: wystarczy w nią stuknąć.
+   */
+  function renderDateBar(){
+    const name = document.getElementById('dayName');
+    const rel  = document.getElementById('dayRel');
+    const lab  = document.getElementById('dayLabel');
+    if(!name || !rel || !lab) return;
+    if(!state.date){ name.textContent='…'; rel.textContent=''; return; }
+    name.textContent = fmtDay(state.date);
+    const bits = [WEEKDAYS[new Date(state.date+'T12:00:00Z').getUTCDay()]];
+    const r = relDay(state.date);
+    if(r) bits.push(r);
+    if(state.date !== state.bizDate) bits.push('↩ wróć');
+    rel.textContent = bits.join(' · ');
+    lab.classList.toggle('away', state.date !== state.bizDate);
+    lab.classList.toggle('past', isPast(state.date));
+  }
+
+  /**
+   * Ostatni spacer psa: z katalogu (dopisuje go nocne czyszczenie) albo z dni,
+   * których czyszczenie jeszcze nie domknęło — między godziną resetu a chwilą,
+   * w której Google faktycznie odpali wyzwalacz, mija do godziny.
+   */
+  function lastWalkOf(dog){
+    let last = dog.lastWalk || '';
+    for(const k in state.walks){
+      const i = k.indexOf('|'), date = k.slice(0, i);
+      if(Number(k.slice(i+1))!==dog.id || !isPast(date)) continue;
+      const w = state.walks[k];
+      if((w.status==='walked' || w.who1) && date > last) last = date;
+    }
+    return last;
+  }
+
+  /**
+   * Odznaka "pies nie wyszedł poprzedniego dnia". Tylko na bieżącym dniu i liczona
+   * względem niego: po resecie pracujemy już na jutrze, więc „wczoraj" to dzień,
+   * który właśnie się skończył. Na dniach przyszłych nie ma sensu — do nich jeszcze
+   * wszystko może się zmienić.
+   */
   function missBadge(dog){
-    if(dog.status==='walked') return '';
-    const n = daysAgo(dog.lastWalk);
-    if(n===null || n<2) return '';                       // wczoraj wyszedł albo brak danych
+    if(state.date!==state.bizDate || dog.status==='walked') return '';
+    const last = lastWalkOf(dog);
+    if(!last || !state.bizDate) return '';
+    const n = dayDiff(last, state.bizDate);
+    if(isNaN(n) || n<2) return '';                       // wczoraj wyszedł albo brak danych
     const txt = n===2 ? 'wczoraj bez spaceru' : `bez spaceru od ${n-1} dni`;
     return `<span class="miss">⚠ ${txt}</span>`;
   }
@@ -457,9 +590,17 @@
   /**
    * Notatka przy psie. Bez terminu znika przy najbliższym czyszczeniu (domyślnie),
    * z terminem dostaje odznakę i dotrwa do wskazanego dnia włącznie.
+   *
+   * Przy przeglądaniu dni ta sama reguła mówi, GDZIE ją pokazać: bez terminu —
+   * tylko na bieżącym dniu („zdjęcia o 12:00" nie dotyczy soboty), z terminem —
+   * na każdym dniu do terminu włącznie.
    */
+  function noteShownOn(dog, date){
+    if(!dog.note) return false;
+    return dog.noteUntil ? date <= dog.noteUntil : date === state.bizDate;
+  }
   function dogNote(dog){
-    if(!dog.note) return '';
+    if(!noteShownOn(dog, state.date)) return '';
     const lab = dog.noteUntil ? untilLabel(dog.noteUntil) : '';
     const pill = lab ? ` <span class="until">${esc(lab)}</span>` : '';
     return `<div class="note">📌 ${esc(dog.note)}${pill}</div>`;
@@ -520,7 +661,7 @@
   function renderDog(dog){
     const dm=DIF[dog.dif]||DIF.easy;
     const label=esc(dogLabel(dog))
-      + (isPending(keyDog(dog.id)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
+      + (isPending(keyDog(dog.id, state.date)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
     const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
       <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
     const adm = state.admin
@@ -541,13 +682,16 @@
         </div></li>`;
     }
     if(dog.status==='reserved'){
+      // w przyszłości nie ma czego odhaczać — rezerwację można tylko zwolnić
+      const walkBtn = isFuture(state.date) ? ''
+        : `<button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>`;
       return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
         <div class="row"><span class="name">${label}</span>
           <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status">
           <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
-          <button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>
+          ${walkBtn}
           <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
         </div></li>`;
     }
@@ -580,13 +724,22 @@
 
   /** Podsumowanie nad listą — osobno, bo podmieniamy je też przy patchDog(). */
   function countLine(){
-    const c = st => state.dogs.filter(x=>x.status===st).length;
+    const dogs = dogsAt(state.date);
+    const c = st => dogs.filter(x=>x.status===st).length;
     return `<b>${c('reserved')}</b> zarezerwowane · <b>${c('walked')}</b> wyprowadzone · <b>${c('free')}</b> wolne`;
   }
 
-  function renderToday(){
-    if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
+  /**
+   * Widok wybranego dnia. Bieżący — jak dotąd, z zadaniami. Przyszły — ta sama
+   * lista, ale tylko rezerwacje (spacer odhacza się w dniu spaceru). Miniony —
+   * wyłącznie podgląd tego, co zapisała Historia.
+   */
+  function renderDay(){
+    if(!state.loaded || !state.date) return '<div class="empty">Ładowanie…</div>';
+    if(isPast(state.date)) return renderPastDay(state.date);
     const d=orderedDogs();
+    const top = state.date===state.bizDate ? renderTasks()
+      : `<div class="dayhint">Rezerwacja z wyprzedzeniem — spacer odhaczysz w dniu spaceru.</div>`;
 
     let html=`
       <div class="diflegend">
@@ -594,7 +747,7 @@
         <span><span class="dot" style="background:${DIF.med.color}"></span>wymagający</span>
         <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
       </div>
-      ${renderTasks()}
+      ${top}
       <div class="count">${countLine()}</div>
       <ul>`;
     d.forEach(dog=>{
@@ -628,9 +781,12 @@
           <label class="lbl" for="resetHour">Godzina czyszczenia listy</label>
           <select id="resetHour">${hourOptions(state.resetHour)}</select>
         </div>
-        <div class="hint">Reset wykonuje się w ciągu tej godziny (Google uruchamia wyzwalacze
-        w oknie ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59).
-        Wtedy spacery trafiają do Historii, psy wracają na „wolny", a notatki znikają.</div>
+        <div class="hint">Od ${String(state.resetHour).padStart(2,'0')}:00 lista pracuje już na kolejnym
+        dniu — wcześniej można jeszcze rezerwować na dzień, który trwa. Zamknięty dzień trafia do
+        Historii w ciągu tej godziny (Google uruchamia wyzwalacze w oknie
+        ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59),
+        a notatki bez terminu znikają. Uwaga: godzina, która dziś już minęła, przełącza listę
+        na jutro od razu.</div>
       </div>
       <div class="panelbox">
         <h3>Spacery dla wszystkich psów</h3>
@@ -649,6 +805,7 @@
       <div class="diagrow"><b>wyzwalacz resetu</b><span>${d.triggerInstalled ? 'aktywny ('+d.triggerCount+')' : 'BRAK — uruchom installTriggers()'}</span></div>
       <div class="diagrow"><b>godzina resetu</b><span>${String(d.resetHour).padStart(2,'0')}:00</span></div>
       <div class="diagrow"><b>czas serwera</b><span>${esc(d.serverDate)} ${esc(d.serverTime)}</span></div>
+      <div class="diagrow"><b>dzień rezerwacyjny</b><span>${esc(d.businessDate || '')}</span></div>
       <div class="diagrow"><b>strefa</b><span>${esc(d.timezone)}</span></div>
       <div class="diagrow"><b>psy / zadania</b><span>${d.dogCount} / ${d.taskCount}</span></div>
       <div class="diagrow"><b>wpisy historii</b><span>${d.histCount}</span></div>`
@@ -680,78 +837,109 @@
       .getDiagnostics(state.pin);
   }
 
-  function renderHistory(){
-    if(!state.history.length) return '<div class="empty">Brak zapisanych dni jeszcze.</div>';
-    const byDate={};
-    state.history.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-    const dates=Object.keys(byDate).sort().reverse();
-    let html='';
-    dates.forEach(dt=>{
-      const items=byDate[dt];
-      html+=`<div class="hist-day"><div class="hist-date">${fmtDate(dt)} — ${items.length} spacerów</div>`;
-      items.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
-      html+=`</div>`;
-    });
-    // bez tej linijki starsze dni wyglądałyby na skasowane, a one po prostu zostały w arkuszu
-    html+=`<div class="hist-note">Pokazane ostatnie ${state.historyDays} dni. Pełny zapis jest w arkuszu.</div>`;
-    return html;
+  /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
+  function minutesOf(t){ const m=String(t||'').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
+
+  /**
+   * Miniony dzień — tylko podgląd, zastępuje dawną zakładkę Historia. Pokazujemy
+   * to, co się faktycznie odbyło, po kolei w ciągu dnia; rezerwacje, z których
+   * nic nie wyszło, nie są częścią zapisu.
+   */
+  function renderPastDay(date){
+    const items = state.past[date];
+    let html = `<div class="dayhint">Miniony dzień — tylko podgląd.</div>`;
+    if(!items) return html + '<div class="empty">Wczytuję…</div>';
+    if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
+    const sorted = items.slice().sort((a,b)=>minutesOf(a.time)-minutesOf(b.time));
+    html += `<div class="hist-day"><div class="hist-date">${sorted.length} ${plural(sorted.length,'spacer','spacery','spacerów')}</div>`;
+    sorted.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    return html + `</div>`;
   }
 
   /* =========================================================
      AKCJE (optymistyczne: najpierw lokalny stan i render,
      potem zapis w tle; ewentualna korekta po odpowiedzi)
      ========================================================= */
+  /*
+   * Każda akcja zapamiętuje SWÓJ dzień w chwili kliknięcia i wysyła go serwerowi.
+   * Odpowiedź wraca do tego dnia, nawet jeśli wolontariusz zdążył w międzyczasie
+   * przejść strzałką gdzie indziej — kafelek przerysowujemy tylko wtedy, gdy ten
+   * dzień jest wciąż na ekranie.
+   */
+  /**
+   * Dzień zamknął się pod palcami: ktoś wpisywał imię o 19:59, reset minął,
+   * a on stuka OK. Po cichu nic nie zrobić = zamrożony ekran w jego oczach —
+   * mówimy wprost i przechodzimy na bieżący dzień.
+   */
+  function dayClosed(){
+    toast('Ten dzień jest już zamknięty — przechodzę na bieżący');
+    goDate(state.bizDate);
+  }
+
   function doReserve(id, who){
-    const dog=findDog(id); if(!dog || dog.status!=='free') return;
-    dog.status='reserved'; dog.who=who; dog.time='';
+    const date=state.date;
+    if(!date) return;
+    if(isPast(date)){ dayClosed(); return; }
+    const w=walkOf(date, id); if(!findDog(id) || w.status!=='free') return;
+    setWalk(date, id, Object.assign({}, w, {status:'reserved', who, time:''}));
     patchDog(id);
-    enqueue('reserve',[id,who],{key:keyDog(id),reconcile:res=>{
+    enqueue('reserve',[id,who,date],{key:keyDog(id,date),reconcile:res=>{
       if(!res || !res.dog){ safeRender(); return; }
-      replaceDog(res.dog);
+      setWalk(date, id, res.dog);
       if(!(res.dog.status==='reserved' && res.dog.who===who)){
         toast('Ubiegł Cię ktoś inny — pies już zajęty');
-        patchDog(id);           // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
-      } else if(!busyEditing()) patchDog(id);
+        if(date===state.date) patchDog(id);   // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
+      } else if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doWalk(id){
-    const dog=findDog(id); if(!dog) return;
+    const date=state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date!==state.bizDate) return;           // spacer odhacza się tylko w dniu, który trwa
+    const dog=dogAt(id, date); if(!dog) return;
     // KTÓRY to spacer — wiemy tylko tutaj, w chwili kliknięcia, i musimy to powiedzieć
     // serwerowi. Bez tego automatyczne ponowienie po zaginionej odpowiedzi robiło
     // z pierwszego spaceru pełne 2/2 z pustym "kto" (markWalked jest w RETRIABLE).
     const first = dog.walks===2 && !dog.who1;
+    const w=Object.assign({}, walkOf(date, id));
     if(first){
       // pierwszy z dwóch spacerów: zapisz i zwolnij psa na drugi
-      dog.who1=dog.who; dog.time1=localHM();
-      dog.status='free'; dog.who=''; dog.time='';
+      w.who1=w.who; w.time1=localHM();
+      w.status='free'; w.who=''; w.time='';
     } else {
-      dog.status='walked'; dog.time=localHM();
+      w.status='walked'; w.time=localHM();
     }
+    setWalk(date, id, w);
     patchDog(id);
-    enqueue('markWalked',[id,'',first?1:2],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    enqueue('markWalked',[id,'',first?1:2,date],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) setWalk(date, id, res.dog);
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doUndoFirst(id){
-    const dog=findDog(id); if(!dog || !dog.who1) return;
-    dog.who1=''; dog.time1='';
+    const date=state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date!==state.bizDate) return;
+    const w=walkOf(date, id); if(!findDog(id) || !w.who1) return;
+    setWalk(date, id, Object.assign({}, w, {who1:'', time1:''}));
     patchDog(id);
-    enqueue('undoFirstWalk',[id],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    enqueue('undoFirstWalk',[id,date],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) setWalk(date, id, res.dog);
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doFree(id){
-    const dog=findDog(id); if(!dog) return;
-    dog.status='free'; dog.who=''; dog.time='';
+    const date=state.date;
+    if(!date || !findDog(id)) return;
+    if(isPast(date)){ dayClosed(); return; }
+    setWalk(date, id, Object.assign({}, walkOf(date, id), {status:'free', who:'', time:''}));
     patchDog(id);
-    enqueue('setFree',[id],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    enqueue('setFree',[id,date],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) setWalk(date, id, res.dog);
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
@@ -768,9 +956,26 @@
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
     state.view=t.dataset.tab; render();
-    if(state.view==='history') fetchHistory();
     if(state.view==='diag') fetchDiag();
   });
+
+  /**
+   * Przejście na inny dzień. Wolno swobodnie w obie strony; w tył to podgląd,
+   * do przodu — rezerwacje. Otwarta edycja psa dotyczy listy, którą właśnie
+   * opuszczamy, więc ją zamykamy.
+   */
+  function goDate(iso){
+    if(!iso) return;
+    state.date = iso;
+    state.follow = (iso === state.bizDate);
+    state.view = 'today';
+    state.editId = null;
+    render();
+    if(isPast(iso)) fetchPast(iso);
+  }
+  document.getElementById('prevDay').addEventListener('click',()=>{ if(state.date) goDate(addDays(state.date,-1)); });
+  document.getElementById('nextDay').addEventListener('click',()=>{ if(state.date) goDate(addDays(state.date,1)); });
+  document.getElementById('dayLabel').addEventListener('click',()=>{ if(state.bizDate) goDate(state.bizDate); });
 
   gear.addEventListener('click',()=>{
     if(state.admin){

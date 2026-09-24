@@ -27,19 +27,28 @@
     <div class="pinerr hidden" id="pinErr">Zły PIN.</div>
   </header>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="today">Dziś</button>
-    <button class="tab" data-tab="history">Historia</button>
+  <div class="datebar">
+    <button class="daynav" id="prevDay" aria-label="Poprzedni dzień">←</button>
+    <button class="daylabel" id="dayLabel" title="Wróć do bieżącego dnia">
+      <span class="dayname" id="dayName">…</span>
+      <span class="dayrel" id="dayRel"></span>
+    </button>
+    <button class="daynav" id="nextDay" aria-label="Następny dzień">→</button>
+  </div>
+
+  <div class="tabs hidden" id="adminTabs">
+    <button class="tab active" data-tab="today">Lista</button>
     <button class="tab hidden" data-tab="diag" id="tabDiag">Panel</button>
   </div>
 
   <div id="view"><div class="empty">Ładowanie…</div></div>
 
   <footer>
-    <b>Kolor po lewej = trudność psa.</b> <b>Zarezerwuj</b> = biorę go dziś.
+    <b>Kolor po lewej = trudność psa.</b> <b>Zarezerwuj</b> = biorę go tego dnia.
     <b>Wyprowadzony ✓</b> = spacer odbyty, wpada do historii.
+    <b>← →</b> zmieniają dzień: do przodu rezerwujesz z wyprzedzeniem, wstecz podglądasz, co było.
     Zadania odhaczamy stuknięciem; nieodhaczone przechodzą na kolejny dzień.
-    Lista zeruje się codziennie o <span id="resetNoteFoot">22:00</span>.
+    Od <span id="resetNoteFoot">22:00</span> lista pracuje już na kolejnym dniu.
   </footer>
 
   <div class="toast" id="toast"></div>

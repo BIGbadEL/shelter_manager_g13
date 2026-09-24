@@ -16,12 +16,32 @@ function include(filename) {
 }
 
 /**
- * Cały stan dnia w jednym wywołaniu. `today` idzie z serwera, żeby odznaki
- * "od wczoraj" liczyły się w polskiej strefie niezależnie od telefonu.
+ * Cały stan w jednym wywołaniu.
+ *
+ *  - `dogs`  — katalog psów ze stanem BIEŻĄCEGO dnia wpisanym w każdego psa:
+ *              dokładnie ten kształt znają karty otwarte przed wprowadzeniem dat,
+ *  - `walks` — wszystkie dni otwarte (bieżący i przyszłe), wiersz na parę (dzień, pies).
+ *              Mała lista, a dzięki niej strzałka w przyszłość nie czeka na serwer,
+ *  - `today` — data kalendarzowa (Europe/Warsaw) do odznak "od wczoraj" i terminów,
+ *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy).
  */
 function getData() {
-  return { dogs: readDogs_(), tasks: readTasks_(), today: today_(), resetHour: resetHour_(),
-           env: env_() };
+  const date = businessDate_();
+  const catalog = readDogCatalog_();
+  const known = {};
+  catalog.forEach(d => { known[d.id] = true; });
+  const walks = readWalks_(walksSheet_()).filter(w => known[w.dogId] && hasWalkState_(w));
+  const current = {};
+  walks.forEach(w => { if (w.date === date) current[w.dogId] = w; });
+  return {
+    dogs: catalog.map(d => withWalk_(d, current[d.id])),
+    walks: walks,
+    tasks: readTasks_(),
+    today: today_(),
+    businessDate: date,
+    resetHour: resetHour_(),
+    env: env_(),
+  };
 }
 
 /** Dane do panelu diagnostycznego (tylko tryb edycji — stąd PIN). */
@@ -36,15 +56,34 @@ function getDiagnostics(pin) {
     env: env_() || '(nieoznaczone — traktowane jak test)',
     serverTime: now_(),
     serverDate: today_(),
+    businessDate: businessDate_(),
     dogCount: readDogs_().length,
     taskCount: readTasks_().length,
     histCount: histCount_(),      // komplet z arkusza, nie tylko widoczny wycinek
   };
 }
 
-/** `days` idzie z serwera, żeby interfejs nie musiał znać limitu drugi raz. */
+/**
+ * Ostatnie dni Historii naraz — dla kart otwartych jeszcze przed wprowadzeniem
+ * dat, które mają zakładkę „Historia". Nowy interfejs pyta o konkretne dni
+ * przez getHistoryDays.
+ */
 function getHistory() {
   return { history: readHistory_(), days: HISTORY_DAYS };
+}
+
+/**
+ * Minione dni do podglądu (strzałka wstecz), od `from` do `to` włącznie.
+ * Zakres przycinamy do dni faktycznie zamkniętych i do dwóch miesięcy naraz —
+ * przeglądarka prosi o bloki po dwa tygodnie, więcej nie ma sensu ciągnąć na telefon.
+ */
+function getHistoryDays(from, to) {
+  if (!isDate_(from) || !isDate_(to)) throw new Error('Nieprawidłowa data');
+  const lastClosed = addDays_(businessDate_(), -1);
+  const b = to < lastClosed ? String(to) : lastClosed;
+  const floor = addDays_(b, -61);
+  const a = from > floor ? String(from) : floor;
+  return { history: a > b ? [] : readHistoryDays_(a, b) };
 }
 
 function checkPin(pin) {

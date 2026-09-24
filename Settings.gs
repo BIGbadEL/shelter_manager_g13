@@ -11,6 +11,7 @@
 const PROP_RESET_HOUR = 'resetHour';
 const PROP_PIN = 'pin';
 const PROP_ENV = 'env';
+const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesienia stanu dnia z Psy do Spacery
 
 /**
  * Które to środowisko. Liczy się dokładnie jedna wartość: `prod`.
@@ -41,6 +42,32 @@ function resetHour_() {
   const raw = PropertiesService.getScriptProperties().getProperty(PROP_RESET_HOUR);
   const h = Number(raw);
   return (raw !== null && Number.isInteger(h) && h >= 0 && h <= 23) ? h : DEFAULT_RESET_HOUR;
+}
+
+/**
+ * Bieżący DZIEŃ REZERWACYJNY — ten, na którym wolontariusze właśnie pracują.
+ *
+ * Granicą dnia jest godzina czyszczenia, nie północ: przed nią można jeszcze
+ * rezerwować na dzień, który trwa, a po niej aplikacja od razu pracuje na
+ * następnym. Przy resecie wieczornym (domyślne 22:00, u was 20:00):
+ *   przed resetem -> dziś,   od resetu -> jutro.
+ *
+ * Przy resecie PORANNYM ta sama reguła byłaby błędna: reset o 6:00 kazałby
+ * o 10:00 rezerwować psy na jutro przez cały dzień. Dlatego granicą jest
+ * południe, tak jak dawniej przy archiwizacji — reset przed 12:00 zamyka
+ * dzień POPRZEDNI:
+ *   przed resetem -> wczoraj, od resetu -> dziś.
+ *
+ * Liczymy od `h:00`, choć wyzwalacz Google odpala się gdzieś w oknie
+ * h:00–h:59. Dzień zmienia się punktualnie; nocne czyszczenie tylko domyka
+ * zamknięty dzień, gdy dojdzie do niego kolej (patrz endOfDay w History.gs).
+ */
+function businessDate_() {
+  const today = today_();
+  const hour = Number(Utilities.formatDate(new Date(), tz_(), 'H'));
+  const reset = resetHour_();
+  if (reset >= 12) return hour >= reset ? addDays_(today, 1) : today;
+  return hour >= reset ? today : addDays_(today, -1);
 }
 
 /** Waliduje godzinę podaną z interfejsu; rzuca błędem widocznym jako toast. */
