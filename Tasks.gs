@@ -1,7 +1,12 @@
 /**
- * G13 Spacery — ZADANIA NA DZIŚ.
+ * G13 Spacery — ZADANIA.
  * Prowadząca dodaje/usuwa (PIN), wolontariusze odhaczają bez PIN-u.
- * Nieodhaczone zadania przeżywają nocny reset i dostają odznakę "od N dni".
+ *
+ * Każde zadanie ma DZIEŃ, od którego się pokazuje (kolumna `data`). Domyślnie
+ * to bieżący dzień rezerwacyjny, ale prowadząca może zaplanować zadanie na
+ * konkretny dzień — do tego czasu nie widać go na liście bieżącego dnia.
+ * Nieodhaczone zadania przeżywają nocny reset i dostają odznakę "od N dni";
+ * odhaczone znikają przy czyszczeniu (clearDoneTasks_ w History.gs).
  */
 
 /* ---------- ODCZYT ---------- */
@@ -25,6 +30,9 @@ function readTasks_() {
 
 /**
  * Odhaczenie / odznaczenie zadania (pomyłki można cofać).
+ * Zadanie zaplanowane na przyszły dzień odhacza się dopiero w jego dniu —
+ * interfejs tego nie proponuje, a serwer pilnuje tego także przed kartami
+ * otwartymi jeszcze przed wprowadzeniem dat, które pokazują wszystkie zadania.
  * Zwraca małe potwierdzenie zamiast pełnego stanu — interfejs jest
  * optymistyczny, a prawda i tak dojedzie z okresowym odświeżeniem.
  */
@@ -32,20 +40,34 @@ function setTaskDone(id, done) {
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.TASKS);
     const row = rowById_(sh, id);
-    if (row > 0) sh.getRange(row, TASK.STATUS).setValue(done ? 'done' : 'open');
+    if (row > 0) {
+      const date = cellDate_(sh.getRange(row, TASK.DATE).getValue());
+      if (isDate_(date) && date > businessDate_()) throw new Error('To zadanie odhaczysz w jego dniu');
+      sh.getRange(row, TASK.STATUS).setValue(done ? 'done' : 'open');
+    }
     return { ok: row > 0, id: Number(id), done: !!done };
   });
 }
 
 /* ---------- AKCJE PROWADZĄCEJ ---------- */
 
-function addTask(text, pin) {
+/**
+ * Nowe zadanie. `date` — dzień, od którego ma się pokazać; brak = bieżący dzień
+ * rezerwacyjny (tak wołają karty otwarte przed wprowadzeniem dat). Liczymy od
+ * dnia rezerwacyjnego, nie kalendarzowego: zadanie dodane o 21:00, gdy lista
+ * pracuje już na jutrze, ma być jutrzejsze — a nie od razu „od wczoraj".
+ */
+function addTask(text, pin, date) {
   requirePin_(pin);
   const t = clean_(text, MAX_LEN.TASK);
   if (!t) throw new Error('Puste zadanie');
+  const current = businessDate_();
+  const d = (date == null || date === '') ? current : String(date);
+  if (!isDate_(d)) throw new Error('Nieprawidłowa data zadania');
+  if (d < current) throw new Error('Zadanie nie może być na dzień, który już minął');
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.TASKS);
-    sh.appendRow([nextId_(sh), t, today_(), 'open']);
+    sh.appendRow([nextId_(sh), t, d, 'open']);
     return getData();
   });
 }

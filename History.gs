@@ -161,7 +161,8 @@ function closeWalks_(match) {
 
 /**
  * Katalog po zamknięciu dni: data ostatniego spaceru i notatki.
- * Notatka bez terminu żyje do czyszczenia; z terminem — do swojego dnia włącznie.
+ * Notatka bez terminu żyje do czyszczenia; z terminem — do swojego dnia włącznie;
+ * z terminem „nigdy" — dopóki ktoś jej nie skasuje.
  */
 function closeDogs_(current, lastWalk) {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
@@ -172,7 +173,7 @@ function closeDogs_(current, lastWalk) {
     const lw = lastWalk[Number(r[DOG.ID - 1])];
     if (lw && lw > cellDate_(r[DOG.LAST_WALK - 1])) r[DOG.LAST_WALK - 1] = lw;
     const until = cellDate_(r[DOG.NOTE_UNTIL - 1]);
-    if (!until || until < current) {
+    if (until !== NOTE_FOREVER && (!until || until < current)) {
       r[DOG.NOTE - 1] = '';
       r[DOG.NOTE_UNTIL - 1] = '';
     }

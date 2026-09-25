@@ -308,14 +308,16 @@ function setFree(id, date) {
 /* ---------- AKCJE EDYCYJNE — chronione PIN-em (zwracają pełny stan) ---------- */
 
 /**
- * Termin ważności notatki ('yyyy-MM-dd' albo '').
+ * Termin ważności notatki: 'yyyy-MM-dd', NOTE_FOREVER albo ''.
  * Pusto oznacza zachowanie domyślne: notatka znika przy najbliższym czyszczeniu.
- * Data z przeszłości albo bez notatki nie ma sensu — normalizujemy do pustej,
+ * NOTE_FOREVER — nie znika nigdy, dopóki ktoś jej nie skasuje.
+ * Data z przeszłości albo termin bez notatki nie ma sensu — normalizujemy do pustej,
  * żeby w arkuszu nie zostawały terminy, których nikt już nie zobaczy.
  */
 function noteUntil_(v, note) {
   const s = clean_(v, 10);
   if (!note || !s) return '';
+  if (s === NOTE_FOREVER) return s;
   if (!isDate_(s)) return '';
   return s < today_() ? '' : s;
 }

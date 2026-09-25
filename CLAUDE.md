@@ -74,6 +74,17 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `markWalked(id, name, slot, date)`, `undoFirstWalk(id, date)`, `setFree(id, date)`).
   Brak daty = bieżący dzień — tak wołają karty otwarte przed wprowadzeniem dat i mają działać.
   Serwer (`actionDate_`) odrzuca dzień miniony; spacer (i jego cofnięcie) tylko w bieżącym.
+- **Zadanie ma dzień, od którego się pokazuje** (kolumna `data`): `addTask(text, pin, date)`,
+  brak daty = bieżący dzień rezerwacyjny (nie kalendarzowy — zadanie dodane po resecie nie może
+  być od razu „od wczoraj"). Na liście bieżącego dnia: zadania z dniem ≤ bieżący; na przyszłym:
+  tylko zaplanowane dokładnie na niego, bez odhaczania; `setTaskDone` odrzuca zadanie z przyszłości.
+- **Notatka „nigdy"** — `notatka_do = NOTE_FOREVER` (`'nigdy'`, ta sama stała w `Config.gs`
+  i `Script.html`): nie znika przy żadnym czyszczeniu. Uwaga: jako napis „nigdy" sortuje się
+  po każdej dacie, więc nawet bez jawnego warunku zachowanie byłoby to samo — jawny warunek
+  zostaje dla czytelności, testy tego odróżnić nie mogą.
+- **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
+  id="boot">`), więc lista rysuje się bez drugiego przelotu do serwera. To stan początkowy,
+  nie wartość w szablonie kafelka (bug nr 7). Błąd odczytu = `null` = zwykłe `getData`.
 - **Dzień rezerwacyjny (`businessDate_()`) zaczyna się o godzinie resetu, nie o północy.**
   Reset ≥ 12:00: przed nim dziś, od niego jutro. Reset < 12:00: przed nim wczoraj, od niego
   dziś. Reguła „po resecie jutro" wzięta wprost ze zgłoszenia jest błędna dla resetu
@@ -96,6 +107,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   ale **nie** w chwili, gdy ktoś pisze imię: `busyEditing()`).
   Gdy serwer nie przysyła `walks` (stary kształt), stan z psów trafia pod bieżący dzień —
   na tym trzymają się wszystkie starsze testy.
+- **Tryb edycji to katalog, nie dzień** (`renderCatalog`): bez paska dat, bez rezerwacji
+  i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
+  zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderDog`) nie ma już przycisków
+  edycji. Wolontariusze nigdy nie widzą katalogu, prowadząca w edycji nigdy nie widzi dnia.
+- **`busyEditing()` łapie wyłącznie pole wolontariusza `[data-entry]`**, fokus w polu i edycję
+  psa. Nigdy nie wracaj do ogólnego `.entry` — patrz bug nr 10.
 - **Akcja pamięta swój dzień.** `doReserve` & spółka biorą datę w chwili kliknięcia,
   wysyłają ją i zapisują odpowiedź pod NIĄ, nie pod `state.date` — wolontariusz mógł
   w międzyczasie przejść strzałką gdzie indziej (S56). Klik na dniu, który zamknął się pod
@@ -139,7 +156,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **498 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **576 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -167,12 +184,15 @@ S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin 
 S39 numer spaceru w `markWalked`, S40–S42 miniony dzień (podgląd), S43–S45 kolejność kafelków
 i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów,
 S49–S52 pasek środowiska testowego, S53–S62 nawigacja datą, rezerwacje z wyprzedzeniem,
-przeskok dnia po resecie, B1–B6 notatki / archiwizacja / godzina resetu,
+przeskok dnia po resecie, S63 symetria strzałek, S64 stan wpisany w stronę, S65 tryb edycji
+jako katalog, S66–S67 zadania na konkretny dzień, S68 notatka „nigdy", S69–S70 przerysowanie
+w trybie edycji (bug nr 10), B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
 B16 dzień rezerwacyjny, B17 rezerwacje na daty, B18 przejście przez reset, B19 domykanie
 zaległych dni, B20 podgląd minionych dni, B21 jednorazowy import, B22 usuwanie psa,
-B23 zagnieżdżona blokada, T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
+B23 zagnieżdżona blokada, B24–B25 zadania z datą, B26 notatka „nigdy", B27 `bootJson_`,
+T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -203,6 +223,13 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
    Klient przekazuje teraz `slot` (1 = pierwszy z dwóch, 2 = ostatni), a serwer na powtórce
    oddaje stan i niczego nie rusza. **Zanim dopiszesz cokolwiek do `RETRIABLE`, sprawdź,
    czy dwa identyczne wywołania dają ten sam skutek co jedno.**
+10. **Tryb edycji nigdy się nie przerysowywał.** Pole nowego zadania miało klasę `.entry`,
+    a `busyEditing()` uznawało każde widoczne `.entry` za „ktoś wpisuje imię". W trybie edycji
+    to pole jest widoczne zawsze, więc `safeRender()` nic nie robiło: dodany pies i dodane
+    zadanie nie pojawiały się po odpowiedzi serwera, a odświeżanie co 15 s stało. Wyszło
+    przy przebudowie trybu edycji (sonda na kodzie z produkcji: oba `false`). Teraz
+    `busyEditing()` patrzy tylko na `[data-entry]`, a formularz zadania to `.taskform` (S69, S70).
+    **Każde pole, które jest widoczne na stałe, nie może udawać „ktoś właśnie pisze".**
 
 ## Pułapki Apps Script
 

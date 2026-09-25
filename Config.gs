@@ -77,6 +77,13 @@ const HIST_WIDTH = HIST_HEADERS.length;
 const STATUS = { FREE: 'free', RESERVED: 'reserved', WALKED: 'walked' };
 const DIFFICULTIES = ['easy', 'med', 'hard'];
 
+/**
+ * Termin notatki „nigdy" — notatka nie znika przy żadnym czyszczeniu, dopóki
+ * ktoś jej ręcznie nie skasuje. Trzymamy go w kolumnie notatka_do jako słowo,
+ * żeby w arkuszu czytało się to bez tłumaczenia. Interfejs zna tę samą wartość.
+ */
+const NOTE_FOREVER = 'nigdy';
+
 /** Limity długości pól (obrona przed wklejeniem elaboratu). */
 const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
 

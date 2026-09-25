@@ -45,8 +45,10 @@
      przycisk: dotknięcie wraca do bieżącego dnia, gdy się od niego odeszło. */
   .datebar{display:flex;align-items:stretch;gap:8px;margin:14px 0 4px;}
   .daynav{flex:none;width:52px;min-height:52px;border:1px solid var(--line);background:var(--card);
-    border-radius:12px;font-size:22px;font-weight:800;color:var(--ink);cursor:pointer;
-    font-family:inherit;touch-action:manipulation;}
+    border-radius:12px;color:var(--ink);cursor:pointer;padding:0;
+    display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+  .daynav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.6;
+    stroke-linecap:round;stroke-linejoin:round;display:block;}
   .daynav:active{transform:scale(.96);}
   .daylabel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
     border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:12px;padding:6px 8px;
@@ -72,7 +74,9 @@
   .count b{color:var(--ink);font-weight:700;}
 
   /* ---------- zadania na dziś ---------- */
-  .tasksbox{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  /* ramka zadań idzie za kafelkami psów: ten sam kształt i akcent z lewej */
+  .tasksbox{margin-top:12px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--forest);
+    border-radius:12px;padding:12px 14px;}
   .tasksbox h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--forest);margin-bottom:4px;}
   .task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;}
   .task:last-of-type{border-bottom:none;}
@@ -82,6 +86,17 @@
   .task .txt{font-size:14.5px;flex:1;}
   .task.done .txt{text-decoration:line-through;text-decoration-color:#aeb8b0;color:var(--muted);}
   .age{font-size:11px;font-weight:700;color:var(--warn-ink);background:var(--warn-bg);padding:2px 8px;border-radius:6px;flex:none;}
+  /* zadanie zaplanowane na później: widać je, ale odhacza się w jego dniu */
+  .task.planned{cursor:default;}
+  .task.planned .box{border-style:dashed;opacity:.55;}
+  .plan{font-size:11px;font-weight:700;color:var(--forest);background:#e2ebe3;padding:2px 8px;border-radius:6px;flex:none;}
+  .taskform{margin-top:10px;display:flex;flex-direction:column;gap:7px;}
+  .taskform input[type=text]{font-family:inherit;font-size:15px;padding:10px 12px;border:1.5px solid var(--forest);
+    border-radius:10px;background:#fff;color:var(--ink);outline:none;}
+  .taskform-row{display:flex;align-items:center;gap:8px;}
+  .taskform-row label{font-size:12.5px;color:var(--muted);font-weight:600;flex:none;}
+  .taskform-row input[type=date]{flex:1;min-width:0;font-family:inherit;font-size:14px;padding:8px 10px;
+    border:1px solid #bcccbc;border-radius:9px;background:#fff;}
 
   /* ---------- lista psów ---------- */
   ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:10px;}
@@ -131,6 +146,9 @@
   .add-btn{background:var(--forest);color:#fff;font-size:14px;padding:10px 15px;}
   .editform{margin-top:10px;display:flex;flex-direction:column;gap:7px;}
   .editform .adminrow input{background:#fff;}
+  .check{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
+  .adminrow .check input{flex:none;min-width:0;width:18px;height:18px;padding:0;margin:0;accent-color:var(--forest);}
+  .adminrow input[type=date]:disabled{opacity:.45;}
 
   /* ---------- miniony dzień (podgląd), komunikaty ---------- */
   .hist-day{margin-top:14px;}

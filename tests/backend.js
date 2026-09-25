@@ -658,5 +658,76 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
     && !!env.sheets['Spacery']);
 })();
 
+/* ---------- B24: zadania na konkretny dzień ---------- */
+(()=>{
+  console.log('B24: addTask z datą');
+  const env = build([{id:1, name:'Borys'}]);                  // bieżący dzień: 2026-08-04
+  const tasks = () => env.api.readTasks_();
+
+  env.api.addTask('Umyć miski', TEST_PIN);                     // bez daty — jak stare karty
+  check('bez daty: bieżący dzień', tasks()[0].date==='2026-08-04', JSON.stringify(tasks()));
+  env.api.addTask('Kąpiel Borysa', TEST_PIN, '2026-08-08');
+  check('z datą: zaplanowane na ten dzień', tasks()[1].date==='2026-08-08', JSON.stringify(tasks()));
+  check('dzień, który minął — odrzucony', throws(()=>env.api.addTask('X', TEST_PIN, '2026-08-03')));
+  check('śmieci zamiast daty — odrzucone', throws(()=>env.api.addTask('X', TEST_PIN, 'sobota')));
+  check('bez PIN-u ani rusz', throws(()=>env.api.addTask('X', 'zly', '2026-08-08')));
+  check('nic z odrzuconych nie trafiło do arkusza', tasks().length===2, JSON.stringify(tasks()));
+
+  // po resecie domyślny dzień zadania to już jutro — dodane o 22:30 nie może być od razu „od wczoraj"
+  env.setNow('2026-08-04T22:30:00+02:00');
+  check('po resecie: zadanie bez daty przechodzi', !throws(()=>env.api.addTask('Wieczorne', TEST_PIN)));
+  check('po resecie: domyślnie dzień, na którym pracuje lista', tasks()[2] && tasks()[2].date==='2026-08-05',
+    JSON.stringify(tasks()[2]));
+})();
+
+/* ---------- B25: zadanie z przyszłości odhacza się w jego dniu ---------- */
+(()=>{
+  console.log('B25: setTaskDone pilnuje dnia zadania');
+  const env = build([{id:1, name:'Borys'}]);
+  env.api.addTask('Dziś', TEST_PIN);
+  env.api.addTask('Sobota', TEST_PIN, '2026-08-08');
+  const [today, sat] = env.api.readTasks_();
+  check('bieżące da się odhaczyć', !throws(()=>env.api.setTaskDone(today.id, true))
+    && env.api.readTasks_()[0].done===true);
+  check('zaplanowanego na sobotę — nie (np. ze starej karty)', throws(()=>env.api.setTaskDone(sat.id, true))
+    && env.api.readTasks_()[1].done===false);
+  env.setNow('2026-08-08T10:00:00+02:00');
+  check('w sobotę już tak', !throws(()=>env.api.setTaskDone(sat.id, true)) && env.api.readTasks_()[1].done===true);
+})();
+
+/* ---------- B26: notatka „nigdy" ---------- */
+(()=>{
+  console.log('B26: notatka, która nie znika');
+  const env = build([{id:1, name:'Borys'}]);
+  env.api.updateDog(1, {name:'Borys', note:'Nie wypuszczać bez kagańca', noteUntil:'nigdy', dif:'easy', walks:1}, TEST_PIN);
+  check('zapisana z terminem „nigdy"', untilOf(env,1)==='nigdy', JSON.stringify(untilOf(env,1)));
+  check('getData oddaje ją interfejsowi', env.api.getData().dogs[0].noteUntil==='nigdy');
+
+  ['2026-08-04T22:10:00+02:00', '2026-09-30T22:10:00+02:00', '2027-06-01T22:10:00+02:00'].forEach(iso=>{
+    env.setNow(iso);
+    env.api.endOfDay();
+    check('przeżywa czyszczenie ' + iso.slice(0,10), noteOf(env,1)==='Nie wypuszczać bez kagańca');
+  });
+
+  env.api.updateDog(1, {name:'Borys', note:'', noteUntil:'nigdy', dif:'easy', walks:1}, TEST_PIN);
+  check('„nigdy" bez notatki nic nie znaczy — czyszczone', untilOf(env,1)==='', JSON.stringify(untilOf(env,1)));
+})();
+
+/* ---------- B27: stan wpisany w stronę ---------- */
+(()=>{
+  console.log('B27: bootJson_ — stan startowy bez drugiego przelotu');
+  const env = build([{id:1, name:'</script><b>Borys'}], {walks:[{date:'2026-08-04', dogId:1, status:'reserved', who:'Ala'}]});
+  const raw = env.api.bootJson_();
+  check('ani jednego „<" — nic nie zamknie znacznika <script>', raw.indexOf('<')<0, raw.slice(0,120));
+  let parsed = null;
+  try{ parsed = JSON.parse(raw); }catch(e){}
+  check('poprawny JSON z tym samym stanem co getData',
+    parsed && parsed.dogs[0].name==='</script><b>Borys' && parsed.dogs[0].who==='Ala' && parsed.businessDate==='2026-08-04',
+    raw.slice(0,200));
+
+  const broken = makeContext({ sheets: [{ name:'Historia', rows:[HIST_HEADERS] }] });   // brak zakładki Psy
+  check('błąd odczytu nie blokuje strony — null', broken.api.bootJson_()==='null');
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

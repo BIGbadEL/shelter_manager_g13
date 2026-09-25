@@ -17,8 +17,13 @@ function extract(file, tag){
 
 function buildApp(opts){
   opts = opts || {};
+  // opts.boot — stan, który serwer wpisałby w stronę (bootJson_). Bez niego zostaje
+  // surowy znacznik szablonu, którego nie da się sparsować — dokładnie ta sama ścieżka,
+  // co przy błędzie po stronie serwera: przeglądarka pobiera stan zwykłym getData.
   const bodyHtml = src_('Index.html')
-    .match(/<body>([\s\S]*)<\?!= include\('Script'\); \?>/)[1];
+    .match(/<body>([\s\S]*)<\?!= include\('Script'\); \?>/)[1]
+    .replace('<?!= boot ?>', opts.boot === undefined ? '<?!= boot ?>'
+      : (typeof opts.boot === 'string' ? opts.boot : JSON.stringify(opts.boot)));
 
   const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${bodyHtml}</body></html>`, {
     runScripts: 'outside-only', pretendToBeVisual: true,

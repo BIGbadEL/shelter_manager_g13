@@ -18,7 +18,7 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios10`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios11`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
@@ -235,7 +235,12 @@ rezerwować na jutro. Granicą jest więc południe: reset przed 12:00 zamyka dz
 (przed resetem — wczoraj, po nim — dziś). `businessDate_()` w `Settings.gs`.
 
 **Notatki na właściwych dniach:** notatka bez terminu widnieje tylko na bieżącym dniu
-(„zdjęcia o 12:00" nie dotyczy soboty), notatka z terminem — na każdym dniu do terminu włącznie.
+(„zdjęcia o 12:00" nie dotyczy soboty), notatka z terminem — na każdym dniu do terminu włącznie,
+notatka „nigdy nie znika" — na każdym dniu.
+
+**Zadania na właściwych dniach:** na bieżącym dniu widać zadania, których dzień już nadszedł
+(nieodhaczone przechodzą dalej z odznaką „od N dni"); na przyszłym — tylko zaplanowane dokładnie
+na niego, do podejrzenia, bo odhacza się je w ich dniu; na minionym — żadnych.
 
 **Dzień zamknął się pod palcami:** ktoś wpisuje imię o 19:59, a „OK" stuka o 20:00. Zamiast
 cichego braku reakcji dostaje komunikat „Ten dzień jest już zamknięty" i przejście na nowy dzień.
@@ -274,6 +279,17 @@ Trzy rzeczy warto wiedzieć:
 - Godzina czyszczenia to **granica dnia rezerwacyjnego** (patrz wyżej) — zmienia dzień na liście punktualnie.
 - `atHour(h)` w Apps Script to **okno h:00–h:59**, nie punkt czasowy — domknięcie dnia i przeniesienie do Historii dzieje się gdzieś w tej godzinie.
 - Ustawienie godziny, która **dziś już minęła**, od razu przełącza listę na kolejny dzień.
+
+## Tryb edycji
+
+⚙️ + PIN. Tryb edycji służy do zarządzania, nie do pracy na konkretnym dniu — dlatego
+**nie ma w nim wyboru daty ani rezerwacji**. Zakładka „Lista" pokazuje:
+
+- **Zadania** — wszystkie, po kolei według dnia; zaplanowane opisane „na sobotę 26.09".
+  Nowe zadanie dostaje dzień, od którego ma się pokazać (domyślnie bieżący) — do tego dnia
+  wolontariusze go nie widzą.
+- **Katalog psów** — w stałej kolejności z arkusza, z ustawieniem „2 spacery dziennie" zamiast
+  postępu dnia, z edycją i usuwaniem, oraz dodawanie psa.
 
 ## Zakładka „Panel"
 
@@ -325,10 +341,22 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 
 - **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy najbliższym czyszczeniu — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
+- **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
 - **Dwa spacery dziennie** (`spacery` = 1/2): pierwszy odbyty spacer zapisuje się w `kto1`/`godzina1`, a pies wraca na „wolny” z odznaką `spacery 1/2` i informacją, kto odbył pierwszy; dopiero drugi spacer daje pełne „wyprowadzony” (`2/2`). Oba spacery trafiają osobno do Historii przy nocnym resecie. Pomyłkę cofa przycisk „Cofnij 1. spacer”. Liczba odbytych spacerów jest wyliczana z danych (kto1 + status), nie przechowywana — brak ryzyka rozjazdu.
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
 
 ## Naprawione bugi (changelog)
+
+**Drugi feedback z terenu:**
+- **Tryb edycji nigdy się nie przerysowywał** (błąd na produkcji). Pole nowego zadania udawało
+  „ktoś właśnie wpisuje imię", więc po „Dodaj psa" czy „Dodaj zadanie" odpowiedź serwera nie
+  pojawiała się na ekranie, dopóki prowadząca nie wyszła z trybu edycji. Stare odświeżanie co 15 s
+  też w tym trybie stało.
+- **Strzałki niesymetryczne** — znaki ← → każdy telefon brał ze swojego fontu. Teraz rysunek SVG,
+  prawa strzałka to dokładne lustro lewej.
+- **Wolniejszy start** — po załadowaniu strony telefon musiał jeszcze raz zapytać serwer o dane.
+  Stan startowy jest teraz wpisany w samą stronę (`bootJson_`), więc lista rysuje się od razu.
+- Tryb edycji bez dat i rezerwacji; zadania na konkretny dzień; notatka „nigdy nie znika".
 
 **Daty zamiast „Dziś" i „Historii":**
 - Arkusz znał tylko jeden dzień — stan psa siedział wprost w jego wierszu i był zerowany co noc,

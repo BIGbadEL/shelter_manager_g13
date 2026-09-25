@@ -86,9 +86,16 @@
     const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),2600);
   }
+  /**
+   * Czy ktoś właśnie coś wpisuje — wtedy nie przerysowujemy mu ekranu pod palcami.
+   * Otwarte pole liczy się TYLKO to wolontariusza („Twoje imię", [data-entry]).
+   * Wcześniej łapało każde widoczne `.entry`, a pole nowego zadania w trybie edycji
+   * jest widoczne zawsze — przez to w trybie edycji nic się nigdy nie przerysowywało
+   * i dodany pies czy zadanie nie pojawiały się po odpowiedzi serwera (S70).
+   */
   function busyEditing(){
     if(state.editId!==null) return true;
-    if(document.querySelector('.entry:not(.hidden)')) return true;
+    if(document.querySelector('[data-entry]:not(.hidden)')) return true;
     const a=document.activeElement;
     return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
   }
@@ -454,9 +461,14 @@
       const tabDiag = document.getElementById('tabDiag');
       if(tabDiag) tabDiag.classList.toggle('hidden', !state.admin);
       gear.classList.toggle('on',state.admin);
+      // tryb edycji to zarządzanie katalogiem, nie praca na konkretnym dniu — bez wyboru daty
+      const bar = document.getElementById('dateBar');
+      if(bar) bar.classList.toggle('hidden', state.admin);
       renderDateBar();
 
-      const html = state.view==='diag' ? renderDiagView() : renderDay();
+      const html = state.view==='diag' ? renderDiagView()
+                 : state.admin         ? renderCatalog()
+                 : renderDay();
       if(html !== lastHtml){ viewEl.innerHTML = html; lastHtml = html; }
     } catch(e){
       // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
@@ -473,7 +485,7 @@
    * przy każdym kliknięciu — na telefonie to widoczne szarpnięcie.
    */
   function patchDog(id){
-    if(state.view!=='today' || state.editId!==null || isPast(state.date)){ render(); return; }
+    if(state.view!=='today' || state.admin || state.editId!==null || isPast(state.date)){ render(); return; }
     const li  = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
     const dog = dogAt(id, state.date);
     if(!li || !dog){ render(); return; }
@@ -574,8 +586,15 @@
 
   const WEEKDAY_TO = ['niedzieli','poniedziałku','wtorku','środy','czwartku','piątku','soboty'];
 
-  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08". */
+  /**
+   * Termin notatki „nigdy" — ta sama wartość, co NOTE_FOREVER w Config.gs. Notatka
+   * nie znika przy żadnym czyszczeniu, dopóki ktoś jej nie skasuje.
+   */
+  const NOTE_FOREVER = 'nigdy';
+
+  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08" / "na stałe". */
   function untilLabel(iso){
+    if(iso === NOTE_FOREVER) return 'na stałe';
     const d = new Date(iso+'T12:00:00');
     if(isNaN(d.getTime())) return '';
     const ago = daysAgo(iso);
@@ -593,42 +612,94 @@
    *
    * Przy przeglądaniu dni ta sama reguła mówi, GDZIE ją pokazać: bez terminu —
    * tylko na bieżącym dniu („zdjęcia o 12:00" nie dotyczy soboty), z terminem —
-   * na każdym dniu do terminu włącznie.
+   * na każdym dniu do terminu włącznie; „nigdy" — na każdym dniu.
    */
   function noteShownOn(dog, date){
     if(!dog.note) return false;
+    if(dog.noteUntil === NOTE_FOREVER) return true;
     return dog.noteUntil ? date <= dog.noteUntil : date === state.bizDate;
   }
-  function dogNote(dog){
-    if(!noteShownOn(dog, state.date)) return '';
+  function noteHtml(dog){
+    if(!dog.note) return '';
     const lab = dog.noteUntil ? untilLabel(dog.noteUntil) : '';
     const pill = lab ? ` <span class="until">${esc(lab)}</span>` : '';
     return `<div class="note">📌 ${esc(dog.note)}${pill}</div>`;
   }
+  function dogNote(dog){ return noteShownOn(dog, state.date) ? noteHtml(dog) : ''; }
 
-  function renderTasks(){
-    if(!state.tasks.length && !state.admin) return '';
-    let html=`<div class="tasksbox"><h3>Zadania na dziś</h3>`;
-    if(!state.tasks.length) html+=`<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
-    state.tasks.forEach(t=>{
-      const n=daysAgo(t.date);
-      const age = (n && n>0) ? `<span class="age">${n===1?'od wczoraj':`od ${n} dni`}</span>` : '';
-      const del = state.admin ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
-      const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
-      html+=`<div class="task ${t.done?'done':''}" data-act="taskToggle" data-id="${t.id}">
-        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${age}${del}</div>`;
-    });
-    if(state.admin){
-      html+=`<div class="entry">
+  /* ---------- zadania ----------
+     Każde zadanie ma dzień, od którego się pokazuje. Na bieżącym dniu widać
+     wszystko, co ma swój dzień dziś albo wcześniej (nieodhaczone przechodzą dalej,
+     odhaczone wiszą do czyszczenia). Na przyszłym — tylko zaplanowane dokładnie
+     na ten dzień, bez odhaczania: to się robi w jego dniu. Na minionym — nic. */
+  function tasksFor(date){
+    if(date === state.bizDate) return state.tasks.filter(t => !t.date || t.date <= date);
+    if(isFuture(date)) return state.tasks.filter(t => t.date === date);
+    return [];
+  }
+  function canTickTask(t){ return !t.date || !isFuture(t.date); }
+
+  /** Wiek zadania względem bieżącego dnia listy: '' / 'od wczoraj' / 'od N dni'. */
+  function taskAge(t){
+    if(!t.date || !state.bizDate) return '';
+    const n = dayDiff(t.date, state.bizDate);
+    return n>0 ? (n===1 ? 'od wczoraj' : `od ${n} dni`) : '';
+  }
+
+  const WEEKDAY_ON = ['niedzielę','poniedziałek','wtorek','środę','czwartek','piątek','sobotę'];
+  /** "na sobotę 26.09" — przy zadaniu zaplanowanym na później. */
+  function taskPlanned(t){
+    const d = new Date(t.date+'T12:00:00Z');
+    if(isNaN(d.getTime())) return '';
+    return `na ${WEEKDAY_ON[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  }
+
+  function taskRow(t, removable){
+    const tick = canTickTask(t);
+    const badge = !tick ? `<span class="plan">${esc(taskPlanned(t))}</span>`
+                : taskAge(t) ? `<span class="age">${taskAge(t)}</span>` : '';
+    const del  = removable ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+    const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
+    const act  = tick ? ` data-act="taskToggle" data-id="${t.id}"` : '';
+    return `<div class="task${t.done?' done':''}${tick?'':' planned'}"${act}>
+      <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${badge}${del}</div>`;
+  }
+
+  /** Zadania na liście dnia — dla wolontariuszy. Pusto = bez ramki, jak dotąd. */
+  function renderTasks(date){
+    const list = tasksFor(date);
+    if(!list.length) return '';
+    const title = date === state.bizDate ? 'Zadania' : 'Zadania zaplanowane na ten dzień';
+    return `<div class="tasksbox"><h3>${title}</h3>${list.map(t=>taskRow(t, false)).join('')}</div>`;
+  }
+
+  /**
+   * Zadania w trybie edycji: wszystkie, po kolei według dnia, z usuwaniem
+   * i dodawaniem na wybrany dzień. Formularz to NIE `.entry` — patrz busyEditing().
+   */
+  function renderTaskAdmin(){
+    const list = state.tasks.slice().sort((a,b)=> String(a.date||'') < String(b.date||'') ? -1
+                                                 : String(a.date||'') > String(b.date||'') ? 1 : 0);
+    let html = `<div class="tasksbox"><h3>Zadania</h3>`;
+    if(!list.length) html += `<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
+    html += list.map(t=>taskRow(t, true)).join('');
+    html += `<div class="taskform">
         <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)">
-        <button class="btn add-btn" data-act="taskAdd">Dodaj</button></div>`;
-    }
-    return html+`</div>`;
+        <div class="taskform-row">
+          <label for="newTaskDate">od dnia</label>
+          <input type="date" id="newTaskDate" value="${esc(state.bizDate||'')}" min="${esc(state.bizDate||'')}">
+          <button class="btn add-btn" data-act="taskAdd">Dodaj</button>
+        </div>
+      </div>
+      <div class="hint">Zadanie pojawi się na liście dopiero w wybranym dniu; nieodhaczone przechodzi na kolejne dni.</div>
+    </div>`;
+    return html;
   }
 
   function renderEditForm(dog){
     const opts=Object.keys(DIF).map(k=>
       `<option value="${k}" ${dog.dif===k?'selected':''}>${DIF[k].label}</option>`).join('');
+    const forever = dog.noteUntil === NOTE_FOREVER;
     return `<li class="dog" style="border-left-color:${(DIF[dog.dif]||DIF.easy).color}">
       <div class="row"><span class="name">Edycja: ${esc(dogLabel(dog))}</span></div>
       <div class="editform">
@@ -642,7 +713,11 @@
           <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka (np. zdjęcia o 12:00)">
         </div>
         <div class="adminrow">
-          <input type="date" data-ef="noteUntil" value="${esc(dog.noteUntil||'')}" min="${esc(state.today||'')}">
+          <input type="date" data-ef="noteUntil" value="${esc(forever ? '' : (dog.noteUntil||''))}"
+                 min="${esc(state.today||'')}" ${forever?'disabled':''}>
+          <label class="check"><input type="checkbox" data-ef="noteForever" ${forever?'checked':''}> nigdy nie znika</label>
+        </div>
+        <div class="adminrow">
           <select data-ef="walks">
             <option value="1" ${dog.walks!==2?'selected':''}>1 spacer dziennie</option>
             <option value="2" ${dog.walks===2?'selected':''}>2 spacery dziennie</option>
@@ -650,7 +725,8 @@
         </div>
         <div class="hint">Pusta data = notatka znika przy najbliższym czyszczeniu, jak dotąd.
         Datę ustaw tylko wtedy, gdy notatka ma dotrwać do konkretnego dnia — np. w środę
-        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.</div>
+        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.
+        „Nigdy nie znika" — notatka zostaje, dopóki ktoś jej sam nie skasuje.</div>
         <div class="adminrow">
           <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
           <button class="btn ghost" data-act="editCancel">Anuluj</button>
@@ -662,11 +738,8 @@
     const dm=DIF[dog.dif]||DIF.easy;
     const label=esc(dogLabel(dog))
       + (isPending(keyDog(dog.id, state.date)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
-    const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
-      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
-    const adm = state.admin
-      ? `<button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
-         <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
+    const difChip=difChipHtml(dm);
+    const adm='';   // edycja psa żyje w katalogu (tryb edycji), nie na liście dnia
     const meta=dogMeta(dog)+dogNote(dog);
 
     if(dog.status==='free'){
@@ -703,6 +776,44 @@
       </div></li>`;
   }
 
+  function difChipHtml(dm){
+    return `<span class="dif" style="color:${dm.color};background:${dm.color}1a">
+      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
+  }
+
+  /**
+   * Pies w katalogu (tryb edycji): kim jest, bez stanu żadnego dnia — tu się psy
+   * dodaje, poprawia i usuwa, a nie rezerwuje. Kolejność stała, z arkusza, żeby
+   * nic nie przeskakiwało w trakcie poprawiania.
+   */
+  function renderCatalogDog(dog){
+    const dm=DIF[dog.dif]||DIF.easy;
+    const bits=[];
+    if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
+    if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
+    const pill = dog.walks===2 ? `<span class="twice">🐾 2 spacery dziennie</span>` : '';
+    const meta = (pill || bits.length)
+      ? `<div class="dogmeta">${pill}${pill&&bits.length?' ':''}${bits.join(' · ')}</div>` : '';
+    return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      <div class="row"><span class="name">${esc(dogLabel(dog))}</span><span class="flex"></span>${difChipHtml(dm)}
+        <button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
+        <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button></div>
+      ${meta}${noteHtml(dog)}</li>`;
+  }
+
+  /** Tryb edycji: zadania, katalog psów, dodawanie psa. Bez dat i bez rezerwacji. */
+  function renderCatalog(){
+    if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
+    const n = state.dogs.length;
+    let html = `${renderTaskAdmin()}
+      <div class="count"><b>${n}</b> ${plural(n,'pies','psy','psów')} w katalogu</div>
+      <ul>`;
+    state.dogs.forEach(dog=>{
+      html += state.editId===dog.id ? renderEditForm(dog) : renderCatalogDog(dog);
+    });
+    return html + `</ul>` + renderAdminAddBox();
+  }
+
   function renderAdminAddBox(){
     return `<div class="adminbox">
       <h3>Dodaj psa</h3>
@@ -731,15 +842,16 @@
 
   /**
    * Widok wybranego dnia. Bieżący — jak dotąd, z zadaniami. Przyszły — ta sama
-   * lista, ale tylko rezerwacje (spacer odhacza się w dniu spaceru). Miniony —
-   * wyłącznie podgląd tego, co zapisała Historia.
+   * lista, ale tylko rezerwacje (spacer odhacza się w dniu spaceru) i zadania
+   * zaplanowane na ten dzień. Miniony — wyłącznie podgląd tego, co zapisała Historia.
    */
   function renderDay(){
     if(!state.loaded || !state.date) return '<div class="empty">Ładowanie…</div>';
     if(isPast(state.date)) return renderPastDay(state.date);
     const d=orderedDogs();
-    const top = state.date===state.bizDate ? renderTasks()
+    const hint = state.date===state.bizDate ? ''
       : `<div class="dayhint">Rezerwacja z wyprzedzeniem — spacer odhaczysz w dniu spaceru.</div>`;
+    const top = hint + renderTasks(state.date);
 
     let html=`
       <div class="diflegend">
@@ -750,12 +862,8 @@
       ${top}
       <div class="count">${countLine()}</div>
       <ul>`;
-    d.forEach(dog=>{
-      html += (state.admin && state.editId===dog.id) ? renderEditForm(dog) : renderDog(dog);
-    });
-    html+=`</ul>`;
-    if(state.admin) html+=renderAdminAddBox();
-    return html;
+    d.forEach(dog=>{ html += renderDog(dog); });
+    return html + `</ul>`;
   }
 
   /* =========================================================
@@ -944,7 +1052,7 @@
   }
 
   function doTaskToggle(id){
-    const t=state.tasks.find(x=>x.id===id); if(!t) return;
+    const t=state.tasks.find(x=>x.id===id); if(!t || !canTickTask(t)) return;   // przyszłe — w ich dniu
     t.done=!t.done;
     render();
     enqueue('setTaskDone',[id,t.done],{key:keyTask(id)});
@@ -1002,6 +1110,7 @@
 
   /** Wartość pola formularza edycji psa. */
   function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
+  function efChecked(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return !!(el && el.checked); }
 
   /** Otwiera pole "Twoje imię" przy jednym psie, zamykając wszystkie inne. */
   function openEntry(id, clickedBtn){
@@ -1018,8 +1127,14 @@
     if(input.value) input.select();                      // ...łatwa do nadpisania
   }
 
-  /** Zmiana godziny czyszczenia — select nie emituje 'click', tylko 'change'. */
+  /** Zmiana godziny czyszczenia i przełącznik „nigdy nie znika" — to 'change', nie 'click'. */
   viewEl.addEventListener('change',e=>{
+    if(e.target.matches && e.target.matches('[data-ef="noteForever"]')){
+      // notatka na stałe nie ma terminu — pole daty wyłączamy, żeby nie udawało, że coś znaczy
+      const until = viewEl.querySelector('[data-ef="noteUntil"]');
+      if(until) until.disabled = e.target.checked;
+      return;
+    }
     if(e.target.id!=='resetHour') return;
     const h = Number(e.target.value);
     state.resetHour = h; showResetHour();          // optymistycznie: etykiety od razu
@@ -1059,10 +1174,11 @@
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
       const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),
-                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,noteUntil:ef('noteUntil')};
+                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,
+                    noteUntil: efChecked('noteForever') ? NOTE_FOREVER : ef('noteUntil')};
       if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
-      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // data bez notatki nic nie znaczy
-      if(fields.noteUntil && state.today && fields.noteUntil < state.today){
+      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // termin bez notatki nic nie znaczy
+      if(fields.noteUntil && fields.noteUntil!==NOTE_FOREVER && state.today && fields.noteUntil < state.today){
         toast('Data notatki nie może być z przeszłości'); return;
       }
       const dog=findDog(id);
@@ -1089,8 +1205,14 @@
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }
+      const dateEl=document.getElementById('newTaskDate');
+      const date=(dateEl && dateEl.value) || state.bizDate;
+      if(state.bizDate && date < state.bizDate){ toast('Zadanie nie może być na dzień, który już minął'); return; }
       el.value='';
-      enqueue('addTask',[text,state.pin],{reconcile:applyFull_});
+      enqueue('addTask',[text,state.pin,date],{reconcile:res=>{
+        applyFull_(res);
+        if(isFuture(date)) toast('Zaplanowane ' + taskPlanned({date}));
+      }});
     }
     if(act==='allWalks'){
       const w = Number(btn.dataset.walks)===2 ? 2 : 1;
@@ -1122,8 +1244,23 @@
   /* =========================================================
      START + AUTO-ODŚWIEŻANIE + SAMOLECZENIE
      ========================================================= */
+  /**
+   * Stan wpisany w stronę przez serwer (bootJson_ w WebApp.gs) — lista rysuje się
+   * od razu, bez drugiego przelotu do serwera po załadowaniu strony. Brak, pusto
+   * albo coś nieczytelnego = zwykłe getData, jak dawniej.
+   */
+  function bootData(){
+    try{
+      const el = document.getElementById('boot');
+      const d = el ? JSON.parse(el.textContent) : null;
+      return d && Array.isArray(d.dogs) ? d : null;
+    } catch(e){ return null; }
+  }
+
   document.getElementById('today').textContent=todayStr();
-  refresh();
+  const boot = bootData();
+  if(boot){ applyData(boot); render(); }
+  else refresh();
   // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
   setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
   // strażnik zawieszonych zapisów: cyklicznie...

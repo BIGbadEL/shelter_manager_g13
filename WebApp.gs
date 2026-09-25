@@ -4,10 +4,32 @@
  */
 
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
-    .evaluate()
+  const page = HtmlService.createTemplateFromFile('Index');
+  page.boot = bootJson_();
+  return page.evaluate()
     .setTitle('Grupa G13 — spacery')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Stan startowy wpisany wprost w stronę (<script type="application/json" id="boot">).
+ *
+ * Bez tego telefon po załadowaniu strony musiał jeszcze raz zapytać serwer o dane —
+ * a przelot google.script.run to na komórce nierzadko sekunda albo dwie, przez które
+ * wisiało „Ładowanie…". Serwer i tak właśnie składa stronę, więc dorzucenie stanu
+ * kosztuje ułamek drugiego przelotu. To STAN początkowy, nie wartość w szablonie
+ * kafelka (patrz bug nr 7 w CLAUDE.md) — kafelki dalej rysuje przeglądarka.
+ *
+ * `<` zamieniamy na <, żeby żadne imię ani notatka nie zamknęły znacznika
+ * <script>. Błąd odczytu nie może zablokować strony: wtedy `null`, a przeglądarka
+ * pobiera stan zwykłą drogą.
+ */
+function bootJson_() {
+  try {
+    return JSON.stringify(getData()).replace(/</g, '\\u003c');
+  } catch (e) {
+    return 'null';
+  }
 }
 
 /** Wkleja plik HTML do szablonu — używane w Index.html: <?!= include('Styles'); ?> */

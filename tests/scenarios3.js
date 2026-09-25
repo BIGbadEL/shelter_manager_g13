@@ -56,9 +56,14 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   app.type('[data-ef="note"]','Wyjazd na AW');
   app.window.document.querySelector('[data-ef="walks"]').value='2';
   app.click('[data-act="editSave"]');
-  check('optymistycznie: nowa notatka + 2 spacery', /📌 Wyjazd na AW/.test(app.html()) && /spacery 0\/2/.test(app.html()), app.html().slice(0,400));
+  // tryb edycji to katalog: widać USTAWIENIE psa, nie postęp dnia
+  check('optymistycznie w katalogu: nowa notatka + 2 spacery dziennie',
+    /📌 Wyjazd na AW/.test(app.html()) && /2 spacery dziennie/.test(app.html()), app.html().slice(0,400));
   app.respondNext({dogs:[dogFree({note:'Wyjazd na AW',walks:2})],tasks:[],today:'2026-07-08'});
-  check('po serwerze bez zmian wizualnych', /📌 Wyjazd na AW/.test(app.html()) && /spacery 0\/2/.test(app.html()));
+  check('po serwerze bez zmian wizualnych', /📌 Wyjazd na AW/.test(app.html()) && /2 spacery dziennie/.test(app.html()));
+  app.window.document.getElementById('gear').dispatchEvent(new app.window.Event('click',{bubbles:true}));
+  check('po wyjściu z edycji lista dnia pokazuje postęp 0/2',
+    /spacery 0\/2/.test(app.html()) && /📌 Wyjazd na AW/.test(app.html()), app.html().slice(0,400));
   check('kolejka pusta', drained(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();

@@ -128,7 +128,8 @@ function makeContext(opts){
                           reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
                           readHistory_, getHistory, getHistoryDays, histCount_,
                           checkPin, requirePin_, pin_, env_,
-                          businessDate_, addDays_, readDogCatalog_, withLock_ };
+                          businessDate_, addDays_, readDogCatalog_, withLock_,
+                          addTask, setTaskDone, removeTask, readTasks_, bootJson_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
