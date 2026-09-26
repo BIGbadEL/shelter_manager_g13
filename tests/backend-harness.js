@@ -101,6 +101,7 @@ function makeContext(opts){
     PropertiesService: { getScriptProperties: ()=>({
       getProperty: k => (k in props ? props[k] : null),
       setProperty: (k,v) => { props[k] = v; },
+      deleteProperty: k => { delete props[k]; },
     })},
     ScriptApp: {
       getProjectTriggers: ()=>triggers.slice(),
@@ -129,12 +130,15 @@ function makeContext(opts){
                           readHistory_, getHistory, getHistoryDays, histCount_,
                           checkPin, requirePin_, pin_, env_,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
-                          addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup };
-    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS };
+                          addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
+                          isDate_, posInt_ };
+    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD };
+    // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
+    ;globalThis.__newExecution = () => { walkColsOk_ = false; lockDepth_ = 0; };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
   const setNow = iso => { nowMs = Date.parse(iso); };
-  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers, setNow };
+  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution };
 }
 
 module.exports = { makeContext, makeSheet };

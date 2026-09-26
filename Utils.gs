@@ -14,8 +14,24 @@ function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd')
 /** Aktualna godzina 'H:mm' w strefie aplikacji. */
 function now_() { return Utilities.formatDate(new Date(), tz_(), 'H:mm'); }
 
-/** Czy to data w formacie 'yyyy-MM-dd'. */
-function isDate_(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s == null ? '' : s)); }
+/**
+ * Czy to prawdziwa data 'yyyy-MM-dd'. Sam wzorzec przepuściłby '2026-13-45' —
+ * taki wiersz dostawałby każdy telefon, a nocne czyszczenie nigdy by go nie domknęło.
+ */
+function isDate_(s) {
+  const t = String(s == null ? '' : s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) && addDays_(t, 0) === t;
+}
+
+/**
+ * Dodatnia liczba całkowita albo 0 — numer grupy z arkusza albo z przeglądarki.
+ * Grupa 1.5 (ręcznie w arkuszu albo z publicznego setGroup) wywracała rysowanie
+ * listy na każdym telefonie: kolor grupy to indeks w tablicy.
+ */
+function posInt_(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
 
 /**
  * Data 'yyyy-MM-dd' przesunięta o n dni.

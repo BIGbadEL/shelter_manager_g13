@@ -71,7 +71,7 @@ function mapWalkRow_(r) {
     time:   cellTime_(r[WALK.TIME - 1]),
     who1:   String(r[WALK.WHO1 - 1] || ''),
     time1:  cellTime_(r[WALK.TIME1 - 1]),
-    group:  Number(r[WALK.GROUP - 1]) || 0,
+    group:  posInt_(r[WALK.GROUP - 1]),
   };
 }
 
@@ -106,6 +106,10 @@ let walkColsOk_ = false;
  */
 function ensureWalkColumns_(sh) {
   if (walkColsOk_) return sh;
+  // raz sprawdzone zostaje zapamiętane we właściwości skryptu — bez tego każde żądanie
+  // z każdego telefonu płaciło dwoma dodatkowymi odczytami arkusza
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PROP_WALK_COLS) === String(WALK_WIDTH)) { walkColsOk_ = true; return sh; }
   const header = WALK_HEADERS[WALK.GROUP - 1];
   const fine = () => sh.getMaxColumns() >= WALK_WIDTH
                   && String(sh.getRange(1, WALK.GROUP).getValue()) === header;
@@ -115,6 +119,7 @@ function ensureWalkColumns_(sh) {
       if (String(sh.getRange(1, WALK.GROUP).getValue()) !== header) sh.getRange(1, WALK.GROUP).setValue(header);
     });
   }
+  props.setProperty(PROP_WALK_COLS, String(WALK_WIDTH));
   walkColsOk_ = true;
   return sh;
 }
@@ -150,9 +155,15 @@ function createWalksSheet_() {
  *
  * Dzieje się samo, przy pierwszym dostępie po wdrożeniu wersji z datami —
  * żadnego ręcznego kroku do zapomnienia i żadnego okna, w którym aplikacja
- * pokazywałaby wszystkie psy jako wolne. Stan trafia pod bieżący dzień
- * rezerwacyjny; stąd zalecenie, żeby nie wdrażać w godzinie czyszczenia
- * (patrz README): wtedy stan sprzed czyszczenia dostałby już jutrzejszą datę.
+ * pokazywałaby wszystkie psy jako wolne. `npm run deploy:*` otwiera aplikację
+ * zaraz po wdrożeniu, więc tym dostępem jest zwykle samo wdrożenie.
+ *
+ * Stan należy do dnia, który trwał w chwili wdrożenia. Jeśli pierwszy dostęp
+ * przychodzi dopiero w godzinie czyszczenia — najczęściej sam wyzwalacz endOfDay,
+ * gdy po wdrożeniu nikt nie otworzył linku — dzień zdążył się już przełamać,
+ * a stan jest z dnia, który właśnie się skończył. Z datą bieżącego dnia spacery
+ * nie trafiłyby do Historii, a psy stałyby „wyprowadzone" na jutrzejszej liście.
+ * Wdrożenia w samej godzinie czyszczenia to nie ratuje (patrz README).
  *
  * Właściwość skryptu pilnuje, że to się dzieje RAZ. Bez niej ktoś, kto kiedyś
  * skasuje zakładkę Spacery, wskrzesiłby tygodniowy stan z Psy jako dzisiejszy.
@@ -162,7 +173,8 @@ function importDayState_(sh) {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty(PROP_WALKS_IMPORTED)) return;
 
-  const date = businessDate_();
+  const hour = Number(Utilities.formatDate(new Date(), tz_(), 'H'));
+  const date = hour === resetHour_() ? addDays_(businessDate_(), -1) : businessDate_();
   const dogs = ss_().getSheetByName(SHEETS.DOGS);
   const last = dogs ? dogs.getLastRow() : 0;
   const rows = [];
@@ -267,6 +279,7 @@ function actionDate_(date) {
   const d = (date == null || date === '') ? current : String(date);
   if (!isDate_(d)) throw new Error('Nieprawidłowa data');
   if (d < current) throw new Error('Ten dzień jest już zamknięty — można go tylko przeglądać');
+  if (d > addDays_(current, MAX_DAYS_AHEAD)) throw new Error('Tak daleko do przodu nie planujemy — najwyżej rok');
   return { date: d, current: d === current };
 }
 
@@ -366,12 +379,19 @@ function undoFirstWalk(id, date) {
  * Zwolniony pies ZOSTAJE w grupie — grupa czeka na nową rezerwację, jak przy
  * planowaniu. Cofnięty spacer wyprowadza psa z grupy (leaveGroup_): tamten
  * wspólny spacer już się odbył, a on w nim — jak się okazało — nie był.
- * Powtórka po zaginionej odpowiedzi trafia na psa już wolnego i niczego nie rusza.
+ *
+ * `seen` = {status, who} — pies tak, jak wyglądał na ekranie w chwili kliknięcia.
+ * setFree jest ponawiany po zaginionej odpowiedzi (RETRIABLE), a zanim powtórka
+ * dojdzie (~12 s), ktoś inny mógł psa zarezerwować: bez `seen` powtórka zwalniała
+ * CUDZĄ rezerwację — ten sam rodzaj błędu co bug nr 9. Z `seen` zwalniamy tylko
+ * ten stan, który ktoś widział; inny oddajemy bez zmian. Brak `seen` = karta
+ * otwarta przed tą zmianą, stare zachowanie.
  */
-function setFree(id, date) {
+function setFree(id, date, seen) {
   const a = actionDate_(date);
   return dogAction_(id, a.date, (w, dog, d) => {
     if (w.status === STATUS.FREE && !w.who && !w.time) return false;   // nic do zwalniania
+    if (seen && (w.status !== String(seen.status) || w.who !== clean_(seen.who))) return false;
     const undo = w.status === STATUS.WALKED;
     w.status = STATUS.FREE;
     w.who = '';
@@ -398,17 +418,29 @@ function setFree(id, date) {
  * zaginionej odpowiedzi przepisałaby tę samą grupę pod nowy numer (i nowy kolor).
  * Po zaginięciu interfejs po prostu dosynchronizowuje się z getData.
  *
+ * `seen` — skład grupy `gid` taki, jaki zmieniający widział na ekranie. Zaznaczanie
+ * wstrzymuje odświeżanie, więc w tym czasie ktoś inny mógł grupę zmienić:
+ *  - zdejmujemy tylko psy, które zmieniający WIDZIAŁ i odznaczył — pies dołożony
+ *    w międzyczasie przez kogoś innego zostaje (inaczej znikał bez śladu),
+ *  - numer grupy wraca do obiegu (nowa grupa bierze max+1 z bieżących wierszy): gdy
+ *    pod `gid` stoi już zupełnie inna grupa, nikogo z `seen`, zmiana idzie jako nowa
+ *    grupa, a cudza zostaje nietknięta.
+ * Brak `seen` = karta otwarta przed tą zmianą: zdejmujemy wszystkich spoza `ids`.
+ *
  * Zwraca {walks, group}: wszystkie wiersze tego dnia (także te z wyczyszczoną grupą)
  * i numer grupy, która powstała albo została (0 = rozwiązana).
  */
-function setGroup(date, ids, gid) {
+function setGroup(date, ids, gid, seen) {
   const a = actionDate_(date);
-  const want = [];
-  (Array.isArray(ids) ? ids : []).forEach(x => {
-    const n = Number(x);
-    if (n > 0 && want.indexOf(n) < 0) want.push(n);
-  });
-  const g = Number(gid) > 0 ? Number(gid) : 0;
+  const ints = list => {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach(x => { const n = posInt_(x); if (n && out.indexOf(n) < 0) out.push(n); });
+    return out;
+  };
+  const want = ints(ids);
+  const saw = Array.isArray(seen) ? ints(seen) : null;
+  let g = posInt_(gid);
+  if (!g && Number(gid)) throw new Error('Nieprawidłowy numer grupy');   // 1.5, -2 — nie zgadujemy
 
   return withLock_(() => {
     const known = {};
@@ -435,19 +467,25 @@ function setGroup(date, ids, gid) {
     };
     const inGroup = group => Object.keys(day).map(Number).filter(id => walkOf(id).group === group);
 
+    // pod tym numerem stoi dziś już inna grupa (ktoś rozwiązał naszą i założył nową) — nie ruszamy jej
+    if (g && saw && inGroup(g).length && !inGroup(g).some(id => saw.indexOf(id) >= 0)) g = 0;
+
     const members = want.filter(id => known[id]
       && (walkOf(id).status !== STATUS.WALKED || (g && walkOf(id).group === g)));
     const target = members.length >= 2 ? (g || maxGroup + 1) : 0;
 
-    if (g) inGroup(g).forEach(id => { if (members.indexOf(id) < 0) put(id, 0); });   // wypadli ze składu
-    const robbed = {};
+    if (g) inGroup(g).forEach(id => {                   // wypadli ze składu — tylko ci, których zmieniający widział
+      if (members.indexOf(id) < 0 && (!saw || saw.indexOf(id) >= 0)) put(id, 0);
+    });
+    const touched = {};
+    if (g) touched[g] = true;
     members.forEach(id => {
       const old = walkOf(id).group;
-      if (old && old !== target) robbed[old] = true;
+      if (old && old !== target) touched[old] = true;
       put(id, target);
     });
-    Object.keys(robbed).forEach(old => {                 // grupa, z której zabraliśmy psy
-      const left = inGroup(Number(old));
+    Object.keys(touched).forEach(x => {                 // grupa, z której zabraliśmy psy, i sama zmieniana
+      const left = inGroup(Number(x));
       if (left.length === 1) put(left[0], 0);
     });
 
@@ -459,18 +497,23 @@ function setGroup(date, ids, gid) {
 /* ---------- AKCJE EDYCYJNE — chronione PIN-em (zwracają pełny stan) ---------- */
 
 /**
- * Termin ważności notatki: 'yyyy-MM-dd', NOTE_FOREVER albo ''.
- * Pusto oznacza zachowanie domyślne: notatka znika przy najbliższym czyszczeniu.
+ * Termin ważności notatki: 'yyyy-MM-dd', NOTE_FOREVER albo '' (brak notatki).
  * NOTE_FOREVER — nie znika nigdy, dopóki ktoś jej nie skasuje.
- * Data z przeszłości albo termin bez notatki nie ma sensu — normalizujemy do pustej,
- * żeby w arkuszu nie zostawały terminy, których nikt już nie zobaczy.
+ *
+ * Notatka „bez terminu" dostaje w arkuszu termin = bieżący dzień rezerwacyjny:
+ * żyje do końca dnia, na którym ją widać. Samo „znika przy najbliższym czyszczeniu"
+ * nie wystarczało — notatka dodana o 20:10, gdy lista pracuje już na jutrze, znikała
+ * przy czyszczeniu o 20:30, zanim jej dzień się zaczął, a każde dodatkowe uruchomienie
+ * endOfDay kasowało dzisiejsze notatki. Z datą czyszczenie jest idempotentne.
+ * Termin wcześniejszy niż bieżący dzień też oznacza „do końca dnia" — inaczej notatka
+ * zapisałaby się, ale nie pokazała nigdzie. Termin bez notatki nie ma sensu.
  */
 function noteUntil_(v, note) {
   const s = clean_(v, 10);
-  if (!note || !s) return '';
+  if (!note) return '';
   if (s === NOTE_FOREVER) return s;
-  if (!isDate_(s)) return '';
-  return s < today_() ? '' : s;
+  const current = businessDate_();
+  return isDate_(s) && s > current ? s : current;
 }
 
 /** Wymusza: pies musi mieć imię LUB identyfikator (nowy pies bywa bez imienia). */
@@ -582,6 +625,7 @@ function setAllWalks(walks, pin) {
  * zamknięty), najpierw trafiają do Historii — tu, póki jeszcze znamy imię.
  * Pies adoptowany po południu miał rano spacer, i ten spacer ma zostać
  * w Historii pod imieniem, a nie jako „Pies 17". Przyszłe rezerwacje przepadają.
+ * Grupa, w której po nim został jeden pies, przestaje być grupą — jak wszędzie.
  */
 function removeDog(id, pin) {
   requirePin_(pin);
@@ -589,8 +633,19 @@ function removeDog(id, pin) {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row > 0) {
+      const walks = walksSheetLocked_();
+      const groups = readWalks_(walks).filter(w => w.dogId === Number(id) && w.group);
       closeWalks_(w => w.dogId === Number(id));
       sh.deleteRow(row);
+      groups.forEach(w => {
+        const d = walkDay_(walks, w.date);
+        const left = d.inGroup(w.group);
+        if (left.length !== 1) return;
+        const lone = d.walk(left[0]);
+        lone.group = 0;
+        d.put(lone);
+        d.save();
+      });
     }
     return getData();
   });

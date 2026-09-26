@@ -108,7 +108,7 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   const PIN = TEST_PIN;
 
   env.api.updateDog(1, {name:'Borys', note:'Coś', noteUntil:'2026-08-01', dif:'easy', walks:1}, PIN);
-  check('data z przeszłości odrzucona', untilOf(env,1)==='', JSON.stringify(untilOf(env,1)));
+  check('data z przeszłości = do końca bieżącego dnia', untilOf(env,1)==='2026-08-05', JSON.stringify(untilOf(env,1)));
 
   env.api.updateDog(1, {name:'Borys', note:'', noteUntil:'2026-08-20', dif:'easy', walks:1}, PIN);
   check('data bez notatki odrzucona', untilOf(env,1)==='', JSON.stringify(untilOf(env,1)));
@@ -904,6 +904,177 @@ const walkIn = (env, id, date) => env.api.getData().walks.filter(w => w.dogId===
   env.api.setAllWalks(1, TEST_PIN);                    // jednak jeden spacer
   check('Borys ma swoje z głowy — z Rexem nie idzie', walk(1).status==='walked' && walk(1).group===0
     && walk(3).group===0, JSON.stringify([walk(1), walk(3)]));
+})();
+
+/* ---------- B33: przeniesienie starego stanu dopiero w godzinie czyszczenia ---------- */
+(()=>{
+  console.log('B33: pierwszy dostęp to wyzwalacz o 20:15 — dzisiejsze spacery idą do Historii');
+  // wdrożenie o 15:00, nikt nie otwiera linku; pierwszym dostępem jest wyzwalacz endOfDay
+  const env = build([{id:1, name:'Borys', status:'walked', who:'Ania', time:'10:15'},
+                     {id:2, name:'Luna', status:'reserved', who:'Ola'}],
+                    {legacy:true, now:'2026-09-24T20:15:00+02:00', props:{resetHour:'20'}});
+  env.api.endOfDay();
+  check('spacer Borysa w Historii pod dniem, który się skończył',
+    hist(env).some(r => r[0]==='2026-09-24' && r[1]==='Borys' && r[2]==='Ania'), JSON.stringify(hist(env)));
+  check('na jutrzejszej liście Borys wolny', dogNow(env, 1).status==='free', JSON.stringify(dogNow(env, 1)));
+  check('...i Luna też — rezerwacja była na dzień, który minął', dogNow(env, 2).status==='free');
+  check('w Spacery nic nie zostaje', openRows(env).length===0, JSON.stringify(openRows(env)));
+
+  const early = build([{id:1, name:'Borys', status:'walked', who:'Ania', time:'10:15'}],
+                      {legacy:true, now:'2026-09-24T15:00:00+02:00', props:{resetHour:'20'}});
+  early.api.getData();                                 // wdrożenie otwiera link od razu
+  check('przed godziną czyszczenia stan zostaje na bieżącym dniu', dogNow(early, 1).status==='walked'
+    && openRows(early)[0][0]==='2026-09-24', JSON.stringify(openRows(early)));
+})();
+
+/* ---------- B34: numer grupy tylko całkowity ---------- */
+(()=>{
+  console.log('B34: numer grupy 1.5 nie przechodzi ani z przeglądarki, ani z arkusza');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'}]);
+  check('setGroup z gid 1.5 odrzucony', throws(() => env.api.setGroup(D, [1,2], 1.5)));
+  check('...i z ujemnym', throws(() => env.api.setGroup(D, [1,2], -2)));
+  env.api.setGroup(D, [1, 2.5, 2], 0);
+  check('niecałkowity pies w składzie pominięty', env.api.getData().walks.filter(w => w.group===1).length===2);
+  env.sheets['Spacery']._data[1][7] = 2.5;             // ktoś wpisał ręcznie w arkuszu
+  const w = env.api.getData().walks.filter(x => x.dogId===env.sheets['Spacery']._data[1][1])[0];
+  check('z arkusza 2.5 czytane jako brak grupy (wolny bez grupy = brak wiersza)', !w || w.group===0, JSON.stringify(w));
+  check('...i żaden numer niecałkowity nie jedzie do telefonów',
+    env.api.getData().walks.every(x => Number.isInteger(x.group)), JSON.stringify(env.api.getData().walks));
+  check('posInt_', env.api.posInt_(3)===3 && env.api.posInt_('4')===4 && env.api.posInt_(1.5)===0
+    && env.api.posInt_(-1)===0 && env.api.posInt_('x')===0);
+})();
+
+/* ---------- B35: notatka „bez terminu" żyje do końca swojego dnia ---------- */
+(()=>{
+  console.log('B35: notatka dodana po przełomie dnia nie znika przy czyszczeniu tego samego wieczoru');
+  const PIN = TEST_PIN;
+  const env = build([{id:1, name:'Borys'}], {now:'2026-09-24T20:10:00+02:00', props:{resetHour:'20'}});
+  env.api.updateDog(1, {name:'Borys', note:'Zdjęcia o 12:00', noteUntil:'', dif:'easy', walks:1}, PIN);
+  check('termin = bieżący dzień rezerwacyjny (jutro)', untilOf(env,1)==='2026-09-25', JSON.stringify(untilOf(env,1)));
+  env.setNow('2026-09-24T20:30:00+02:00');
+  env.api.endOfDay();
+  check('czyszczenie o 20:30 jej nie rusza', noteOf(env,1)==='Zdjęcia o 12:00', JSON.stringify(noteOf(env,1)));
+  env.setNow('2026-09-25T10:00:00+02:00');
+  env.api.endOfDay(); env.api.endOfDay();              // ręczne uruchomienia w ciągu dnia
+  check('dodatkowe uruchomienia w jej dniu też nie', noteOf(env,1)==='Zdjęcia o 12:00');
+  env.setNow('2026-09-25T20:20:00+02:00');
+  env.api.endOfDay();
+  check('znika przy czyszczeniu kończącym jej dzień', noteOf(env,1)==='' && untilOf(env,1)==='');
+})();
+
+/* ---------- B36: równoległa zmiana składu grupy ---------- */
+(()=>{
+  console.log('B36: setGroup z widzianym składem — cudze zmiany nie giną');
+  const D = '2026-08-04';
+  const env = build([1,2,3,4,5,6,7].map(id => ({id, name:'Pies'+id})));
+  const g = id => (env.api.getData().walks.filter(w => w.dogId===id && w.date===D)[0] || {group:0}).group;
+
+  env.api.setGroup(D, [1,2], 0);                       // grupa 1: A, B
+  env.api.setGroup(D, [1,2,3], 1, [1,2]);              // Y dokłada C
+  env.api.setGroup(D, [1,2,5], 1, [1,2]);              // Z widział tylko A, B — dokłada E
+  check('C dołożony przez Y zostaje', g(3)===1, JSON.stringify([1,2,3,5].map(g)));
+  check('E dołożony przez Z też', g(5)===1 && g(1)===1 && g(2)===1);
+  env.api.setGroup(D, [1,3,5], 1, [1,2,3,5]);          // ktoś, kto widział wszystkich, zdejmuje B
+  check('widziany i odznaczony pies wypada', g(2)===0 && g(1)===1);
+
+  env.api.setGroup(D, [], 1, [1,3,5]);                 // rozwiązanie
+  env.api.setGroup(D, [6,7], 0);                       // ktoś zakłada nową — znów numer 1
+  check('numer wrócił do obiegu', g(6)===1 && g(7)===1);
+  const r = env.api.setGroup(D, [1,3,4], 1, [1,3,5]);  // Z z nieaktualnym gid 1
+  check('cudza grupa pod tym numerem nietknięta', g(6)===1 && g(7)===1, JSON.stringify([6,7].map(g)));
+  check('zmiana Z idzie jako nowa grupa', r.group===2 && g(1)===2 && g(3)===2 && g(4)===2, JSON.stringify(r));
+
+  env.api.setGroup(D, [1,3,4,5], 2, [1,3,4]);          // Y dokłada E do grupy 2
+  env.api.setGroup(D, [], 2, [1,3,4]);                 // Z (bez E na ekranie) rozwiązuje
+  check('po rozwiązaniu sam E nie jest grupą', g(5)===0 && g(1)===0, JSON.stringify([1,3,4,5].map(g)));
+
+  env.api.setGroup(D, [1,2], 0);
+  env.api.setGroup(D, [1,2,3], 3);
+  env.api.setGroup(D, [1,3], 3);                       // karta sprzed zmiany: bez `seen`
+  check('stara karta: jak dotąd, wypadają wszyscy spoza składu', g(2)===0 && g(1)===3 && g(3)===3);
+})();
+
+/* ---------- B37: usunięcie psa z grupy ---------- */
+(()=>{
+  console.log('B37: removeDog — grupa z jednym psem przestaje istnieć');
+  const D = '2026-08-04', T = '2026-08-05';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Cyra'}]);
+  const g = (id, date) => (env.api.getData().walks.filter(w => w.dogId===id && w.date===(date||D))[0] || {group:0}).group;
+  env.api.setGroup(D, [1,2], 0);
+  env.api.setGroup(D, [3,4], 0);
+  env.api.setGroup(T, [1,3,4], 0);
+  env.api.removeDog(1, TEST_PIN);
+  check('Luna zostaje sama — bez grupy', g(2)===0);
+  check('inna grupa tego dnia nietknięta', g(3)===2 && g(4)===2);
+  check('jutro zostały dwa psy — dalej grupa', g(3, T)===1 && g(4, T)===1);
+})();
+
+/* ---------- B38: zmiana godziny czyszczenia nie cofa dnia ---------- */
+(()=>{
+  console.log('B38: setResetHour odrzuca zmianę, która otworzyłaby dzień już zamknięty');
+  const env = build([{id:1,name:'Borys'}], {now:'2026-09-24T21:00:00+02:00', props:{resetHour:'20'}});
+  check('start: po 20:00 lista na jutrze', env.api.businessDate_()==='2026-09-25');
+  let msg = '';
+  try{ env.api.setResetHour(8, TEST_PIN); }catch(e){ msg = e.message; }
+  check('20 -> 8 o 21:00 odrzucone', /cofnęłaby/.test(msg) && /08:00/.test(msg), msg);
+  check('godzina bez zmian', env.api.resetHour_()===20 && env.api.businessDate_()==='2026-09-25');
+  env.setNow('2026-09-25T09:00:00+02:00');
+  env.api.setResetHour(8, TEST_PIN);
+  check('po 8:00 ta sama zmiana przechodzi, dzień stoi', env.api.resetHour_()===8 && env.api.businessDate_()==='2026-09-25');
+  env.api.setResetHour(6, TEST_PIN);
+  check('przeskok w przód albo w miejscu — dozwolony', env.api.resetHour_()===6);
+})();
+
+/* ---------- B39: daty akcji ---------- */
+(()=>{
+  console.log('B39: nieistniejąca data i daleka przyszłość odrzucone');
+  const env = build([{id:1,name:'Borys'}]);
+  check('2026-13-45 to nie data', !env.api.isDate_('2026-13-45') && !env.api.isDate_('2026-02-30'));
+  check('2028-02-29 to data', env.api.isDate_('2028-02-29') && env.api.isDate_('2026-08-04'));
+  check('rezerwacja na 2026-13-45 odrzucona', throws(() => env.api.reserve(1, 'Ala', '2026-13-45')));
+  check('rok 9999 odrzucony', throws(() => env.api.reserve(1, 'Ala', '9999-01-01')));
+  const max = env.api.addDays_('2026-08-04', env.conf.MAX_DAYS_AHEAD);
+  check('rok do przodu jeszcze można', !throws(() => env.api.reserve(1, 'Ala', max)));
+  check('dzień dalej już nie', throws(() => env.api.reserve(1, 'Ala', env.api.addDays_(max, 1))));
+  check('grupy tak samo', throws(() => env.api.setGroup('9999-01-01', [1], 0)));
+})();
+
+/* ---------- B40: powtórka „Zwolnij" nie zwalnia cudzej rezerwacji ---------- */
+(()=>{
+  console.log('B40: setFree z widzianym stanem — powtórka po zaginionej odpowiedzi');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'}]);
+  env.api.reserve(1, 'Ola');
+  env.api.setFree(1, D, {status:'reserved', who:'Ola'});   // doszło, odpowiedź zginęła
+  env.api.reserve(1, 'Ala');                               // Ala bierze psa, zanim przyjdzie powtórka
+  const r = env.api.setFree(1, D, {status:'reserved', who:'Ola'});
+  check('rezerwacja Ali nietknięta', dogNow(env, 1).status==='reserved' && dogNow(env, 1).who==='Ala',
+    JSON.stringify(dogNow(env, 1)));
+  check('odpowiedź pokazuje stan Ali', r.dog.who==='Ala');
+  env.api.markWalked(1, '', 2, D);
+  env.api.setFree(1, D, {status:'reserved', who:'Ala'});   // ktoś z nieaktualnym ekranem „zwalnia" już wyprowadzonego
+  check('spacer nie cofnięty przez nieaktualny ekran', dogNow(env, 1).status==='walked');
+  env.api.setFree(1, D, {status:'walked', who:'Ala'});
+  check('„Cofnij" z właściwym stanem działa', dogNow(env, 1).status==='free');
+  env.api.reserve(1, 'Iza');
+  env.api.setFree(1);
+  check('stara karta bez `seen`: jak dotąd', dogNow(env, 1).status==='free');
+})();
+
+/* ---------- B41: szerokość zakładki Spacery sprawdzana raz ---------- */
+(()=>{
+  console.log('B41: sprawdzenie kolumn zapamiętane — kolejne wykonania nie czytają arkusza');
+  const env = build([{id:1,name:'Borys'}], {walks:[]});
+  env.api.getData();
+  check('zapamiętane we właściwości', env.props.walkCols===String(env.conf.WALK_HEADERS.length), JSON.stringify(env.props));
+  const sh = env.sheets['Spacery'];
+  let reads = 0;
+  const orig = sh.getMaxColumns;
+  sh.getMaxColumns = function(){ reads++; return orig.apply(this, arguments); };
+  env.newExecution();                                  // nowe żądanie z telefonu
+  env.api.getData();
+  check('nowe wykonanie nie sprawdza kolumn od nowa', reads===0, 'getMaxColumns x' + reads);
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

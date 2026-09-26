@@ -12,6 +12,7 @@ const PROP_RESET_HOUR = 'resetHour';
 const PROP_PIN = 'pin';
 const PROP_ENV = 'env';
 const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesienia stanu dnia z Psy do Spacery
+const PROP_WALK_COLS = 'walkCols';             // szerokość zakładki Spacery, którą już sprawdziliśmy
 
 /**
  * Które to środowisko. Liczy się dokładnie jedna wartość: `prod`.
@@ -79,14 +80,30 @@ function validHour_(hour) {
 
 /**
  * Ustawia godzinę czyszczenia i od razu przekłada wyzwalacz.
- * Zwraca pełny stan — interfejs odświeży nagłówek i stopkę.
+ * Zwraca pełny stan — interfejs odświeży nagłówek.
+ *
+ * Zmiana, która COFNĘŁABY dzień rezerwacyjny, jest odrzucana: przy resecie 20:00
+ * o 21:00 lista pracuje na jutrze, a przestawienie na 8:00 wróciłoby do dziś —
+ * dnia już zamkniętego i przeniesionego do Historii, który otworzyłby się od nowa.
+ * Po nowej godzinie ta sama zmiana przechodzi bez cofania. Przeskok do przodu
+ * (godzina, która dziś już minęła) jest dozwolony i Panel o nim uprzedza.
  */
 function setResetHour(hour, pin) {
   requirePin_(pin);
   const h = validHour_(hour);
-  PropertiesService.getScriptProperties().setProperty(PROP_RESET_HOUR, String(h));
-  installTriggers();        // wyzwalacz musi iść za ustawieniem, inaczej reset zostałby o starej porze
-  return getData();
+  const props = PropertiesService.getScriptProperties();
+  return withLock_(() => {
+    const before = businessDate_();
+    const old = props.getProperty(PROP_RESET_HOUR);
+    props.setProperty(PROP_RESET_HOUR, String(h));
+    if (businessDate_() < before) {
+      if (old === null) props.deleteProperty(PROP_RESET_HOUR); else props.setProperty(PROP_RESET_HOUR, old);
+      throw new Error('Teraz ta zmiana cofnęłaby listę na dzień już zamknięty — ustaw ją po '
+                      + String(h).padStart(2, '0') + ':00');
+    }
+    installTriggers();      // wyzwalacz musi iść za ustawieniem, inaczej reset zostałby o starej porze
+    return getData();
+  });
 }
 
 /** Stan wyzwalacza do panelu diagnostycznego — czy reset w ogóle jest uzbrojony. */

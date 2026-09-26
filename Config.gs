@@ -103,6 +103,13 @@ const TIMEZONE = 'Europe/Warsaw';
 const HISTORY_DAYS = 14;
 
 /**
+ * Jak daleko do przodu wolno rezerwować i planować grupy. Bez granicy dałoby się
+ * zapisać rok 9999 — taki wiersz jechałby do każdego telefonu w getData i nigdy by
+ * się nie domknął. Rok z zapasem wystarcza na każde planowanie w schronisku.
+ */
+const MAX_DAYS_AHEAD = 365;
+
+/**
  * Domyślna godzina nocnego czyszczenia listy (0–23).
  * To tylko wartość startowa — prowadząca zmienia ją z panelu w trybie edycji,
  * a wtedy zapisuje się w Script Properties (patrz Settings.gs).

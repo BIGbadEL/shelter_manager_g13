@@ -83,9 +83,12 @@ na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w re
 npm run deploy:prod
 ```
 
-To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki i podbija wersję *istniejącego*
-wdrożenia — link do aplikacji zostaje ten sam. Czerwony test przerywa całość, więc zepsuty kod
-nie ma jak wyjechać do wolontariuszy. Opis wersji jest opcjonalny: `npm run deploy:prod -- -d "co się zmieniło"`.
+To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki, podbija wersję *istniejącego*
+wdrożenia — link do aplikacji zostaje ten sam — i na koniec **sam otwiera aplikację**
+(`scripts/warmup.js`), tak jakby ktoś kliknął link. Czerwony test przerywa całość, więc zepsuty
+kod nie ma jak wyjechać do wolontariuszy. Jeśli otwarcie się nie uda, polecenie kończy się
+komunikatem „Otwórz link ręcznie TERAZ" — zrób to przed godziną czyszczenia (dlaczego: niżej,
+*Przejście ze starego modelu*).
 
 Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` — to świadoma decyzja:
 nie ma argumentu, który dałoby się pomylić. Nie są tajemnicą, produkcyjny jest po prostu
@@ -236,7 +239,10 @@ rezerwować na jutro. Granicą jest więc południe: reset przed 12:00 zamyka dz
 
 **Notatki na właściwych dniach:** notatka bez terminu widnieje tylko na bieżącym dniu
 („zdjęcia o 12:00" nie dotyczy soboty), notatka z terminem — na każdym dniu do terminu włącznie,
-notatka „nigdy nie znika" — na każdym dniu.
+notatka „nigdy nie znika" — na każdym dniu. W arkuszu notatka „bez terminu" ma termin równy
+dniowi rezerwacyjnemu, w którym ją zapisano: dodana o 20:10, gdy lista pracuje już na jutrze,
+dożyje jutra, a nie zniknie przy czyszczeniu o 20:30. Na ekranie dalej wygląda na „bez terminu"
+(bez odznaki, puste pole daty w edycji).
 
 **Zadania na właściwych dniach:** na bieżącym dniu widać zadania, których dzień już nadszedł
 (nieodhaczone przechodzą dalej z odznaką „od N dni"); na przyszłym — tylko zaplanowane dokładnie
@@ -257,15 +263,26 @@ z sobotnią datą.
 dnia na liście dzieje się punktualnie sama. Czyszczenie tylko **domyka** dni sprzed bieżącego:
 ich odbyte spacery idą do Historii pod datą zapisaną w wierszu (koniec zgadywania, który dzień
 się właśnie skończył), wiersze znikają ze Spacery, notatki bez terminu wygasają, odhaczone
-zadania też. Jest bezpieczne o każdej porze: dzień, który trwa, zostaje nietknięty, a zaległe
-dni (wyzwalacz nie zadziałał) domykają się przy najbliższym uruchomieniu, w kolejności dat.
+zadania też. Jest bezpieczne o każdej porze i dowolną liczbę razy: dzień, który trwa, zostaje
+nietknięty (także jego notatki), a zaległe dni (wyzwalacz nie zadziałał) domykają się przy
+najbliższym uruchomieniu, w kolejności dat. Wyjątek: notatki zapisane bez terminu jeszcze przed
+tą wersją (pusty `notatka_do`) znikają przy każdym uruchomieniu, jak dawniej.
 
 **Przejście ze starego modelu dzieje się samo.** Przy pierwszym dostępie po wdrożeniu aplikacja
 zakłada zakładkę Spacery i przenosi do niej dzisiejszy stan ze starych kolumn Psy — raz
 (pilnuje tego właściwość skryptu `walksImported`, więc skasowana kiedyś zakładka nie wskrzesi
 tygodniowego stanu). Starych kolumn nie czyścimy: gdyby trzeba było cofnąć wdrożenie, poprzednia
-wersja znów z nich skorzysta. **Nie wdrażaj w godzinie czyszczenia** — stan sprzed czyszczenia
-dostałby wtedy już jutrzejszą datę.
+wersja znów z nich skorzysta.
+
+Stan dostaje datę dnia, który trwa w chwili tego pierwszego dostępu — dlatego ważne jest,
+**kiedy** on nastąpi. Dostępem jest każde otwarcie linku, ale też sam nocny wyzwalacz: gdyby po
+wdrożeniu nikt nie otworzył aplikacji, pierwszy dostęp przyszedłby dopiero przy czyszczeniu, po
+przełomie dnia. Dlatego:
+- `npm run deploy:prod` otwiera aplikację sam, zaraz po wdrożeniu — przejście dzieje się wtedy;
+- jeśli mimo to pierwszy dostęp wypadnie w godzinie czyszczenia, stan trafia pod dzień, który
+  właśnie się skończył (spacery idą do Historii, lista jutra zostaje czysta);
+- **nie wdrażaj w samej godzinie czyszczenia** (np. 20:00–20:59) — stan zmieszany ze starym
+  czyszczeniem nie ma wtedy jednej dobrej daty.
 
 Karty otwarte jeszcze przed wdrożeniem działają dalej: akcja bez daty trafia na bieżący dzień,
 a `getData` wciąż wpisuje stan bieżącego dnia w samych psów.
@@ -279,6 +296,9 @@ Trzy rzeczy warto wiedzieć:
 - Godzina czyszczenia to **granica dnia rezerwacyjnego** (patrz wyżej) — zmienia dzień na liście punktualnie.
 - `atHour(h)` w Apps Script to **okno h:00–h:59**, nie punkt czasowy — domknięcie dnia i przeniesienie do Historii dzieje się gdzieś w tej godzinie.
 - Ustawienie godziny, która **dziś już minęła**, od razu przełącza listę na kolejny dzień.
+- Zmiana, która **cofnęłaby** dzień na liście, jest odrzucana — np. z 20:00 na 8:00 o 21:00
+  lista wróciłaby z jutra na dziś, dzień już zamknięty i przeniesiony do Historii. Tę samą zmianę
+  wystarczy zrobić po nowej godzinie (tu: jutro po 8:00); Panel to podpowiada.
 
 ## Spacery grupowe
 
@@ -369,7 +389,7 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 
 ## Notatki i dwa spacery
 
-- **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy najbliższym czyszczeniu — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
+- **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy czyszczeniu kończącym dzień, na którym ją zapisano — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
 - **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
 - **Dwa spacery dziennie** (`spacery` = 1/2): pierwszy odbyty spacer zapisuje się w `kto1`/`godzina1`, a pies wraca na „wolny” z odznaką `spacery 1/2` i informacją, kto odbył pierwszy; dopiero drugi spacer daje pełne „wyprowadzony” (`2/2`). Oba spacery trafiają osobno do Historii przy nocnym resecie. Pomyłkę cofa przycisk „Cofnij 1. spacer”. Liczba odbytych spacerów jest wyliczana z danych (kto1 + status), nie przechowywana — brak ryzyka rozjazdu.
@@ -377,6 +397,25 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+**Po review PR #1:**
+- Przejście ze starego modelu mogło zgubić dzisiejsze spacery, gdy pierwszym dostępem po
+  wdrożeniu był nocny wyzwalacz. Wdrożenie otwiera teraz aplikację samo, a przejście w godzinie
+  czyszczenia datuje stan dniem, który się skończył.
+- Numer grupy 1.5 (z publicznego `setGroup` albo wpisany ręcznie) wywracał listę na każdym
+  telefonie i wpędzał ją w pętlę `getData`. Numer musi być dodatnią liczbą całkowitą, a ratunkowe
+  odświeżenie po błędzie rysowania idzie najwyżej raz na 15 s.
+- Podgląd minionego dnia zostawał na „Wczytuję…" po przełomie dnia.
+- Notatka bez terminu dodana po przełomie dnia znikała przy czyszczeniu tego samego wieczoru.
+- Równoległa zmiana składu grupy gubiła psy dołożone przez kogoś innego, a nieaktualny numer
+  grupy potrafił rozbić cudzą, nową grupę. Odpowiedź `setGroup` przywracała też grupę, którą
+  chwilę później rozwiązał spacer.
+- Usunięcie psa zostawiało grupę z jednym psem.
+- Zadanie albo pies dodany Enterem z klawiatury telefonu nie pojawiał się (fokus w polu).
+- Zmiana godziny czyszczenia z wieczornej na poranną potrafiła otworzyć zamknięty dzień.
+- Daty w rodzaju 2026-13-45 albo 9999-01-01 przechodziły.
+- „Zwolnij" ponowione po zaginionej odpowiedzi zwalniało rezerwację, którą w międzyczasie
+  zrobił ktoś inny.
 
 **Grupy — poprawki z testu:**
 - Przytrzymanie kafelka przerysowywało listę krótszymi kafelkami do zaznaczania — wszystko nad
