@@ -323,15 +323,47 @@ function undoFirstWalk(id, date) {
   });
 }
 
-/** Cofa psa do stanu "wolny" danego dnia (zwolnienie rezerwacji albo cofnięcie spaceru). */
+/**
+ * Cofa psa do stanu "wolny" danego dnia (zwolnienie rezerwacji albo cofnięcie spaceru).
+ *
+ * Pies, który traci opiekuna, WYPADA ZE SWOJEJ GRUPY: spacer grupowy to psy, które
+ * ktoś faktycznie prowadzi razem, a kolor grupy przy zwolnionym psie tylko myli.
+ * Grupa, w której został jeden pies, przestaje być grupą. Zaplanowana grupa wolnych
+ * psów (nikt ich jeszcze nie wziął) zostaje — tu nikt nikogo nie zwalnia.
+ * Powtórka po zaginionej odpowiedzi trafia na psa już wolnego i niczego nie rusza.
+ */
 function setFree(id, date) {
   const a = actionDate_(date);
-  return dogAction_(id, a.date, w => {
-    if (w.status === STATUS.FREE && !w.who && !w.time) return false;
-    w.status = STATUS.FREE;
-    w.who = '';
-    w.time = '';
-    return true;
+  return withLock_(() => {
+    const dog = catalogDog_(id);
+    if (!dog) return { dog: null };
+    const sh = walksSheetLocked_();
+    const last = sh.getLastRow();
+    const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
+    const day = {};                                        // pies -> indeks wiersza tego dnia
+    rows.forEach((r, i) => { const w = mapWalkRow_(r); if (w.date === a.date) day[w.dogId] = i; });
+    const answer = w => ({ dog: Object.assign(withWalk_(dog, w), { date: a.date }) });
+
+    const i = day[Number(id)];
+    if (i === undefined) return answer(emptyWalk_(a.date, id));
+    const w = mapWalkRow_(rows[i]);
+    if (w.status === STATUS.FREE && !w.who && !w.time) return answer(w);   // nic do zwalniania
+
+    const group = w.group;
+    w.status = STATUS.FREE; w.who = ''; w.time = ''; w.group = 0;
+    rows[i] = walkToRow_(w);
+    const changed = [i];
+    if (group) {
+      const left = Object.keys(day).map(Number).filter(d => mapWalkRow_(rows[day[d]]).group === group);
+      if (left.length === 1) {
+        const lone = mapWalkRow_(rows[day[left[0]]]);
+        lone.group = 0;
+        rows[day[left[0]]] = walkToRow_(lone);
+        changed.push(day[left[0]]);
+      }
+    }
+    changed.forEach(k => sh.getRange(k + 2, 1, 1, WALK_WIDTH).setValues([rows[k]]));
+    return answer(w);
   });
 }
 

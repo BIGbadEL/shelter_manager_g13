@@ -314,13 +314,11 @@
     bar.classList.toggle('hidden', !state.loaded || state.env === 'prod');
   }
 
-  /** Nagłówek i stopka mówią o godzinie czyszczenia — musi iść za ustawieniem. */
+  /** Nagłówek mówi o godzinie czyszczenia — musi iść za ustawieniem. */
   function showResetHour(){
     const hh = String(state.resetHour).padStart(2,'0') + ':00';
     const a = document.getElementById('resetNote');
-    const b = document.getElementById('resetNoteFoot');
     if(a) a.textContent = '↺ czyści się o ' + hh;
-    if(b) b.textContent = hh;
   }
   /** Render, który nie wyrywa nikomu klawiatury spod palców. */
   function safeRender(){ if(!busyEditing()) render(); }
@@ -758,9 +756,10 @@
     const adm='';   // edycja psa żyje w katalogu (tryb edycji), nie na liście dnia
     const meta=dogMeta(dog)+dogNote(dog);
     const style=tileStyle(dog, dm);
+    const pk=pickBits(dog);
 
     if(dog.status==='free'){
-      return `<li class="dog" data-dog="${dog.id}" style="${style}">
+      return `<li class="dog${pk.cls}" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button>${
@@ -769,7 +768,7 @@
         <div class="entry hidden" data-entry="${dog.id}">
           <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
           <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
-        </div></li>`;
+        </div>${pk.box}</li>`;
     }
     if(dog.status==='reserved'){
       // w przyszłości nie ma czego odhaczać — rezerwację można tylko zwolnić
@@ -782,7 +781,7 @@
           : `<button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>`;
         if(waiting.length) wait = `<div class="grpwait">Grupa czeka na rezerwację: ${waiting.map(d=>esc(dogLabel(d))).join(', ')}</div>`;
       }
-      return `<li class="dog" data-dog="${dog.id}" style="${style}">
+      return `<li class="dog${pk.cls}" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span>
           <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
@@ -790,14 +789,14 @@
           <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
           ${walkBtn}
           <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
-        </div>${wait}</li>`;
+        </div>${wait}${pk.box}</li>`;
     }
-    return `<li class="dog walked" data-dog="${dog.id}" style="${style}">
+    return `<li class="dog walked${pk.cls}" data-dog="${dog.id}" style="${style}">
       <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
       ${meta}
       <div class="status"><span class="who">✓ ${esc(dog.who)}</span>
         <button class="btn ghost spacer" data-act="free" data-id="${dog.id}">Cofnij</button>
-      </div></li>`;
+      </div>${pk.box}</li>`;
   }
 
   function difChipHtml(dm){
@@ -886,7 +885,7 @@
       ${top}
       <div class="count">${countLine()}</div>
       <ul>`;
-    d.forEach(dog=>{ html += state.select ? renderPickDog(dog) : renderDog(dog); });
+    d.forEach(dog=>{ html += renderDog(dog); });
     return html + `</ul>`;
   }
 
@@ -1037,16 +1036,33 @@
     return dog.status !== 'walked' || (sel.gid && dog.group === sel.gid);
   }
 
-  function renderPickDog(dog){
-    const sel = state.select, dm = DIF[dog.dif]||DIF.easy;
-    const picked = sel.ids.indexOf(dog.id) >= 0;
-    const cls = 'dog pick' + (picked ? ' picked' : '') + (canPick(dog) ? '' : ' nopick');
-    const what = dog.status==='walked' ? 'wyprowadzony'
-               : dog.status==='reserved' ? 'zarezerwowany · ' + esc(dog.who) : 'wolny';
-    return `<li class="${cls}" data-dog="${dog.id}" style="${tileStyle(dog, dm)}">
-      <div class="row"><span class="pickbox">${picked ? '✓' : ''}</span><span class="name">${esc(dogLabel(dog))}</span>
-        <span class="flex"></span>${difChipHtml(dm)}</div>
-      <div class="dogmeta">${dog.group ? groupPill(dog.group) + ' ' : ''}${what}</div></li>`;
+  /**
+   * Kafelek w trybie zaznaczania to TEN SAM kafelek co zwykle: dochodzi tylko klasa
+   * i kółko położone na wierzchu (position:absolute), a przyciski bledną. Osobny,
+   * krótszy kafelek skracał całą listę w chwili przytrzymania — wszystko nad palcem
+   * się kurczyło, a przytrzymany pies uciekał z ekranu.
+   */
+  function pickBits(dog){
+    const sel = state.select;
+    if(!sel) return {cls:'', box:''};
+    const picked = sel.ids.indexOf(dog.id) >= 0, can = canPick(dog);
+    return {
+      cls: ' pick' + (picked ? ' picked' : '') + (can ? '' : ' nopick'),
+      box: can ? `<span class="pickbox">${picked ? '✓' : ''}</span>` : '',
+    };
+  }
+
+  /**
+   * Pasek na dole ekranu zasłania ostatnie ~80 px. Jeśli przytrzymany pies stał
+   * właśnie tam, przesuwamy listę dokładnie o tyle, żeby wyszedł spod paska —
+   * i tylko wtedy.
+   */
+  function keepAboveBar(id){
+    const li = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
+    const bar = document.getElementById('selectBar');
+    if(!li || !bar) return;
+    const top = bar.getBoundingClientRect().top, bottom = li.getBoundingClientRect().bottom;
+    if(top > 0 && bottom > top) window.scrollBy(0, bottom - top + 12);
   }
 
   /** Pasek na dole ekranu: ile zaznaczonych, „Grupa" wyszarzone do pierwszego towarzysza. */
@@ -1081,6 +1097,7 @@
       state.select = {date:state.date, anchor:id, gid:0, ids:[id]};
     }
     render();
+    keepAboveBar(id);
   }
 
   /** Stuknięcie w kafelek podczas zaznaczania. Przytrzymany pies zostaje w grupie na stałe. */
@@ -1264,12 +1281,22 @@
     }});
   }
 
+  /**
+   * „Zwolnij" / „Cofnij". Pies bez opiekuna wypada ze swojej grupy, a grupa z jednym
+   * psem przestaje być grupą — dokładnie jak robi to serwer (setFree). Kafelki
+   * dawnych towarzyszy też się zmieniają: kolor, podpowiedź „czeka na…", przycisk.
+   */
   function doFree(id){
     const date=state.date;
     if(!date || !findDog(id)) return;
     if(isPast(date)){ dayClosed(); return; }
-    setWalk(date, id, Object.assign({}, walkOf(date, id), {status:'free', who:'', time:''}));
+    const w=walkOf(date, id);
+    const gid=(w.status==='free' && !w.who && !w.time) ? 0 : w.group;   // wolnego nie ma skąd zwalniać
+    const mates=gid ? groupMates(date, gid).map(d=>d.id).filter(x=>x!==id) : [];
+    setWalk(date, id, Object.assign({}, w, {status:'free', who:'', time:''}, gid ? {group:0} : {}));
+    if(mates.length===1) state.walks[wkey(date, mates[0])].group = 0;
     patchDog(id);
+    mates.forEach(x=>patchDog(x));
     enqueue('setFree',[id,date],{key:keyDog(id,date),reconcile:res=>{
       if(res && res.dog) setWalk(date, id, res.dog);
       if(date===state.date && !busyEditing()) patchDog(id);

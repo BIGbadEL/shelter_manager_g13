@@ -124,9 +124,14 @@
      a znacznik „👥 grupa" mówi to samo tekstem, gdy w słońcu tła nie widać. */
   .grp{font-size:11px;font-weight:800;padding:1px 7px;border-radius:6px;background:#fff;border:1px solid;}
   .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
-  .dog.pick{cursor:pointer;}
-  .pickbox{width:24px;height:24px;border-radius:50%;border:2px solid var(--ink);flex:none;background:#fff;
+  /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
+     w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
+  .dog.pick{cursor:pointer;position:relative;}
+  .dog.pick .status,.dog.pick .grpwait{opacity:.35;pointer-events:none;}
+  .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
+    border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
+  .dog.picked{box-shadow:0 0 0 2px var(--ink);}
   .dog.picked .pickbox{background:var(--ink);}
   .dog.nopick{opacity:.4;cursor:default;}
   .selectbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;
@@ -186,9 +191,6 @@
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
     font-size:13px;font-weight:600;padding:9px 15px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;}
   .toast.show{opacity:1;}
-
-  footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.55;}
-  footer b{color:var(--ink);}
 
   /* ---------- zakładka Panel (ustawienia + diagnostyka) ---------- */
   .panelbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-top:12px;}

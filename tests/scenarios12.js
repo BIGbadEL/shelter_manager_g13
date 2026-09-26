@@ -1,4 +1,4 @@
-// S71-S77: spacery grupowe. Przytrzymanie kafelka jest mierzone prawdziwym
+// S71-S81: spacery grupowe. Przytrzymanie kafelka jest mierzone prawdziwym
 // zegarem (jak na telefonie), więc zestaw jest asynchroniczny.
 const { buildApp, dogFree } = require('./harness');
 let failures = 0;
@@ -52,7 +52,12 @@ async function S71(){
   check('pasek na dole widoczny', !bar(app).classList.contains('hidden'));
   check('przytrzymany pies zaznaczony', li(app, 1).classList.contains('picked'));
   check('„Grupa" wyszarzona, dopóki nie ma towarzysza', groupBtn(app).disabled===true);
-  check('żadnych rezerwacji ani spacerów w tym trybie', !/data-act="(reserve|walk|free|confirm)"/.test(app.html()));
+  // przyciski zostają na miejscu (żeby nic nie skoczyło), ale stuknięcie w nie tylko zaznacza
+  tapEl(app, li(app, 3).querySelector('[data-act="reserve"]'));
+  check('„Zarezerwuj" w tym trybie nie rezerwuje, tylko zaznacza',
+    li(app, 3).classList.contains('picked') && !doc(app).querySelector('[data-entry]:not(.hidden)')
+    && S(app).walks[D+'|3'] === undefined, JSON.stringify(S(app).walks));
+  tapEl(app, li(app, 3));
 
   tapEl(app, li(app, 2));
   check('stuknięcie zaznacza psa', li(app, 2).classList.contains('picked'));
@@ -133,26 +138,29 @@ async function S73(){
 }
 
 async function S74(app){
-  console.log('S74: cofnięcie cofa tylko jednego psa — i nic się nie blokuje');
+  console.log('S74: cofnięcie cofa tylko jednego psa — i wyprowadza go z grupy');
   app.click('[data-act="free"][data-id="1"]');         // „Cofnij" u Borysa
   const frees = app.pending.filter(p => p.fn==='setFree');
   check('tylko Borys', frees.length===1 && frees[0].args[0]===1, app.pending.map(p=>p.fn).join(','));
   check('Luna dalej wyprowadzona', li(app, 2).classList.contains('walked'));
-  check('grupa zostaje', /👥 grupa/.test(li(app, 1).textContent));
-  app.respondNext({dog: dogFree({id:1, name:'Borys', group:1})});
+  check('Borys bez opiekuna wypada z grupy', !/👥 grupa/.test(li(app, 1).textContent) && !bgOf(app, 1)
+    && S(app).walks[D+'|1'].group===0, JSON.stringify(S(app).walks[D+'|1']));
+  check('grupa z samą Luną przestaje być grupą — także na ekranie', !/👥 grupa/.test(li(app, 2).textContent)
+    && !bgOf(app, 2) && S(app).walks[D+'|2'].group===0, JSON.stringify(S(app).walks[D+'|2']));
+  app.respondNext({dog: dogFree({id:1, name:'Borys'})});
 
   app.click('[data-act="reserve"][data-id="1"]');
   app.type('[data-input="1"]', 'Ala');
   app.click('[data-act="confirm"][data-id="1"]');
-  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'reserved', who:'Ala', group:1})});
-  check('po ponownej rezerwacji Borysa da się odhaczyć (reszta grupy już wyszła)',
+  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'reserved', who:'Ala'})});
+  check('po ponownej rezerwacji Borysa da się odhaczyć',
     /data-act="walk" data-id="1"/.test(li(app, 1).outerHTML), li(app, 1).outerHTML.slice(0,300));
   const before = app.shipped.filter(f => f==='markWalked').length;
   app.click('[data-act="walk"][data-id="1"]');
   const after = app.pending.filter(p => p.fn==='markWalked');
   check('odhacza tylko jego — Luny drugi raz nie', after.length===1 && after[0].args[0]===1
     && app.shipped.filter(f => f==='markWalked').length===before+1, JSON.stringify(after.map(p=>p.args)));
-  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', group:1})});
+  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala'})});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
@@ -233,6 +241,131 @@ async function S77(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S78(){
+  console.log('S78: przytrzymanie nie zmienia układu — ten sam kafelek, kółko na wierzchu');
+  const app = buildApp();
+  app.seed(base({
+    dogs: [dogFree({id:1, name:'Borys', note:'Zdjęcia o 12:00'}), dogFree({id:2, name:'Luna', walks:2}),
+           dogFree({id:3, name:'Rex'}), dogFree({id:4, name:'Cyra'}), dogFree({id:5, name:'Fado'})],
+    walks: [
+      {date:D, dogId:2, status:'free', who1:'Ela', time1:'9:00'},
+      {date:D, dogId:3, status:'reserved', who:'Ola', group:1},
+      {date:D, dogId:4, status:'free', group:1},
+      {date:D, dogId:5, status:'walked', who:'Iza', time:'9:30'},
+    ],
+  }));
+  const ids = [1,2,3,4,5];
+  const before = {};
+  ids.forEach(id => { before[id] = li(app, id).outerHTML; });
+  const order0 = ord(app);
+  await press(app, 1);
+  check('tryb zaznaczania włączony', !!S(app).select);
+  // jedyne różnice wolno mieć w klasie i w kółku, które leży na wierzchu (position:absolute)
+  const strip = h => h.replace(/<span class="pickbox">[^<]*<\/span>/, '').replace(/ (pick|picked|nopick)(?=[ "])/g, '');
+  const diff = ids.filter(id => strip(li(app, id).outerHTML) !== before[id]);
+  check('każdy kafelek ma tę samą treść co przed przytrzymaniem (notatka, przyciski, imiona)',
+    diff.length===0, diff.map(id => id + ': ' + strip(li(app, id).outerHTML).slice(0, 200)).join(' || '));
+  check('kolejność ta sama', ord(app)===order0, ord(app));
+  check('kółko przy psach do zaznaczenia', [1,2,3,4].every(id => li(app, id).querySelector('.pickbox')));
+  check('...a przy psie po spacerze bez grupy nie', !li(app, 5).querySelector('.pickbox')
+    && li(app, 5).classList.contains('nopick'));
+  const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'Styles.html'), 'utf8');
+  check('kółko nie zajmuje miejsca w układzie', /\.pickbox\{position:absolute;/.test(css));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+async function S79(){
+  console.log('S79: „Zwolnij" wyprowadza psa z grupy; grupa z jednym psem znika');
+  const app = buildApp();
+  app.seed(base({walks:[
+    {date:D, dogId:1, status:'reserved', who:'Ala', group:1},
+    {date:D, dogId:2, status:'reserved', who:'Ola', group:1},
+    {date:D, dogId:3, status:'free', group:1},
+    {date:D, dogId:4, status:'reserved', who:'Iza', group:2},
+    {date:D, dogId:5, status:'free', group:2},
+  ]}));
+  const c1 = bgOf(app, 1)[1];
+  check('start: Borys czeka na Rexa', /czeka na rezerwację: Rex$/.test(li(app, 1).querySelector('.grpwait').textContent.trim()));
+
+  app.click('[data-act="free"][data-id="2"]');         // Ola rezygnuje z Luny
+  const job = lastJob(app);
+  check('setFree(pies, dzień)', job.fn==='setFree' && job.args[0]===2 && job.args[1]===D, JSON.stringify(job.args));
+  check('Luna od razu bez koloru i znacznika', !bgOf(app, 2) && !/👥 grupa/.test(li(app, 2).textContent));
+  check('...także w stanie', S(app).walks[D+'|2'].group===0 && S(app).walks[D+'|2'].status==='free',
+    JSON.stringify(S(app).walks[D+'|2']));
+  check('Borys i Rex dalej razem', bgOf(app, 1)[1]===c1 && bgOf(app, 3)[1]===c1
+    && S(app).walks[D+'|1'].group===1 && S(app).walks[D+'|3'].group===1);
+  check('Borys czeka już tylko na Rexa, nie na wolną Lunę',
+    /czeka na rezerwację: Rex$/.test(li(app, 1).querySelector('.grpwait').textContent.trim()),
+    li(app, 1).querySelector('.grpwait').textContent.trim());
+  app.respondNext({dog: dogFree({id:2, name:'Luna'})});
+
+  app.click('[data-act="free"][data-id="4"]');         // z grupy 2 zostaje sam Fado
+  check('Cyra bez grupy', !bgOf(app, 4) && S(app).walks[D+'|4'].group===0);
+  check('Fado sam to nie grupa — kafelek przerysowany', !bgOf(app, 5) && !/👥 grupa/.test(li(app, 5).textContent)
+    && S(app).walks[D+'|5'].group===0, JSON.stringify(S(app).walks[D+'|5']));
+  check('grupa 1 nietknięta', S(app).walks[D+'|1'].group===1 && S(app).walks[D+'|3'].group===1);
+  app.respondNext({dog: dogFree({id:4, name:'Cyra'})});
+  check('odpowiedź serwera tego nie cofa', !bgOf(app, 4) && !bgOf(app, 5) && bgOf(app, 1)[1]===c1);
+  check('kolejka pusta', drained(app), JSON.stringify(app.state()));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+async function S80(){
+  console.log('S80: grupa psów 1- i 2-spacerowych — drugi spacer da się odhaczyć');
+  // tu pracuje reguła „nikt z grupy nie jest wolny" zamiast „wszyscy zarezerwowani":
+  // po wspólnym spacerze Borys jest wyprowadzony, a Luna czeka na drugi
+  const app = buildApp();
+  app.seed(base({
+    dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna', walks:2}), dogFree({id:3, name:'Rex'})],
+    walks: [{date:D, dogId:1, status:'reserved', who:'Ala', group:1}, {date:D, dogId:2, status:'reserved', who:'Ola', group:1}],
+  }));
+  app.click('[data-act="walk"][data-id="1"]');
+  const w1 = app.pending.filter(p => p.fn==='markWalked');
+  check('wspólny spacer odhacza oba', w1.length===2, app.pending.map(p=>p.fn).join(','));
+  check('Luna po pierwszym z dwóch: wolna i dalej w grupie',
+    S(app).walks[D+'|2'].status==='free' && S(app).walks[D+'|2'].who1==='Ola' && S(app).walks[D+'|2'].group===1,
+    JSON.stringify(S(app).walks[D+'|2']));
+  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', time:'10:00', group:1})});
+  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, who1:'Ola', time1:'10:00', group:1})});
+
+  app.click('[data-act="reserve"][data-id="2"]');
+  app.type('[data-input="2"]', 'Ola');
+  app.click('[data-act="confirm"][data-id="2"]');
+  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, status:'reserved', who:'Ola', who1:'Ola', time1:'10:00', group:1})});
+  check('drugi spacer Luny do odhaczenia (Borys już wyszedł, nikt nie jest wolny)',
+    /data-act="walk" data-id="2"/.test(li(app, 2).outerHTML), li(app, 2).outerHTML.slice(0, 300));
+  const n = app.pending.length;
+  app.click('[data-act="walk"][data-id="2"]');
+  const w2 = app.pending.slice(n);
+  check('odhacza tylko Lunę, jako drugi spacer', w2.length===1 && w2[0].args[0]===2 && w2[0].args[2]===2,
+    JSON.stringify(w2.map(p=>p.args)));
+  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, status:'walked', who:'Ola', who1:'Ola', time1:'10:00', group:1})});
+  check('kolejka pusta', drained(app), JSON.stringify(app.state()));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+async function S81(){
+  console.log('S81: przytrzymany pies nie chowa się pod paskiem na dole');
+  const app = buildApp();
+  app.seed(base());
+  const W = app.window, scrolls = [];
+  W.scrollBy = (x, y) => { scrolls.push(y); };
+  const rect = (top, bottom) => ({top, bottom, left:0, right:0, x:0, y:top, width:0, height:bottom-top});
+  // pasek zajmuje dół ekranu od 700 px; Fado stoi tuż nad krawędzią i wchodzi pod pasek
+  W.HTMLElement.prototype.getBoundingClientRect = function(){
+    if(this.id === 'selectBar') return rect(700, 784);
+    if(this.dataset && this.dataset.dog === '5') return rect(660, 760);
+    return rect(100, 200);
+  };
+  await press(app, 5);
+  check('lista przesunięta dokładnie o tyle, ile trzeba', scrolls.length===1 && scrolls[0]===72, JSON.stringify(scrolls));
+  tapEl(app, doc(app).getElementById('selCancel'));
+  await press(app, 1);
+  check('pies wyżej na ekranie — lista stoi', !!S(app).select && scrolls.length===1, JSON.stringify(scrolls));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
   try{
     await S71();
@@ -242,6 +375,10 @@ async function S77(){
     await S75();
     await S76();
     await S77();
+    await S78();
+    await S79();
+    await S80();
+    await S81();
   }catch(e){
     failures++;
     console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e));

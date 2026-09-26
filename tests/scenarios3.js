@@ -86,15 +86,17 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
 
 /* ---------- S18: porządki UI ---------- */
 (()=>{
-  console.log('S18: nazewnictwo i footer');
+  console.log('S18: nazewnictwo, bez opisu na dole strony');
   const fs=require('fs'), path=require('path');
   const idx=fs.readFileSync(path.join(ROOT,'Index.html'),'utf8');
   const scr=fs.readFileSync(path.join(ROOT,'Script.html'),'utf8');
+  const sty=fs.readFileSync(path.join(ROOT,'Styles.html'),'utf8');
   check('brak "prowadzącej" w Index', !/prowadząc/i.test(idx));
   check('brak "PROWADZĄCEJ" w Script (UI)', !/PROWADZĄCEJ/.test(scr));
   check('placeholder to samo "PIN"', /placeholder="PIN"/.test(idx));
-  check('footer bez tłumaczenia odznaki', !/bez spaceru/.test(idx.match(/<footer>[\s\S]*<\/footer>/)[0]));
-  check('footer bez "wyznaczone osoby"', !/wyznaczone/.test(idx));
+  // opis na dole i tak nikt nie czytał (zgłoszenie z terenu) — nie wraca
+  check('brak stopki z opisem', !/<footer/i.test(idx) && !/resetNoteFoot/.test(idx + scr));
+  check('brak stylów stopki', !/(^|\s)footer\s*\{/m.test(sty));
 })();
 
 /* ---------- S39: klient mówi serwerowi, KTÓRY to spacer ---------- */

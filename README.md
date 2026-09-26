@@ -286,14 +286,18 @@ Trzy rzeczy warto wiedzieć:
 zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
 wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
 wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny), znacznik „👥 grupa" i stają
-na liście obok siebie.
+na liście obok siebie. Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
+kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pies zostaje pod palcem.
 
 - **„Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
   aktywny, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna; do tego czasu kafelek mówi,
-  na czyją rezerwację grupa czeka.
-- **Cofnięcie cofa tylko jednego psa.** Dlatego reguła brzmi „nikt nie jest wolny", a nie „wszyscy
-  zarezerwowani": po spacerze pozostali są już wyprowadzeni, więc dosłowne „wszyscy zarezerwowani"
-  nie pozwoliłoby nigdy odhaczyć ponownie cofniętego psa.
+  na czyją rezerwację grupa czeka. Reguła brzmi „nikt nie jest wolny", a nie „wszyscy
+  zarezerwowani": w grupie psa jedno- i dwuspacerowego po wspólnym spacerze pierwszy jest już
+  wyprowadzony, a drugi czeka na drugi spacer — dosłowna reguła nie pozwoliłaby go nigdy odhaczyć.
+- **Zwolnienie albo cofnięcie wyprowadza psa z grupy.** Pies bez opiekuna traci kolor grupy;
+  grupa, w której został jeden pies, przestaje być grupą. Cofnięcie dotyczy tylko jednego psa —
+  reszta grupy zostaje wyprowadzona. Zaplanowana grupa wolnych psów (nikt ich jeszcze nie wziął)
+  zostaje bez zmian.
 - **Przytrzymanie psa, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć psy,
   albo nacisnąć „Rozwiąż". Pies przeniesiony do nowej grupy znika ze starej; grupa, w której został
   jeden pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy.
@@ -366,9 +370,19 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
 - **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
 - **Dwa spacery dziennie** (`spacery` = 1/2): pierwszy odbyty spacer zapisuje się w `kto1`/`godzina1`, a pies wraca na „wolny” z odznaką `spacery 1/2` i informacją, kto odbył pierwszy; dopiero drugi spacer daje pełne „wyprowadzony” (`2/2`). Oba spacery trafiają osobno do Historii przy nocnym resecie. Pomyłkę cofa przycisk „Cofnij 1. spacer”. Liczba odbytych spacerów jest wyliczana z danych (kto1 + status), nie przechowywana — brak ryzyka rozjazdu.
-- Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
+- Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN). Opisu na dole strony
+  już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+**Grupy — poprawki z testu:**
+- Przytrzymanie kafelka przerysowywało listę krótszymi kafelkami do zaznaczania — wszystko nad
+  palcem się kurczyło i przytrzymany pies uciekał z ekranu. Teraz to te same kafelki z kółkiem
+  w rogu, układ nie zmienia się ani o piksel; pies, który wpadłby pod pasek na dole, jest
+  wysuwany dokładnie o tyle, ile trzeba.
+- Zwolniony (albo cofnięty) pies zostawał w grupie z jej kolorem. Teraz z niej wypada, a grupa
+  z jednym psem przestaje istnieć.
+- Usunięty opis na dole strony.
 
 **Spacery grupowe:** przytrzymanie kafelka, zaznaczanie, wspólny kolor i miejsce na liście,
 jedno „Wyprowadzony ✓" dla całej grupy, cofanie pojedynczo, zmiana składu i rozwiązanie grupy.

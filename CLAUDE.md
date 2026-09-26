@@ -82,6 +82,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   pies po spacerze nie dołącza do nowej. **Nie jest w `RETRIABLE`** — nowa grupa bierze kolejny
   numer, więc powtórka przepisałaby ją pod inny numer i kolor. Wspólny spacer to NIE osobny
   endpoint: klient woła zwykłe `markWalked` dla każdego zarezerwowanego psa z grupy.
+  **Pies, który traci opiekuna, wypada z grupy**: `setFree` („Zwolnij" i „Cofnij") zeruje mu
+  grupę, a grupa z jednym psem przestaje istnieć (zgłoszenie z terenu: kolor przy zwolnionym
+  psie mylił). Zaplanowana grupa wolnych psów zostaje — wolnego nikt nie zwalnia. `setFree`
+  zostaje w `RETRIABLE`: powtórka trafia na psa już wolnego i niczego nie rusza (B30).
 - **Zadanie ma dzień, od którego się pokazuje** (kolumna `data`): `addTask(text, pin, date)`,
   brak daty = bieżący dzień rezerwacyjny (nie kalendarzowy — zadanie dodane po resecie nie może
   być od razu „od wczoraj"). Na liście bieżącego dnia: zadania z dniem ≤ bieżący; na przyszłym:
@@ -124,14 +128,20 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
 - **Spacery grupowe.** Przytrzymanie kafelka (`LONG_PRESS_MS` = 550 ms od `pointerdown`,
   przesunięcie > 10 px albo puszczenie przerywa) włącza `state.select`; w tym trybie każde
   kliknięcie w liście tylko zaznacza (`togglePick`) — żadnej rezerwacji z puszczenia palca.
+  **Kafelek w tym trybie to ten sam `renderDog`** (`pickBits`: klasa + kółko `position:absolute`
+  w rogu, przyciski bledną, ale zostają). Osobny, krótszy kafelek skracał listę w chwili
+  przytrzymania i pies uciekał spod palca z ekranu (S78). Jeśli przytrzymany pies wypada pod
+  pasek na dole, `keepAboveBar` przesuwa listę dokładnie o tyle (S81).
   Przytrzymanie psa z grupy otwiera jej skład do zmiany / „Rozwiąż". Kolor grupy wynika z numeru
   (`GROUP_COLORS`), obok tła jest znacznik „👥 grupa" — w słońcu samo tło znika. Grupa trzyma
   się razem na liście: blok stoi tam, gdzie stanąłby jej najpilniejszy pies; po zatwierdzeniu
   lista układa się od razu (to cel akcji). **„Wyprowadzony ✓" w grupie jest aktywny, gdy nikt
   z grupy nie jest WOLNY** i odhacza wszystkich zarezerwowanych. Nie „wszyscy zarezerwowani" —
-  po spacerze i cofnięciu jednego psa pozostali są wyprowadzeni, a dosłowna reguła blokowała
-  na zawsze ponowne odhaczenie cofniętego (S74 łapie to wstrzyknięte). Cofnięcie cofa jednego.
-  `patchDog` psa z grupy przerysowuje też kafelki towarzyszy — od jego stanu zależy ich przycisk.
+  w grupie psa 1- i 2-spacerowego po wspólnym spacerze pierwszy jest wyprowadzony, a drugi
+  czeka na drugi spacer; dosłowna reguła blokowała go na zawsze (S80 łapie to wstrzyknięte).
+  Cofnięcie cofa jednego psa i wyprowadza go z grupy (jak zwolnienie).
+  `patchDog` psa z grupy przerysowuje też kafelki towarzyszy — od jego stanu zależy ich przycisk;
+  `doFree` dodatkowo przerysowuje dawnych towarzyszy, bo po wyjściu psa `patchDog` ich nie widzi.
 - **Akcja pamięta swój dzień.** `doReserve` & spółka biorą datę w chwili kliknięcia,
   wysyłają ją i zapisują odpowiedź pod NIĄ, nie pod `state.date` — wolontariusz mógł
   w międzyczasie przejść strzałką gdzie indziej (S56). Klik na dniu, który zamknął się pod
@@ -175,7 +185,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **657 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **695 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -211,13 +221,15 @@ S49–S52 pasek środowiska testowego, S53–S62 nawigacja datą, rezerwacje z w
 przeskok dnia po resecie, S63 symetria strzałek, S64 stan wpisany w stronę, S65 tryb edycji
 jako katalog, S66–S67 zadania na konkretny dzień, S68 notatka „nigdy", S69–S70 przerysowanie
 w trybie edycji (bug nr 10), S71–S77 spacery grupowe (przytrzymanie, kolor, sąsiedztwo,
-wspólny spacer, cofanie jednego, zmiana i rozwiązanie, przyszły dzień), B1–B6 notatki / archiwizacja / godzina resetu,
+wspólny spacer, cofanie jednego, zmiana i rozwiązanie, przyszły dzień), S78 zaznaczanie bez
+zmiany układu, S79 zwolniony pies wypada z grupy, S80 grupa psów 1- i 2-spacerowych,
+S81 przytrzymany pies nie chowa się pod paskiem, B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
 B16 dzień rezerwacyjny, B17 rezerwacje na daty, B18 przejście przez reset, B19 domykanie
 zaległych dni, B20 podgląd minionych dni, B21 jednorazowy import, B22 usuwanie psa,
 B23 zagnieżdżona blokada, B24–B25 zadania z datą, B26 notatka „nigdy", B27 `bootJson_`,
-B28 `setGroup`, B29 dokładanie kolumny `grupa` do starej zakładki,
+B28 `setGroup`, B29 dokładanie kolumny `grupa` do starej zakładki, B30 `setFree` a grupa,
 T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna

@@ -93,7 +93,6 @@ function tap(app, n){
   sel.dispatchEvent(new app.window.Event('change',{bubbles:true}));
 
   check('nagłówek od razu 06:00', /06:00/.test(note.textContent), note.textContent);
-  check('stopka też 06:00', /06:00/.test(app.window.document.getElementById('resetNoteFoot').textContent));
   check('poszedł setResetHour', app.shipped.includes('setResetHour'), app.shipped.join(','));
 
   const job = app.pending[0];
@@ -162,7 +161,6 @@ function tap(app, n){
   app.seed(pack(2, {resetHour:7}));
   const note = app.window.document.getElementById('resetNote');
   check('nagłówek 07:00', /07:00/.test(note.textContent), note.textContent);
-  check('stopka 07:00', /07:00/.test(app.window.document.getElementById('resetNoteFoot').textContent));
   check('bez błędów', app.errors.length===0, app.errors.join(' | '));
 })();
 

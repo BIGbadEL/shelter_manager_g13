@@ -770,10 +770,9 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   env.api.setGroup(D, [1,2], 0);
   const gid = g(1);
   env.api.reserve(1, 'Ala');
-  env.api.setFree(1);
   env.api.reserve(2, 'Ola');
   env.api.markWalked(2, '', 2);
-  check('grupa przeżywa rezerwację, zwolnienie i spacer', g(1)===gid && g(2)===gid && dog(2).status==='walked');
+  check('grupa przeżywa rezerwację i spacer', g(1)===gid && g(2)===gid && dog(2).status==='walked');
 
   env.setNow('2026-08-04T22:10:00+02:00');
   env.api.endOfDay();
@@ -796,6 +795,50 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   check('dane nietknięte', d.dogs[0].status==='reserved' && d.dogs[0].who==='Ala', JSON.stringify(d.dogs[0]));
   check('kolumna dołożona z nagłówkiem', env.sheets['Spacery']._data[0][7]==='grupa', JSON.stringify(env.sheets['Spacery']._data[0]));
   check('grupowanie działa od razu', env.api.setGroup('2026-08-04', [1,2], 0).group===1);
+})();
+
+/* ---------- B30: zwolniony pies wypada z grupy ---------- */
+(()=>{
+  console.log('B30: setFree — pies bez opiekuna wypada z grupy, grupa z jednym psem znika');
+  const D = '2026-08-04', T = '2026-08-05';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Cyra'},{id:5,name:'Fado'}]);
+  const walk = (id, date) => env.api.getData().walks.filter(w => w.dogId===id && w.date===(date||D))[0]
+                             || {status:'free', who:'', group:0};
+  const g = (id, date) => walk(id, date).group || 0;
+
+  env.api.setGroup(D, [1,2,3], 0);                     // grupa 1: Borys, Luna, Rex
+  env.api.setGroup(T, [1,2], 0);                       // jutro też grupa 1 — numery są na dzień
+  env.api.reserve(1, 'Ala'); env.api.reserve(2, 'Ola');
+  const r = env.api.setFree(2);                        // Ola rezygnuje z Luny
+  check('zwolniona Luna bez grupy', g(2)===0 && walk(2).status==='free' && walk(2).who==='', JSON.stringify(walk(2)));
+  check('odpowiedź mówi to samo (klient z niej korzysta)', r.dog.group===0 && r.dog.status==='free', JSON.stringify(r.dog));
+  check('Borys i Rex dalej razem', g(1)===1 && g(3)===1);
+  check('Borys dalej zarezerwowany', walk(1).status==='reserved' && walk(1).who==='Ala');
+
+  const before = JSON.stringify(openRows(env));
+  env.api.setFree(2);                                  // powtórka po zaginionej odpowiedzi (RETRIABLE)
+  check('powtórka niczego nie rusza', JSON.stringify(openRows(env))===before);
+
+  env.api.setFree(1);                                  // z grupy zostaje sam Rex
+  check('grupa z jednym psem przestaje być grupą', g(1)===0 && g(3)===0, JSON.stringify([g(1), g(3)]));
+  check('Rex bez zmian poza grupą', walk(3).status==='free');
+  check('jutrzejsza grupa o tym samym numerze nietknięta', g(1, T)===1 && g(2, T)===1, JSON.stringify([g(1,T), g(2,T)]));
+
+  env.api.setGroup(D, [4,5], 0);                       // zaplanowana grupa wolnych psów
+  const gid = g(4);
+  env.api.setFree(4);                                  // wolnego nie ma skąd zwalniać
+  check('wolny pies w zaplanowanej grupie zostaje', gid>0 && g(4)===gid && g(5)===gid, JSON.stringify([gid, g(4), g(5)]));
+
+  env.api.reserve(4, 'Iza'); env.api.reserve(5, 'Jan');
+  env.api.markWalked(4, '', 2); env.api.markWalked(5, '', 2);
+  env.api.setFree(4);                                  // „Cofnij" po spacerze
+  check('cofnięty spacer też wyprowadza z grupy', g(4)===0 && g(5)===0 && walk(5).status==='walked',
+    JSON.stringify([walk(4), walk(5)]));
+
+  env.api.setGroup(T, [3,4], 0);
+  env.api.reserve(3, 'Ewa', T);
+  env.api.setFree(3, T);                               // zwolnienie rezerwacji z wyprzedzeniem
+  check('na przyszły dzień tak samo', g(3, T)===0 && g(4, T)===0 && g(1, T)===1);
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
