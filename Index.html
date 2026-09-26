@@ -55,6 +55,14 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- tryb zaznaczania psów do spaceru grupowego (przytrzymanie kafelka) -->
+  <div class="selectbar hidden" id="selectBar">
+    <span class="info" id="selInfo">Zaznacz psy do wspólnego spaceru</span>
+    <button class="btn ghost" id="selCancel">Anuluj</button>
+    <button class="btn ghost hidden" id="selDissolve">Rozwiąż</button>
+    <button class="btn add-btn" id="selGroup" disabled>Grupa</button>
+  </div>
+
   <script type="application/json" id="boot"><?!= boot ?></script>
 <?!= include('Script'); ?>
 </body>

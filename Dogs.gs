@@ -58,7 +58,8 @@ function catalogDog_(id) {
 /* ---------- DZIEŃ PSA (zakładka Spacery) ---------- */
 
 function emptyWalk_(date, id) {
-  return { date: date, dogId: Number(id), status: STATUS.FREE, who: '', time: '', who1: '', time1: '' };
+  return { date: date, dogId: Number(id), status: STATUS.FREE, who: '', time: '', who1: '', time1: '',
+           group: 0 };
 }
 
 function mapWalkRow_(r) {
@@ -70,29 +71,57 @@ function mapWalkRow_(r) {
     time:   cellTime_(r[WALK.TIME - 1]),
     who1:   String(r[WALK.WHO1 - 1] || ''),
     time1:  cellTime_(r[WALK.TIME1 - 1]),
+    group:  Number(r[WALK.GROUP - 1]) || 0,
   };
 }
 
 function walkToRow_(w) {
-  return [w.date, w.dogId, w.status, w.who, w.time, w.who1, w.time1];
+  return [w.date, w.dogId, w.status, w.who, w.time, w.who1, w.time1, w.group || ''];
 }
 
-/** Czy wiersz niesie cokolwiek poza „wolny" — pusty znaczy dokładnie to samo, co brak wiersza. */
+/**
+ * Czy wiersz niesie cokolwiek poza „wolny bez grupy" — pusty znaczy dokładnie to samo,
+ * co brak wiersza. Wolny pies w grupie to już stan: zaplanowany spacer grupowy.
+ */
 function hasWalkState_(w) {
-  return w.status === STATUS.RESERVED || w.status === STATUS.WALKED || w.who1 !== '';
+  return w.status === STATUS.RESERVED || w.status === STATUS.WALKED || w.who1 !== '' || w.group > 0;
 }
 
 /** Pies z katalogu połączony z tym, co się z nim dzieje danego dnia. */
 function withWalk_(dog, w) {
   const s = w || emptyWalk_('', dog.id);
   return Object.assign({}, dog, {
-    status: s.status, who: s.who, time: s.time, who1: s.who1, time1: s.time1,
+    status: s.status, who: s.who, time: s.time, who1: s.who1, time1: s.time1, group: s.group || 0,
   });
+}
+
+/** Czy zakładka Spacery ma już kolumnę `grupa` — sprawdzamy raz na wywołanie. */
+let walkColsOk_ = false;
+
+/**
+ * Zakładka Spacery założona przed wprowadzeniem grup ma o kolumnę mniej, a getRange
+ * poza szerokością arkusza rzuca błędem (pułapka z CLAUDE.md). Dokładamy ją sami,
+ * przy pierwszym dostępie — tak jak samą zakładkę — zamiast liczyć, że ktoś
+ * pamięta o migrate(). Dokładanie pod blokadą, z ponownym sprawdzeniem.
+ */
+function ensureWalkColumns_(sh) {
+  if (walkColsOk_) return sh;
+  const header = WALK_HEADERS[WALK.GROUP - 1];
+  const fine = () => sh.getMaxColumns() >= WALK_WIDTH
+                  && String(sh.getRange(1, WALK.GROUP).getValue()) === header;
+  if (!fine()) {
+    withLock_(() => {
+      if (sh.getMaxColumns() < WALK_WIDTH) sh.insertColumnsAfter(sh.getMaxColumns(), WALK_WIDTH - sh.getMaxColumns());
+      if (String(sh.getRange(1, WALK.GROUP).getValue()) !== header) sh.getRange(1, WALK.GROUP).setValue(header);
+    });
+  }
+  walkColsOk_ = true;
+  return sh;
 }
 
 /** Zakładka Spacery, gdy blokada jest już wzięta. Brakującą zakłada na miejscu. */
 function walksSheetLocked_() {
-  return ss_().getSheetByName(SHEETS.WALKS) || createWalksSheet_();
+  return ensureWalkColumns_(ss_().getSheetByName(SHEETS.WALKS) || createWalksSheet_());
 }
 
 /**
@@ -102,7 +131,8 @@ function walksSheetLocked_() {
  * spod akcji, która blokadę już trzyma.
  */
 function walksSheet_() {
-  return ss_().getSheetByName(SHEETS.WALKS) || withLock_(walksSheetLocked_);
+  const sh = ss_().getSheetByName(SHEETS.WALKS);
+  return sh ? ensureWalkColumns_(sh) : withLock_(walksSheetLocked_);
 }
 
 function createWalksSheet_() {
@@ -302,6 +332,81 @@ function setFree(id, date) {
     w.who = '';
     w.time = '';
     return true;
+  });
+}
+
+/**
+ * GRUPA — psy wyprowadzane razem danego dnia (spacer grupowy). Ustawia każdy
+ * wolontariusz, bez PIN-u; na bieżący dzień i na przyszłe, nigdy na miniony.
+ *
+ * `ids` to skład grupy PO zmianie, `gid` — 0 dla nowej grupy albo numer grupy,
+ * którą zmieniamy. Mniej niż dwa psy = grupa się rozwiązuje. Nowa grupa dostaje
+ * kolejny numer tego dnia; od numeru zależy kolor w interfejsie, więc każda
+ * następna grupa jest w innym kolorze — i w tym samym na wszystkich telefonach.
+ *
+ * Pies przeniesiony z innej grupy znika z tamtej, a grupa, w której został jeden
+ * pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy — nie ma
+ * już czego planować razem — ale ze swojej nie wypada.
+ *
+ * NIE jest na liście RETRIABLE: nowa grupa bierze kolejny numer, więc powtórka po
+ * zaginionej odpowiedzi przepisałaby tę samą grupę pod nowy numer (i nowy kolor).
+ * Po zaginięciu interfejs po prostu dosynchronizowuje się z getData.
+ *
+ * Zwraca {walks, group}: wszystkie wiersze tego dnia (także te z wyczyszczoną grupą)
+ * i numer grupy, która powstała albo została (0 = rozwiązana).
+ */
+function setGroup(date, ids, gid) {
+  const a = actionDate_(date);
+  const want = [];
+  (Array.isArray(ids) ? ids : []).forEach(x => {
+    const n = Number(x);
+    if (n > 0 && want.indexOf(n) < 0) want.push(n);
+  });
+  const g = Number(gid) > 0 ? Number(gid) : 0;
+
+  return withLock_(() => {
+    const known = {};
+    readDogCatalog_().forEach(d => { known[d.id] = true; });
+    const sh = walksSheetLocked_();
+    const last = sh.getLastRow();
+    const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
+
+    const day = {};          // pies -> indeks jego wiersza tego dnia w `rows`
+    let maxGroup = 0;
+    rows.forEach((r, i) => {
+      const w = mapWalkRow_(r);
+      if (w.date !== a.date) return;
+      day[w.dogId] = i;
+      if (w.group > maxGroup) maxGroup = w.group;
+    });
+    const walkOf = id => day[id] === undefined ? emptyWalk_(a.date, id) : mapWalkRow_(rows[day[id]]);
+    const put = (id, group) => {
+      const w = walkOf(id);
+      if (w.group === group) return;
+      w.group = group;
+      if (day[id] === undefined) { rows.push(walkToRow_(w)); day[id] = rows.length - 1; }
+      else rows[day[id]] = walkToRow_(w);
+    };
+    const inGroup = group => Object.keys(day).map(Number).filter(id => walkOf(id).group === group);
+
+    const members = want.filter(id => known[id]
+      && (walkOf(id).status !== STATUS.WALKED || (g && walkOf(id).group === g)));
+    const target = members.length >= 2 ? (g || maxGroup + 1) : 0;
+
+    if (g) inGroup(g).forEach(id => { if (members.indexOf(id) < 0) put(id, 0); });   // wypadli ze składu
+    const robbed = {};
+    members.forEach(id => {
+      const old = walkOf(id).group;
+      if (old && old !== target) robbed[old] = true;
+      put(id, target);
+    });
+    Object.keys(robbed).forEach(old => {                 // grupa, z której zabraliśmy psy
+      const left = inGroup(Number(old));
+      if (left.length === 1) put(left[0], 0);
+    });
+
+    if (rows.length) sh.getRange(2, 1, rows.length, WALK_WIDTH).setValues(rows);
+    return { walks: Object.keys(day).map(id => mapWalkRow_(rows[day[id]])), group: target };
   });
 }
 

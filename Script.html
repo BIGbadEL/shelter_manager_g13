@@ -25,6 +25,7 @@
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
+    select:null,           // zaznaczanie psów do grupy: {date, anchor, gid, ids} albo null
   };
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
@@ -47,12 +48,12 @@
      Katalog mówi, KIM jest pies; `walks` mówi, co się z nim dzieje KONKRETNEGO DNIA.
      Brak wpisu = pies tego dnia wolny. Rendering dostaje oba połączone w jeden obiekt,
      więc kafelki nie muszą wiedzieć, że dni jest więcej niż jeden. */
-  const FREE_WALK = {status:'free', who:'', time:'', who1:'', time1:''};
+  const FREE_WALK = {status:'free', who:'', time:'', who1:'', time1:'', group:0};
   function wkey(date, id){ return date+'|'+id; }
   function walkOf(date, id){ return state.walks[wkey(date, id)] || FREE_WALK; }
   function setWalk(date, id, w){
     state.walks[wkey(date, id)] = {status:w.status||'free', who:w.who||'', time:w.time||'',
-                                   who1:w.who1||'', time1:w.time1||''};
+                                   who1:w.who1||'', time1:w.time1||'', group:Number(w.group)||0};
   }
   function dogAt(id, date){ const d=findDog(id); return d ? Object.assign({}, d, walkOf(date, id)) : null; }
   function dogsAt(date){ return state.dogs.map(d=>Object.assign({}, d, walkOf(date, d.id))); }
@@ -95,6 +96,7 @@
    */
   function busyEditing(){
     if(state.editId!==null) return true;
+    if(state.select) return true;             // zaznaczanie psów do grupy — lista ma stać w miejscu
     if(document.querySelector('[data-entry]:not(.hidden)')) return true;
     const a=document.activeElement;
     return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
@@ -388,14 +390,14 @@
      zmienia się w miejscu (patchDog), a lista układa się dopiero wtedy, gdy ręce
      znieruchomieją — więc seria szybkich rezerwacji idzie bez ani jednego skoku.
      ========================================================= */
-  const GROUP = { free:0, reserved:1, walked:2 };
+  const STATUS_RANK = { free:0, reserved:1, walked:2 };
   const REORDER_QUIET_MS = 4000;   // tyle ciszy po ostatnim dotknięciu ekranu
   let order = [];                  // id psów w kolejności wyświetlania
   let orderDate = null;            // dzień, dla którego ta kolejność została policzona
   let lastTapAt = 0;
   let reorderTimer = null;
 
-  function groupOf(dog){ const g = GROUP[dog.status]; return g === undefined ? 0 : g; }
+  function statusRank(dog){ const r = STATUS_RANK[dog.status]; return r === undefined ? 0 : r; }
 
   function canReorder(){
     if(pendingKeys.size || queue.length || inflight.size) return false;
@@ -424,14 +426,20 @@
    *
    * Przejście strzałką na inny dzień to cała NOWA lista, nie pies uciekający
    * spod palca — kolejność liczymy wtedy od razu, bez czekania na ciszę.
+   *
+   * Psy w grupie trzymają się razem: cały blok stoi tam, gdzie stanąłby jej
+   * najpilniejszy pies, a w środku bloku obowiązuje ta sama kolejność co wszędzie.
    */
   function orderedDogs(){
     const dogs = dogsAt(state.date);
     if(orderDate !== state.date || canReorder()){
       const base = new Map(dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
-      order = dogs.slice()
-        .sort((a,b)=> walksDone(a)-walksDone(b) || groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
-        .map(d=>d.id);
+      const own  = d => [walksDone(d), statusRank(d), base.get(d.id)];
+      const cmp  = (x,y) => { for(let i=0;i<x.length;i++){ if(x[i]!==y[i]) return x[i]-y[i]; } return 0; };
+      const lead = {};                                      // grupa -> klucz jej najpilniejszego psa
+      dogs.forEach(d=>{ if(d.group && (!lead[d.group] || cmp(own(d), lead[d.group]) < 0)) lead[d.group] = own(d); });
+      const key  = d => (d.group ? lead[d.group] : own(d)).concat(own(d));
+      order = dogs.slice().sort((a,b)=>cmp(key(a), key(b))).map(d=>d.id);
       orderDate = state.date;
     }
     const byId = new Map(dogs.map(d=>[d.id,d]));
@@ -465,6 +473,7 @@
       const bar = document.getElementById('dateBar');
       if(bar) bar.classList.toggle('hidden', state.admin);
       renderDateBar();
+      renderSelectBar();
 
       const html = state.view==='diag' ? renderDiagView()
                  : state.admin         ? renderCatalog()
@@ -485,11 +494,17 @@
    * przy każdym kliknięciu — na telefonie to widoczne szarpnięcie.
    */
   function patchDog(id){
-    if(state.view!=='today' || state.admin || state.editId!==null || isPast(state.date)){ render(); return; }
-    const li  = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
+    if(state.view!=='today' || state.admin || state.select || state.editId!==null || isPast(state.date)){ render(); return; }
     const dog = dogAt(id, state.date);
-    if(!li || !dog){ render(); return; }
-    li.outerHTML = renderDog(dog);
+    if(!dog){ render(); return; }
+    // pies w grupie zmienia też kafelki towarzyszy: od jego stanu zależy, czy grupa
+    // może już ruszyć (przycisk „Wyprowadzony ✓" i podpowiedź, na kogo czekamy)
+    const ids = dog.group ? groupMates(state.date, dog.group).map(d=>d.id) : [id];
+    for(const x of ids){
+      const li = viewEl.querySelector(`li.dog[data-dog="${x}"]`);
+      if(!li){ render(); return; }
+      li.outerHTML = renderDog(dogAt(x, state.date));
+    }
     const cnt = viewEl.querySelector('.count');
     if(cnt) cnt.innerHTML = countLine();
     invalidateHtml();
@@ -573,6 +588,7 @@
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
     const pills=[];
+    if(dog.group) pills.push(groupPill(dog.group));
     if(dog.walks===2){
       const done=walksDone(dog);
       pills.push(`<span class="twice">🐾 spacery ${done}/2</span>`);
@@ -741,9 +757,10 @@
     const difChip=difChipHtml(dm);
     const adm='';   // edycja psa żyje w katalogu (tryb edycji), nie na liście dnia
     const meta=dogMeta(dog)+dogNote(dog);
+    const style=tileStyle(dog, dm);
 
     if(dog.status==='free'){
-      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      return `<li class="dog" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button>${
@@ -756,9 +773,16 @@
     }
     if(dog.status==='reserved'){
       // w przyszłości nie ma czego odhaczać — rezerwację można tylko zwolnić
-      const walkBtn = isFuture(state.date) ? ''
-        : `<button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>`;
-      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      let walkBtn = '', wait = '';
+      if(!isFuture(state.date)){
+        // spacer grupowy rusza dopiero, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna
+        const waiting = dog.group ? groupWaiting(state.date, dog.group) : [];
+        walkBtn = waiting.length
+          ? `<button class="btn walk" disabled>Wyprowadzony ✓</button>`
+          : `<button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>`;
+        if(waiting.length) wait = `<div class="grpwait">Grupa czeka na rezerwację: ${waiting.map(d=>esc(dogLabel(d))).join(', ')}</div>`;
+      }
+      return `<li class="dog" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span>
           <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
@@ -766,9 +790,9 @@
           <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
           ${walkBtn}
           <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
-        </div></li>`;
+        </div>${wait}</li>`;
     }
-    return `<li class="dog walked" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+    return `<li class="dog walked" data-dog="${dog.id}" style="${style}">
       <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
       ${meta}
       <div class="status"><span class="who">✓ ${esc(dog.who)}</span>
@@ -862,7 +886,7 @@
       ${top}
       <div class="count">${countLine()}</div>
       <ul>`;
-    d.forEach(dog=>{ html += renderDog(dog); });
+    d.forEach(dog=>{ html += state.select ? renderPickDog(dog) : renderDog(dog); });
     return html + `</ul>`;
   }
 
@@ -965,6 +989,207 @@
   }
 
   /* =========================================================
+     GRUPY — spacery grupowe
+     Przytrzymanie kafelka włącza zaznaczanie psów do wspólnego spaceru.
+     Grupa jest na konkretny dzień i żyje na serwerze (kolumna `grupa` w Spacery),
+     więc każdy telefon widzi ją tak samo. Kolor wynika z numeru grupy tego dnia:
+     każda kolejna jest w innym, a na wszystkich telefonach w tym samym.
+
+     „Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych —
+     ale tylko wtedy, gdy nikt z grupy nie jest WOLNY (każdy pies ma opiekuna).
+     Nie „wszyscy zarezerwowani": po spacerze i cofnięciu jednego psa pozostali są
+     już wyprowadzeni, a nie zarezerwowani, i tamta reguła zablokowałaby na zawsze
+     ponowne odhaczenie cofniętego. Cofnięcie cofa tylko jednego psa.
+     ========================================================= */
+  const GROUP_COLORS = [
+    {bg:'#ebe7fb', ink:'#5a45b0'},   // lawenda
+    {bg:'#e0edfa', ink:'#2c67a3'},   // błękit
+    {bg:'#fbe5ee', ink:'#a3336a'},   // róż
+    {bg:'#dcf2ee', ink:'#1e7568'},   // morski
+    {bg:'#f3e3f7', ink:'#86399a'},   // storczyk
+    {bg:'#e4e8ef', ink:'#465266'},   // łupek
+  ];
+  function groupColor(gid){ return GROUP_COLORS[(gid - 1) % GROUP_COLORS.length]; }
+  function groupMates(date, gid){ return dogsAt(date).filter(d => d.group === gid); }
+  /** Psy z grupy, które nie mają opiekuna — dopóki są, grupa nie może ruszyć. */
+  function groupWaiting(date, gid){ return groupMates(date, gid).filter(d => d.status === 'free'); }
+  /** Kolejny numer grupy tego dnia — dokładnie tak samo liczy go serwer (setGroup). */
+  function nextGroupId(date){
+    let max = 0;
+    for(const k in state.walks){ if(k.indexOf(date+'|')===0 && state.walks[k].group > max) max = state.walks[k].group; }
+    return max + 1;
+  }
+  /**
+   * Znacznik obok delikatnego tła: w pełnym słońcu samo zabarwienie potrafi zniknąć,
+   * a przynależność do grupy decyduje o tym, czy pies może wyjść.
+   */
+  function groupPill(gid){
+    const c = groupColor(gid);
+    return `<span class="grp" style="color:${c.ink};border-color:${c.ink}55">👥 grupa</span>`;
+  }
+  function tileStyle(dog, dm){
+    return `border-left-color:${dm.color}` + (dog.group ? `;background:${groupColor(dog.group).bg}` : '');
+  }
+
+  /** Czy psa można zaznaczyć: po spacerze nie ma czego planować — chyba że już jest w tej grupie. */
+  function canPick(dog){
+    const sel = state.select;
+    return dog.status !== 'walked' || (sel.gid && dog.group === sel.gid);
+  }
+
+  function renderPickDog(dog){
+    const sel = state.select, dm = DIF[dog.dif]||DIF.easy;
+    const picked = sel.ids.indexOf(dog.id) >= 0;
+    const cls = 'dog pick' + (picked ? ' picked' : '') + (canPick(dog) ? '' : ' nopick');
+    const what = dog.status==='walked' ? 'wyprowadzony'
+               : dog.status==='reserved' ? 'zarezerwowany · ' + esc(dog.who) : 'wolny';
+    return `<li class="${cls}" data-dog="${dog.id}" style="${tileStyle(dog, dm)}">
+      <div class="row"><span class="pickbox">${picked ? '✓' : ''}</span><span class="name">${esc(dogLabel(dog))}</span>
+        <span class="flex"></span>${difChipHtml(dm)}</div>
+      <div class="dogmeta">${dog.group ? groupPill(dog.group) + ' ' : ''}${what}</div></li>`;
+  }
+
+  /** Pasek na dole ekranu: ile zaznaczonych, „Grupa" wyszarzone do pierwszego towarzysza. */
+  function renderSelectBar(){
+    const bar = document.getElementById('selectBar');
+    if(!bar) return;
+    const sel = state.select;
+    const on = !!sel && state.view==='today' && !state.admin;
+    bar.classList.toggle('hidden', !on);
+    document.body.classList.toggle('selecting', on);
+    if(!on) return;
+    const n = sel.ids.length;
+    document.getElementById('selInfo').textContent = n < 2
+      ? 'Zaznacz psy do wspólnego spaceru'
+      : `Zaznaczone: ${n} ${plural(n,'pies','psy','psów')}`;
+    document.getElementById('selGroup').disabled = n < 2;
+    document.getElementById('selDissolve').classList.toggle('hidden', !sel.gid);
+  }
+
+  /**
+   * Start zaznaczania z przytrzymanego psa. Pies już w grupie — otwieramy jego grupę
+   * do zmiany składu albo rozwiązania. Pies po spacerze bez grupy — nie ma czego planować.
+   */
+  function startSelect(id){
+    if(state.admin || state.view!=='today' || isPast(state.date)) return;
+    const dog = dogAt(id, state.date);
+    if(!dog) return;
+    if(dog.group){
+      state.select = {date:state.date, anchor:id, gid:dog.group, ids:groupMates(state.date, dog.group).map(d=>d.id)};
+    } else {
+      if(dog.status === 'walked') return;
+      state.select = {date:state.date, anchor:id, gid:0, ids:[id]};
+    }
+    render();
+  }
+
+  /** Stuknięcie w kafelek podczas zaznaczania. Przytrzymany pies zostaje w grupie na stałe. */
+  function togglePick(e){
+    const li = e.target.closest && e.target.closest('li.dog[data-dog]');
+    if(!li) return;
+    const id = Number(li.dataset.dog), sel = state.select;
+    if(id === sel.anchor) return;
+    const dog = dogAt(id, sel.date);
+    if(!dog || !canPick(dog)) return;
+    const i = sel.ids.indexOf(id);
+    if(i >= 0) sel.ids.splice(i, 1); else sel.ids.push(id);
+    render();
+  }
+
+  function cancelSelect(){ state.select = null; render(); }
+
+  /** Numery grup z odpowiedzi serwera — tylko to pole, żeby nie cofnąć czyjejś rezerwacji w drodze. */
+  function applyGroups(date, res){
+    const got = {};
+    ((res && res.walks) || []).forEach(w => { if(w.date === date) got[w.dogId] = Number(w.group) || 0; });
+    state.dogs.forEach(d => {
+      const k = wkey(date, d.id), g = got[d.id] || 0;
+      if(state.walks[k]) state.walks[k].group = g;
+      else if(g) setWalk(date, d.id, {group:g});
+    });
+  }
+
+  /**
+   * Zatwierdzenie składu (albo rozwiązanie, gdy zostaje mniej niż dwa psy).
+   * Optymistycznie od razu: kolor i miejsce na liście — to, po co ktoś tę grupę robi,
+   * więc lista układa się natychmiast, a nie po ciszy (patrz orderedDogs).
+   */
+  function commitGroup(ids){
+    const sel = state.select;
+    if(!sel) return;
+    const date = sel.date;
+    const gid  = ids.length >= 2 ? (sel.gid || nextGroupId(date)) : 0;
+    const local = {};                                   // stan lokalny taki, jaki zrobi serwer
+    state.dogs.forEach(d => { local[d.id] = walkOf(date, d.id).group; });
+    if(sel.gid) Object.keys(local).forEach(id => { if(local[id] === sel.gid) local[id] = 0; });
+    const robbed = {};
+    ids.forEach(id => { if(local[id] && local[id] !== gid) robbed[local[id]] = true; local[id] = gid; });
+    Object.keys(robbed).forEach(g => {
+      const left = Object.keys(local).filter(id => local[id] === Number(g));
+      if(left.length === 1) local[left[0]] = 0;
+    });
+    applyGroups(date, {walks: Object.keys(local).map(id => ({date, dogId:Number(id), group:local[id]}))});
+
+    state.select = null;
+    orderDate = null;
+    render();
+    enqueue('setGroup', [date, ids.length >= 2 ? ids : [], sel.gid || 0], {key:'group@'+date, reconcile:res=>{
+      applyGroups(date, res);
+      if(date === state.date) safeRender();
+    }});
+  }
+  function confirmGroup(){ if(state.select && state.select.ids.length >= 2) commitGroup(state.select.ids.slice()); }
+  function dissolveGroup(){ if(state.select && state.select.gid) commitGroup([]); }
+
+  /** „Wyprowadzony ✓" na psie z grupy: odhacza wszystkich zarezerwowanych naraz. */
+  function doGroupWalk(gid){
+    const date = state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date !== state.bizDate) return;
+    const mates = groupMates(date, gid);
+    if(mates.some(d => d.status === 'free')) return;      // przycisk jest wtedy wyłączony
+    // każdy pies osobno, przez zwykłe markWalked — ten sam, sprawdzony i ponawialny zapis
+    mates.filter(d => d.status === 'reserved').forEach(d => doWalk(d.id));
+  }
+
+  /* ---------- przytrzymanie kafelka ----------
+     Liczymy od pointerdown, nie od click (bug nr 6). Przesunięcie palca (przewijanie
+     listy) albo puszczenie przed czasem przerywa. Na kafelku wyłączamy systemowe menu
+     i zaznaczanie tekstu, które telefon podpina pod to samo przytrzymanie. */
+  const LONG_PRESS_MS = 550;
+  let lpTimer = null, lpStart = null;
+  function lpCancel(){ clearTimeout(lpTimer); lpTimer = null; lpStart = null; }
+  function lpBegin(e){
+    if(state.admin || state.select || state.view!=='today' || isPast(state.date)) return;
+    const t = e.target;
+    if(!t || !t.closest || t.closest('input')) return;   // pole imienia — zwykłe zachowanie
+    const li = t.closest('li.dog[data-dog]');
+    if(!li) return;
+    const id = Number(li.dataset.dog);
+    lpStart = {x:e.clientX || 0, y:e.clientY || 0};
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(()=>{ lpTimer = null; startSelect(id); }, LONG_PRESS_MS);
+  }
+  function lpMove(e){
+    if(!lpTimer || !lpStart) return;
+    if(Math.abs((e.clientX||0) - lpStart.x) > 10 || Math.abs((e.clientY||0) - lpStart.y) > 10) lpCancel();
+  }
+  viewEl.addEventListener('pointerdown', lpBegin);
+  viewEl.addEventListener('pointermove', lpMove);
+  ['pointerup','pointercancel','pointerleave'].forEach(t => viewEl.addEventListener(t, lpCancel));
+  if(!window.PointerEvent){                                  // starsze WebView
+    const pt = e => (e.touches && e.touches[0]) || {};
+    viewEl.addEventListener('touchstart', e => lpBegin({target:e.target, clientX:pt(e).clientX, clientY:pt(e).clientY}));
+    viewEl.addEventListener('touchmove',  e => lpMove({clientX:pt(e).clientX, clientY:pt(e).clientY}));
+    ['touchend','touchcancel'].forEach(t => viewEl.addEventListener(t, lpCancel));
+  }
+  viewEl.addEventListener('contextmenu', e => { if(e.target.closest && e.target.closest('li.dog')) e.preventDefault(); });
+
+  document.getElementById('selCancel').addEventListener('click', cancelSelect);
+  document.getElementById('selGroup').addEventListener('click', confirmGroup);
+  document.getElementById('selDissolve').addEventListener('click', dissolveGroup);
+
+  /* =========================================================
      AKCJE (optymistyczne: najpierw lokalny stan i render,
      potem zapis w tle; ewentualna korekta po odpowiedzi)
      ========================================================= */
@@ -1063,14 +1288,14 @@
      ========================================================= */
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
-    state.view=t.dataset.tab; render();
+    state.view=t.dataset.tab; state.select=null; render();
     if(state.view==='diag') fetchDiag();
   });
 
   /**
    * Przejście na inny dzień. Wolno swobodnie w obie strony; w tył to podgląd,
-   * do przodu — rezerwacje. Otwarta edycja psa dotyczy listy, którą właśnie
-   * opuszczamy, więc ją zamykamy.
+   * do przodu — rezerwacje. Otwarta edycja psa i zaznaczanie grupy dotyczą listy,
+   * którą właśnie opuszczamy, więc je zamykamy.
    */
   function goDate(iso){
     if(!iso) return;
@@ -1078,6 +1303,7 @@
     state.follow = (iso === state.bizDate);
     state.view = 'today';
     state.editId = null;
+    state.select = null;
     render();
     if(isPast(iso)) fetchPast(iso);
   }
@@ -1086,6 +1312,7 @@
   document.getElementById('dayLabel').addEventListener('click',()=>{ if(state.bizDate) goDate(state.bizDate); });
 
   gear.addEventListener('click',()=>{
+    if(state.select){ state.select=null; render(); }
     if(state.admin){
       state.admin=false; state.editId=null; state.diag=null;
       if(state.view==='diag') state.view='today';   // zakładka znika razem z trybem edycji
@@ -1145,6 +1372,9 @@
   });
 
   viewEl.addEventListener('click',e=>{
+    // podczas zaznaczania grupy stuknięcie w kafelek tylko go zaznacza — żadnych
+    // rezerwacji ani spacerów „przy okazji", także z puszczenia przytrzymanego palca
+    if(state.select){ try{ togglePick(e); }catch(err){ cancelSelect(); } return; }
     try{ handleAction(e); }
     catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!isSending() && !queue.length) refresh(); }
   });
@@ -1162,7 +1392,10 @@
       lastWho = val;
       doReserve(id, val);
     }
-    if(act==='walk') doWalk(id);
+    if(act==='walk'){
+      const dog=dogAt(id, state.date);
+      if(dog && dog.group) doGroupWalk(dog.group); else doWalk(id);
+    }
     if(act==='free') doFree(id);
     if(act==='undoFirst') doUndoFirst(id);
 

@@ -100,7 +100,10 @@
 
   /* ---------- lista psów ---------- */
   ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:10px;}
-  .dog{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 14px;}
+  .dog{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 14px;
+    /* przytrzymanie kafelka to gest grupy — telefon nie może pod nie podpinać menu ani zaznaczania */
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .dog input{-webkit-user-select:text;user-select:text;}
   .dog.walked{opacity:.6;}
   .row{display:flex;align-items:center;gap:10px;}
   .name{font-size:17px;font-weight:700;letter-spacing:-.01em;}
@@ -115,6 +118,24 @@
   .dif{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;}
   .flex{flex:1;}
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
+
+  /* ---------- spacery grupowe ----------
+     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy),
+     a znacznik „👥 grupa" mówi to samo tekstem, gdy w słońcu tła nie widać. */
+  .grp{font-size:11px;font-weight:800;padding:1px 7px;border-radius:6px;background:#fff;border:1px solid;}
+  .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
+  .dog.pick{cursor:pointer;}
+  .pickbox{width:24px;height:24px;border-radius:50%;border:2px solid var(--ink);flex:none;background:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
+  .dog.picked .pickbox{background:var(--ink);}
+  .dog.nopick{opacity:.4;cursor:default;}
+  .selectbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card);
+    border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08);}
+  .selectbar .info{flex:1;font-size:13px;font-weight:700;color:var(--ink);}
+  .selectbar .btn{padding:11px 14px;}
+  body.selecting{padding-bottom:84px;}
+  body.selecting .toast{bottom:84px;}
 
   /* ---------- przyciski ---------- */
   .btn{border:none;font-family:inherit;font-weight:700;cursor:pointer;border-radius:10px;

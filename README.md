@@ -18,12 +18,12 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios11`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios12`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
-- **Spacery** — stan psa konkretnego dnia: `data | pies_id | status | kto | godzina | kto1 | godzina1`. Wiersz na parę (dzień, pies); brak wiersza = pies tego dnia wolny. Trzyma tylko dni otwarte.
+- **Spacery** — stan psa konkretnego dnia: `data | pies_id | status | kto | godzina | kto1 | godzina1 | grupa`. Wiersz na parę (dzień, pies); brak wiersza = pies tego dnia wolny. Trzyma tylko dni otwarte. Kolumnę `grupa` aplikacja dokłada sama do zakładki założonej wcześniej.
 - **Historia** — zamknięte dni: `data | pies | kto | godzina`
 - **Zadania** — `id | tresc | data | status`
 
@@ -280,6 +280,29 @@ Trzy rzeczy warto wiedzieć:
 - `atHour(h)` w Apps Script to **okno h:00–h:59**, nie punkt czasowy — domknięcie dnia i przeniesienie do Historii dzieje się gdzieś w tej godzinie.
 - Ustawienie godziny, która **dziś już minęła**, od razu przełącza listę na kolejny dzień.
 
+## Spacery grupowe
+
+**Przytrzymaj kafelek psa** (ok. pół sekundy) — włącza się zaznaczanie. Przytrzymany pies jest
+zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
+wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
+wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny), znacznik „👥 grupa" i stają
+na liście obok siebie.
+
+- **„Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
+  aktywny, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna; do tego czasu kafelek mówi,
+  na czyją rezerwację grupa czeka.
+- **Cofnięcie cofa tylko jednego psa.** Dlatego reguła brzmi „nikt nie jest wolny", a nie „wszyscy
+  zarezerwowani": po spacerze pozostali są już wyprowadzeni, więc dosłowne „wszyscy zarezerwowani"
+  nie pozwoliłoby nigdy odhaczyć ponownie cofniętego psa.
+- **Przytrzymanie psa, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć psy,
+  albo nacisnąć „Rozwiąż". Pies przeniesiony do nowej grupy znika ze starej; grupa, w której został
+  jeden pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy.
+- Grupę można zaplanować też na przyszły dzień. Na minionym dniu i w trybie edycji przytrzymanie
+  nic nie robi. W trakcie zaznaczania lista stoi w miejscu — także gdy w tle minie godzina resetu.
+
+Grupa zapisuje się w arkuszu (kolumna `grupa` w zakładce Spacery), więc każdy telefon widzi ją
+tak samo, w tym samym kolorze.
+
 ## Tryb edycji
 
 ⚙️ + PIN. Tryb edycji służy do zarządzania, nie do pracy na konkretnym dniu — dlatego
@@ -346,6 +369,9 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
 
 ## Naprawione bugi (changelog)
+
+**Spacery grupowe:** przytrzymanie kafelka, zaznaczanie, wspólny kolor i miejsce na liście,
+jedno „Wyprowadzony ✓" dla całej grupy, cofanie pojedynczo, zmiana składu i rozwiązanie grupy.
 
 **Drugi feedback z terenu:**
 - **Tryb edycji nigdy się nie przerysowywał** (błąd na produkcji). Pole nowego zadania udawało

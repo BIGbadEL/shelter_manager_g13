@@ -42,9 +42,11 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
   Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
-- **Spacery** — stan psa KONKRETNEGO DNIA: `data | pies_id | status | kto | godzina | kto1 | godzina1`.
+- **Spacery** — stan psa KONKRETNEGO DNIA: `data | pies_id | status | kto | godzina | kto1 | godzina1 | grupa`.
   Wiersz na parę (dzień, pies), brak wiersza = wolny. Tylko dni otwarte (bieżący + przyszłe,
-  ewentualnie niezamknięte) — `endOfDay()` przenosi zamknięte do Historii.
+  ewentualnie niezamknięte) — `endOfDay()` przenosi zamknięte do Historii, grupy znikają razem
+  z nimi. Kolumnę `grupa` do zakładki sprzed grup dokłada sam `ensureWalkColumns_()` przy
+  pierwszym dostępie (getRange poza szerokość rzuca błędem).
 - **Historia** — zamknięte dni: `data | pies | kto | godzina` (pies jako etykieta, nie id)
 - **Zadania** — `id | tresc | data | status`
 
@@ -74,6 +76,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `markWalked(id, name, slot, date)`, `undoFirstWalk(id, date)`, `setFree(id, date)`).
   Brak daty = bieżący dzień — tak wołają karty otwarte przed wprowadzeniem dat i mają działać.
   Serwer (`actionDate_`) odrzuca dzień miniony; spacer (i jego cofnięcie) tylko w bieżącym.
+- **Grupa (spacer grupowy) jest na dzień**: `setGroup(date, ids, gid)` — `gid` 0 = nowa
+  (kolejny numer dnia, od numeru zależy kolor), >0 = zmiana składu; mniej niż 2 psy = rozwiązanie.
+  Pies przeniesiony z innej grupy znika z tamtej; grupa z jednym psem przestaje istnieć;
+  pies po spacerze nie dołącza do nowej. **Nie jest w `RETRIABLE`** — nowa grupa bierze kolejny
+  numer, więc powtórka przepisałaby ją pod inny numer i kolor. Wspólny spacer to NIE osobny
+  endpoint: klient woła zwykłe `markWalked` dla każdego zarezerwowanego psa z grupy.
 - **Zadanie ma dzień, od którego się pokazuje** (kolumna `data`): `addTask(text, pin, date)`,
   brak daty = bieżący dzień rezerwacyjny (nie kalendarzowy — zadanie dodane po resecie nie może
   być od razu „od wczoraj"). Na liście bieżącego dnia: zadania z dniem ≤ bieżący; na przyszłym:
@@ -111,8 +119,19 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
   zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderDog`) nie ma już przycisków
   edycji. Wolontariusze nigdy nie widzą katalogu, prowadząca w edycji nigdy nie widzi dnia.
-- **`busyEditing()` łapie wyłącznie pole wolontariusza `[data-entry]`**, fokus w polu i edycję
-  psa. Nigdy nie wracaj do ogólnego `.entry` — patrz bug nr 10.
+- **`busyEditing()` łapie wyłącznie pole wolontariusza `[data-entry]`**, fokus w polu, edycję
+  psa i zaznaczanie grupy (`state.select`). Nigdy nie wracaj do ogólnego `.entry` — patrz bug nr 10.
+- **Spacery grupowe.** Przytrzymanie kafelka (`LONG_PRESS_MS` = 550 ms od `pointerdown`,
+  przesunięcie > 10 px albo puszczenie przerywa) włącza `state.select`; w tym trybie każde
+  kliknięcie w liście tylko zaznacza (`togglePick`) — żadnej rezerwacji z puszczenia palca.
+  Przytrzymanie psa z grupy otwiera jej skład do zmiany / „Rozwiąż". Kolor grupy wynika z numeru
+  (`GROUP_COLORS`), obok tła jest znacznik „👥 grupa" — w słońcu samo tło znika. Grupa trzyma
+  się razem na liście: blok stoi tam, gdzie stanąłby jej najpilniejszy pies; po zatwierdzeniu
+  lista układa się od razu (to cel akcji). **„Wyprowadzony ✓" w grupie jest aktywny, gdy nikt
+  z grupy nie jest WOLNY** i odhacza wszystkich zarezerwowanych. Nie „wszyscy zarezerwowani" —
+  po spacerze i cofnięciu jednego psa pozostali są wyprowadzeni, a dosłowna reguła blokowała
+  na zawsze ponowne odhaczenie cofniętego (S74 łapie to wstrzyknięte). Cofnięcie cofa jednego.
+  `patchDog` psa z grupy przerysowuje też kafelki towarzyszy — od jego stanu zależy ich przycisk.
 - **Akcja pamięta swój dzień.** `doReserve` & spółka biorą datę w chwili kliknięcia,
   wysyłają ją i zapisują odpowiedź pod NIĄ, nie pod `state.date` — wolontariusz mógł
   w międzyczasie przejść strzałką gdzie indziej (S56). Klik na dniu, który zamknął się pod
@@ -156,7 +175,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **576 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **657 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -166,7 +185,12 @@ a nowy mechanizm — wstrzykując celowo jego regresję. Dopiero czerwony wynik 
 wstrzykniętego błędu, bo patrzyły na DOM, który się akurat nie przerysował — a stan pod
 spodem był już zepsuty (odpowiedź zapisana pod zły dzień; imię z kafelka 24.09 rezerwujące
 psa na 25.09). Gdy błąd może siedzieć w stanie, wymuś przerysowanie ze stanu albo czytaj
-`__state` wprost.
+`__state` wprost. I testuj to, **czego mechanizm faktycznie pilnuje**: ochrona zaznaczania
+grupy przed odświeżeniem nie chroni zaznaczeń (te trzyma stan), tylko dnia przed przeskokiem
+po resecie — pierwsza wersja S76 sprawdzała zaznaczenia i przechodziła bez tej ochrony.
+
+Zestaw `scenarios12.js` jest **asynchroniczny**: przytrzymanie kafelka mierzy prawdziwy zegar
+(czeka ~650 ms), dokładnie jak na telefonie.
 
 - `tests/harness.js` — ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, klika jak
   człowiek, pozwala sterować tym **kiedy i czy w ogóle** odpowie „serwer"
@@ -186,12 +210,14 @@ i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg 
 S49–S52 pasek środowiska testowego, S53–S62 nawigacja datą, rezerwacje z wyprzedzeniem,
 przeskok dnia po resecie, S63 symetria strzałek, S64 stan wpisany w stronę, S65 tryb edycji
 jako katalog, S66–S67 zadania na konkretny dzień, S68 notatka „nigdy", S69–S70 przerysowanie
-w trybie edycji (bug nr 10), B1–B6 notatki / archiwizacja / godzina resetu,
+w trybie edycji (bug nr 10), S71–S77 spacery grupowe (przytrzymanie, kolor, sąsiedztwo,
+wspólny spacer, cofanie jednego, zmiana i rozwiązanie, przyszły dzień), B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
 B16 dzień rezerwacyjny, B17 rezerwacje na daty, B18 przejście przez reset, B19 domykanie
 zaległych dni, B20 podgląd minionych dni, B21 jednorazowy import, B22 usuwanie psa,
 B23 zagnieżdżona blokada, B24–B25 zadania z datą, B26 notatka „nigdy", B27 `bootJson_`,
+B28 `setGroup`, B29 dokładanie kolumny `grupa` do starej zakładki,
 T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna

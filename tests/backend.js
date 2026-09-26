@@ -729,5 +729,74 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   check('błąd odczytu nie blokuje strony — null', broken.api.bootJson_()==='null');
 })();
 
+/* ---------- B28: grupy na dzień ---------- */
+(()=>{
+  console.log('B28: setGroup — skład, numeracja, przenoszenie, rozwiązywanie');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Cyra'},{id:5,name:'Fado'}],
+    {walks:[{date:D, dogId:3, status:'reserved', who:'Ola'}, {date:D, dogId:5, status:'walked', who:'Iza', time:'9:00'}]});
+  const dog = id => env.api.readDogs_().filter(d => d.id === id)[0];
+  const g = id => dog(id).group;
+
+  const r1 = env.api.setGroup(D, [1,2,3], 0);
+  check('nowa grupa dostaje numer 1', r1.group===1 && g(1)===1 && g(2)===1 && g(3)===1, JSON.stringify(r1));
+  check('wolny pies w grupie ma swój wiersz — plan to już stan',
+    env.api.getData().walks.some(w => w.dogId===1 && w.group===1 && w.status==='free'));
+  check('rezerwacja nietknięta', dog(3).status==='reserved' && dog(3).who==='Ola', JSON.stringify(dog(3)));
+  check('odpowiedź niesie wiersze dnia', r1.walks.filter(w => w.group===1).length===3, JSON.stringify(r1.walks));
+
+  const r2 = env.api.setGroup(D, [4,1], 0);            // Borys przechodzi do nowej grupy
+  check('kolejna grupa: numer 2', r2.group===2 && g(4)===2 && g(1)===2);
+  check('stara grupa bez Borysa, dalej dwa psy', g(2)===1 && g(3)===1);
+
+  env.api.setGroup(D, [2,4], 0);                       // Luna i Cyra razem — obie stare grupy zostają z jednym psem
+  check('nowa grupa 3', g(2)===3 && g(4)===3);
+  check('grupa z jednym psem przestaje być grupą', g(1)===0 && g(3)===0, JSON.stringify([g(1), g(3)]));
+
+  const r4 = env.api.setGroup(D, [5,3], 0);
+  check('pies po spacerze nie dołącza — za mało psów, nic nie powstaje', r4.group===0 && g(5)===0 && g(3)===0);
+
+  env.api.setGroup(D, [2,4,1], 3);
+  check('zmiana składu dokłada psa', g(1)===3);
+  env.api.setGroup(D, [2,4], 3);
+  check('zmiana składu zdejmuje psa', g(1)===0 && g(2)===3 && g(4)===3);
+  env.api.setGroup(D, [], 3);
+  check('rozwiązanie grupy', g(2)===0 && g(4)===0);
+
+  const fut = env.api.setGroup('2026-08-07', [1,2], 0);
+  check('przyszły dzień ma własne grupy', fut.group===1 && g(1)===0);
+  check('miniony dzień odrzucony', throws(()=>env.api.setGroup('2026-08-03', [1,2], 0)));
+
+  env.api.setGroup(D, [1,2], 0);
+  const gid = g(1);
+  env.api.reserve(1, 'Ala');
+  env.api.setFree(1);
+  env.api.reserve(2, 'Ola');
+  env.api.markWalked(2, '', 2);
+  check('grupa przeżywa rezerwację, zwolnienie i spacer', g(1)===gid && g(2)===gid && dog(2).status==='walked');
+
+  env.setNow('2026-08-04T22:10:00+02:00');
+  env.api.endOfDay();
+  check('po zamknięciu dnia spacer w Historii', hist(env).some(r => r[1]==='Luna' && r[2]==='Ola'), JSON.stringify(hist(env)));
+  check('...a grupy zamkniętego dnia znikają razem z nim', !openRows(env).some(r => r[0]===D), JSON.stringify(openRows(env)));
+})();
+
+/* ---------- B29: zakładka Spacery sprzed grup ---------- */
+(()=>{
+  console.log('B29: stara zakładka Spacery dostaje kolumnę „grupa" sama');
+  const OLD = ['data','pies_id','status','kto','godzina','kto1','godzina1'];
+  const env = build([], { sheets: [
+    { name:'Psy',      rows:[DOG_HEADERS, dogRow({id:1,name:'Borys'}), dogRow({id:2,name:'Luna'})] },
+    { name:'Historia', rows:[HIST_HEADERS] },
+    { name:'Zadania',  rows:[TASK_HEADERS] },
+    { name:'Spacery',  rows:[OLD, ['2026-08-04', 1, 'reserved', 'Ala', '', '', '']] },
+  ]});
+  check('przed: siedem kolumn', env.sheets['Spacery'].getMaxColumns()===7);
+  const d = env.api.getData();
+  check('dane nietknięte', d.dogs[0].status==='reserved' && d.dogs[0].who==='Ala', JSON.stringify(d.dogs[0]));
+  check('kolumna dołożona z nagłówkiem', env.sheets['Spacery']._data[0][7]==='grupa', JSON.stringify(env.sheets['Spacery']._data[0]));
+  check('grupowanie działa od razu', env.api.setGroup('2026-08-04', [1,2], 0).group===1);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

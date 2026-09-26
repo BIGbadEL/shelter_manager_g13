@@ -59,8 +59,11 @@ const DOG_WIDTH = DOG_HEADERS.length;
  * Trzyma wyłącznie dni otwarte (bieżący i przyszłe) — nocne czyszczenie
  * przenosi dni zamknięte do Historii, więc zakładka zostaje mała.
  */
-const WALK = { DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7 };
-const WALK_HEADERS = ['data', 'pies_id', 'status', 'kto', 'godzina', 'kto1', 'godzina1'];
+const WALK = {
+  DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7,
+  GROUP: 8,   // numer grupy (spaceru grupowego) tego dnia; puste = pies idzie sam
+};
+const WALK_HEADERS = ['data', 'pies_id', 'status', 'kto', 'godzina', 'kto1', 'godzina1', 'grupa'];
 const WALK_WIDTH = WALK_HEADERS.length;
 
 /** Zakładka Zadania. */
