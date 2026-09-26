@@ -292,12 +292,15 @@ kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pi
 - **„Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
   aktywny, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna; do tego czasu kafelek mówi,
   na czyją rezerwację grupa czeka. Reguła brzmi „nikt nie jest wolny", a nie „wszyscy
-  zarezerwowani": w grupie psa jedno- i dwuspacerowego po wspólnym spacerze pierwszy jest już
-  wyprowadzony, a drugi czeka na drugi spacer — dosłowna reguła nie pozwoliłaby go nigdy odhaczyć.
-- **Zwolnienie albo cofnięcie wyprowadza psa z grupy.** Pies bez opiekuna traci kolor grupy;
-  grupa, w której został jeden pies, przestaje być grupą. Cofnięcie dotyczy tylko jednego psa —
-  reszta grupy zostaje wyprowadzona. Zaplanowana grupa wolnych psów (nikt ich jeszcze nie wziął)
-  zostaje bez zmian.
+  zarezerwowani": w grupie bywa pies już wyprowadzony (np. dołożony do składu po spacerze),
+  a dosłowna reguła zablokowałaby wtedy resztę bez wyjścia.
+- **Grupa to jeden wspólny spacer.** „Zwolnij" zostawia psa w grupie — grupa znów czeka na jego
+  rezerwację. „Cofnij" po spacerze wyprowadza psa z grupy (tylko jego — reszta zostaje
+  wyprowadzona). Grupa, w której został jeden pies, przestaje być grupą.
+- **Pies na dwa spacery po pierwszym z nich wychodzi z grupy** — drugi spacer to osobny spacer
+  i planuje się go osobno, z kim trzeba. Dzięki temu nowy towarzysz drugiego spaceru nie trafia
+  do porannej grupy. Para psów, które na oba spacery chodzą razem, potrzebuje więc drugiego
+  „Grupa" przed drugim spacerem.
 - **Przytrzymanie psa, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć psy,
   albo nacisnąć „Rozwiąż". Pies przeniesiony do nowej grupy znika ze starej; grupa, w której został
   jeden pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy.
@@ -380,8 +383,10 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
   palcem się kurczyło i przytrzymany pies uciekał z ekranu. Teraz to te same kafelki z kółkiem
   w rogu, układ nie zmienia się ani o piksel; pies, który wpadłby pod pasek na dole, jest
   wysuwany dokładnie o tyle, ile trzeba.
-- Zwolniony (albo cofnięty) pies zostawał w grupie z jej kolorem. Teraz z niej wypada, a grupa
-  z jednym psem przestaje istnieć.
+- Cofnięty spacer zostawiał psa w grupie z jej kolorem. Teraz pies z niej wychodzi, a grupa
+  z jednym psem przestaje istnieć. „Zwolnij" zostawia psa w grupie, jak dotąd.
+- Pies na dwa spacery ciągnął swoją grupę na drugi spacer: dobranie mu towarzysza wyglądało,
+  jakby z tym towarzyszem szły psy z porannej grupy. Teraz po pierwszym spacerze z grupy wychodzi.
 - Usunięty opis na dole strony.
 
 **Spacery grupowe:** przytrzymanie kafelka, zaznaczanie, wspólny kolor i miejsce na liście,

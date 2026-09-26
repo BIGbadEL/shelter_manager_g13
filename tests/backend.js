@@ -770,9 +770,10 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   env.api.setGroup(D, [1,2], 0);
   const gid = g(1);
   env.api.reserve(1, 'Ala');
+  env.api.setFree(1);
   env.api.reserve(2, 'Ola');
   env.api.markWalked(2, '', 2);
-  check('grupa przeżywa rezerwację i spacer', g(1)===gid && g(2)===gid && dog(2).status==='walked');
+  check('grupa przeżywa rezerwację, zwolnienie i spacer', g(1)===gid && g(2)===gid && dog(2).status==='walked');
 
   env.setNow('2026-08-04T22:10:00+02:00');
   env.api.endOfDay();
@@ -797,31 +798,41 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   check('grupowanie działa od razu', env.api.setGroup('2026-08-04', [1,2], 0).group===1);
 })();
 
-/* ---------- B30: zwolniony pies wypada z grupy ---------- */
+/** Stan psa danego dnia z getData — brak wiersza = wolny bez grupy. */
+const walkIn = (env, id, date) => env.api.getData().walks.filter(w => w.dogId===id && w.date===date)[0]
+                                  || {status:'free', who:'', who1:'', group:0};
+
+/* ---------- B30: „Zwolnij" zostawia w grupie, „Cofnij" wyprowadza ---------- */
 (()=>{
-  console.log('B30: setFree — pies bez opiekuna wypada z grupy, grupa z jednym psem znika');
+  console.log('B30: setFree — zwolniony zostaje w grupie, cofnięty spacer wyprowadza z grupy');
   const D = '2026-08-04', T = '2026-08-05';
   const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Cyra'},{id:5,name:'Fado'}]);
-  const walk = (id, date) => env.api.getData().walks.filter(w => w.dogId===id && w.date===(date||D))[0]
-                             || {status:'free', who:'', group:0};
+  const walk = (id, date) => walkIn(env, id, date || D);
   const g = (id, date) => walk(id, date).group || 0;
 
   env.api.setGroup(D, [1,2,3], 0);                     // grupa 1: Borys, Luna, Rex
   env.api.setGroup(T, [1,2], 0);                       // jutro też grupa 1 — numery są na dzień
-  env.api.reserve(1, 'Ala'); env.api.reserve(2, 'Ola');
+  env.api.reserve(1, 'Ala'); env.api.reserve(2, 'Ola'); env.api.reserve(3, 'Ewa');
   const r = env.api.setFree(2);                        // Ola rezygnuje z Luny
-  check('zwolniona Luna bez grupy', g(2)===0 && walk(2).status==='free' && walk(2).who==='', JSON.stringify(walk(2)));
-  check('odpowiedź mówi to samo (klient z niej korzysta)', r.dog.group===0 && r.dog.status==='free', JSON.stringify(r.dog));
-  check('Borys i Rex dalej razem', g(1)===1 && g(3)===1);
-  check('Borys dalej zarezerwowany', walk(1).status==='reserved' && walk(1).who==='Ala');
+  check('zwolniona Luna zostaje w grupie, wolna', g(2)===1 && walk(2).status==='free' && walk(2).who==='',
+    JSON.stringify(walk(2)));
+  check('odpowiedź mówi to samo', r.dog.group===1 && r.dog.status==='free', JSON.stringify(r.dog));
+
+  env.api.reserve(2, 'Iza');
+  [1,2,3].forEach(id => env.api.markWalked(id, '', 2));
+  const r2 = env.api.setFree(2);                       // „Cofnij" u Luny
+  check('cofnięta Luna wychodzi z grupy', g(2)===0 && walk(2).status==='free' && r2.dog.group===0,
+    JSON.stringify(walk(2)));
+  check('Borys i Rex dalej razem, wyprowadzeni', g(1)===1 && g(3)===1
+    && walk(1).status==='walked' && walk(3).status==='walked');
 
   const before = JSON.stringify(openRows(env));
   env.api.setFree(2);                                  // powtórka po zaginionej odpowiedzi (RETRIABLE)
   check('powtórka niczego nie rusza', JSON.stringify(openRows(env))===before);
 
-  env.api.setFree(1);                                  // z grupy zostaje sam Rex
+  env.api.setFree(1);                                  // „Cofnij" u Borysa — zostaje sam Rex
   check('grupa z jednym psem przestaje być grupą', g(1)===0 && g(3)===0, JSON.stringify([g(1), g(3)]));
-  check('Rex bez zmian poza grupą', walk(3).status==='free');
+  check('Rex dalej wyprowadzony', walk(3).status==='walked');
   check('jutrzejsza grupa o tym samym numerze nietknięta', g(1, T)===1 && g(2, T)===1, JSON.stringify([g(1,T), g(2,T)]));
 
   env.api.setGroup(D, [4,5], 0);                       // zaplanowana grupa wolnych psów
@@ -829,16 +840,70 @@ const throws   = fn => { try{ fn(); return false; }catch(e){ return true; } };
   env.api.setFree(4);                                  // wolnego nie ma skąd zwalniać
   check('wolny pies w zaplanowanej grupie zostaje', gid>0 && g(4)===gid && g(5)===gid, JSON.stringify([gid, g(4), g(5)]));
 
-  env.api.reserve(4, 'Iza'); env.api.reserve(5, 'Jan');
-  env.api.markWalked(4, '', 2); env.api.markWalked(5, '', 2);
-  env.api.setFree(4);                                  // „Cofnij" po spacerze
-  check('cofnięty spacer też wyprowadza z grupy', g(4)===0 && g(5)===0 && walk(5).status==='walked',
-    JSON.stringify([walk(4), walk(5)]));
-
   env.api.setGroup(T, [3,4], 0);
   env.api.reserve(3, 'Ewa', T);
   env.api.setFree(3, T);                               // zwolnienie rezerwacji z wyprzedzeniem
-  check('na przyszły dzień tak samo', g(3, T)===0 && g(4, T)===0 && g(1, T)===1);
+  check('zwolnienie na przyszły dzień też zostawia w grupie', g(3, T)>0 && g(3, T)===g(4, T),
+    JSON.stringify([g(3,T), g(4,T)]));
+})();
+
+/* ---------- B31: grupa to jeden spacer — pies na dwa spacery ---------- */
+(()=>{
+  console.log('B31: pierwszy z dwóch spacerów wyprowadza psa z grupy — drugi to osobny spacer');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna',walks:2},{id:3,name:'Rex'},
+                     {id:4,name:'Cyra',walks:2},{id:5,name:'Fado'},{id:6,name:'Kora',walks:2}]);
+  const walk = id => walkIn(env, id, D);
+  const g = id => walk(id).group || 0;
+
+  env.api.setGroup(D, [1,2,3], 0);                     // Borys, Luna (2 spacery), Rex
+  env.api.reserve(1, 'Ala'); env.api.reserve(2, 'Ola'); env.api.reserve(3, 'Ewa');
+  env.api.markWalked(1, '', 2);
+  const r = env.api.markWalked(2, '', 1);              // pierwszy spacer Luny
+  env.api.markWalked(3, '', 2);
+  check('Luna po pierwszym spacerze bez grupy', g(2)===0 && walk(2).who1==='Ola' && walk(2).status==='free'
+    && r.dog.group===0, JSON.stringify(walk(2)));
+  check('Borys i Rex — ten spacer odbyli razem — dalej grupą', g(1)===1 && g(3)===1);
+
+  const before = JSON.stringify(openRows(env));
+  env.api.markWalked(2, '', 1);                        // powtórka po zaginionej odpowiedzi
+  check('powtórka niczego nie rusza', JSON.stringify(openRows(env))===before);
+
+  // zgłoszenie z terenu: drugi spacer Luny z Fado nie może wyglądać, jakby szli z nimi Borys i Rex
+  const r2 = env.api.setGroup(D, [2,5], 0);
+  check('drugi spacer to nowa grupa — bez Borysa i Rexa', r2.group===2 && g(2)===2 && g(5)===2
+    && g(1)===1 && g(3)===1, JSON.stringify([g(1), g(2), g(3), g(5)]));
+  env.api.undoFirstWalk(2);
+  check('cofnięcie pierwszego spaceru nie rusza grupy na drugi', g(2)===2 && g(5)===2 && walk(2).who1==='');
+
+  env.api.setGroup(D, [4,6], 0);                       // para psów na dwa spacery
+  env.api.reserve(4, 'Iza'); env.api.reserve(6, 'Jan');
+  env.api.markWalked(4, '', 1);
+  check('z pary zostaje jeden pies — to już nie grupa', g(4)===0 && g(6)===0, JSON.stringify([g(4), g(6)]));
+  check('...ale zarezerwowana Kora nietknięta poza tym', walk(6).status==='reserved' && walk(6).who==='Jan');
+})();
+
+/* ---------- B32: przestawienie wszystkich psów a grupy ---------- */
+(()=>{
+  console.log('B32: setAllWalks — przestawiony spacer wychodzi z grupy');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'}]);
+  const walk = id => walkIn(env, id, D);
+  env.api.setGroup(D, [1,2], 0);
+  env.api.reserve(1, 'Ala'); env.api.reserve(2, 'Ola');
+  env.api.markWalked(1, '', 2); env.api.markWalked(2, '', 2);
+  env.api.setAllWalks(2, TEST_PIN);                    // upał: wszystkim drugi spacer
+  check('odbyty spacer staje się pierwszym z dwóch', walk(1).who1==='Ala' && walk(1).status==='free');
+  check('...a drugi planuje się osobno: bez grupy', walk(1).group===0 && walk(2).group===0,
+    JSON.stringify([walk(1), walk(2)]));
+  const before = JSON.stringify(openRows(env));
+  env.api.setAllWalks(2, TEST_PIN);
+  check('drugie wywołanie niczego nie rusza', JSON.stringify(openRows(env))===before);
+
+  env.api.setGroup(D, [1,3], 0);                       // Borys zaplanowany z Rexem na drugi spacer
+  env.api.setAllWalks(1, TEST_PIN);                    // jednak jeden spacer
+  check('Borys ma swoje z głowy — z Rexem nie idzie', walk(1).status==='walked' && walk(1).group===0
+    && walk(3).group===0, JSON.stringify([walk(1), walk(3)]));
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

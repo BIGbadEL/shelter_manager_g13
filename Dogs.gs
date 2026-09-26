@@ -194,15 +194,51 @@ function readWalks_(sh) {
     .filter(w => isDate_(w.date) && w.dogId > 0);
 }
 
-/** Numer wiersza pary (data, pies) w zakładce Spacery albo -1. */
-function walkRow_(sh, date, id) {
+/**
+ * Jeden dzień zakładki Spacery do zmiany pod blokadą: odczyt raz, zapis tylko
+ * zmienionych wierszy. Akcja na psie widzi cały dzień, bo może ruszyć też jego grupę.
+ */
+function walkDay_(sh, date) {
   const last = sh.getLastRow();
-  if (last < 2) return -1;
-  const keys = sh.getRange(2, 1, last - 1, 2).getValues();
-  for (let i = 0; i < keys.length; i++) {
-    if (cellDate_(keys[i][0]) === date && Number(keys[i][1]) === Number(id)) return i + 2;
+  const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
+  const day = {};                                    // pies -> indeks jego wiersza tego dnia
+  rows.forEach((r, i) => { const w = mapWalkRow_(r); if (w.date === date) day[w.dogId] = i; });
+  const changed = {};
+  const walk = id => day[id] === undefined ? emptyWalk_(date, id) : mapWalkRow_(rows[day[id]]);
+  return {
+    walk: walk,
+    ids: () => Object.keys(day).map(Number),
+    inGroup: g => Object.keys(day).map(Number).filter(id => walk(id).group === g),
+    put: w => {
+      if (day[w.dogId] === undefined) { rows.push(walkToRow_(w)); day[w.dogId] = rows.length - 1; }
+      else rows[day[w.dogId]] = walkToRow_(w);
+      changed[day[w.dogId]] = true;
+    },
+    save: () => Object.keys(changed).forEach(k =>
+      sh.getRange(Number(k) + 2, 1, 1, WALK_WIDTH).setValues([rows[Number(k)]])),
+  };
+}
+
+/**
+ * Pies wychodzi ze swojej grupy; grupa, w której został jeden pies, przestaje być grupą.
+ *
+ * Grupa to JEDEN wspólny spacer. Wychodzi z niej pies, którego spacer cofnięto,
+ * i pies na dwa spacery po pierwszym z nich — drugi spacer planuje się osobno.
+ * Gdyby został, nowy towarzysz drugiego spaceru trafiałby do grupy, z którą pies
+ * szedł rano, i wyglądałoby, jakby tamte psy szły razem z nowym.
+ * „Zwolnij" psa NIE wyprowadza z grupy: grupa czeka wtedy na nową rezerwację.
+ */
+function leaveGroup_(d, w) {
+  const g = w.group;
+  if (!g) return;
+  w.group = 0;
+  d.put(w);
+  const left = d.inGroup(g);
+  if (left.length === 1) {
+    const lone = d.walk(left[0]);
+    lone.group = 0;
+    d.put(lone);
   }
-  return -1;
 }
 
 /**
@@ -235,20 +271,20 @@ function actionDate_(date) {
 }
 
 /**
- * Wspólny szkielet akcji na psie danego dnia: pod blokadą czyta pies + wiersz
- * dnia, `change` modyfikuje wiersz i mówi, czy jest co zapisać. Zwraca psa
- * w stanie z tego dnia — interfejs porównuje go ze swoim optymistycznym.
+ * Wspólny szkielet akcji na psie danego dnia: pod blokadą czyta pies + dzień,
+ * `change(w, dog, d)` modyfikuje wiersz psa (i przez `d` ewentualnie jego grupę)
+ * i mówi, czy jest co zapisać. Zwraca psa w stanie z tego dnia — interfejs
+ * porównuje go ze swoim optymistycznym.
  */
 function dogAction_(id, date, change) {
   return withLock_(() => {
     const dog = catalogDog_(id);
     if (!dog) return { dog: null };
-    const sh = walksSheetLocked_();
-    const row = walkRow_(sh, date, id);
-    const w = row > 0 ? mapWalkRow_(sh.getRange(row, 1, 1, WALK_WIDTH).getValues()[0])
-                      : emptyWalk_(date, id);
-    if (change(w, dog)) {
-      sh.getRange(row > 0 ? row : sh.getLastRow() + 1, 1, 1, WALK_WIDTH).setValues([walkToRow_(w)]);
+    const d = walkDay_(walksSheetLocked_(), date);
+    const w = d.walk(Number(id));
+    if (change(w, dog, d)) {
+      d.put(w);
+      d.save();
     }
     return { dog: Object.assign(withWalk_(dog, w), { date: date }) };
   });
@@ -289,7 +325,7 @@ function reserve(id, name, date) {
 function markWalked(id, name, slot, date) {
   const a = actionDate_(date);
   if (!a.current) throw new Error('Spacer odhaczysz dopiero w dniu spaceru');
-  return dogAction_(id, a.date, (w, dog) => {
+  return dogAction_(id, a.date, (w, dog, d) => {
     const firstDone = w.who1 !== '';
     const first = dog.walks === 2 && (slot == null ? !firstDone : Number(slot) === 1);
 
@@ -300,6 +336,7 @@ function markWalked(id, name, slot, date) {
       w.status = STATUS.FREE;
       w.who = '';
       w.time = '';
+      leaveGroup_(d, w);                    // drugi spacer to osobny spacer — i osobna grupa
       return true;
     }
 
@@ -324,46 +361,23 @@ function undoFirstWalk(id, date) {
 }
 
 /**
- * Cofa psa do stanu "wolny" danego dnia (zwolnienie rezerwacji albo cofnięcie spaceru).
+ * Cofa psa do stanu "wolny" danego dnia: „Zwolnij" (rezerwacja) albo „Cofnij" (spacer).
  *
- * Pies, który traci opiekuna, WYPADA ZE SWOJEJ GRUPY: spacer grupowy to psy, które
- * ktoś faktycznie prowadzi razem, a kolor grupy przy zwolnionym psie tylko myli.
- * Grupa, w której został jeden pies, przestaje być grupą. Zaplanowana grupa wolnych
- * psów (nikt ich jeszcze nie wziął) zostaje — tu nikt nikogo nie zwalnia.
+ * Zwolniony pies ZOSTAJE w grupie — grupa czeka na nową rezerwację, jak przy
+ * planowaniu. Cofnięty spacer wyprowadza psa z grupy (leaveGroup_): tamten
+ * wspólny spacer już się odbył, a on w nim — jak się okazało — nie był.
  * Powtórka po zaginionej odpowiedzi trafia na psa już wolnego i niczego nie rusza.
  */
 function setFree(id, date) {
   const a = actionDate_(date);
-  return withLock_(() => {
-    const dog = catalogDog_(id);
-    if (!dog) return { dog: null };
-    const sh = walksSheetLocked_();
-    const last = sh.getLastRow();
-    const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
-    const day = {};                                        // pies -> indeks wiersza tego dnia
-    rows.forEach((r, i) => { const w = mapWalkRow_(r); if (w.date === a.date) day[w.dogId] = i; });
-    const answer = w => ({ dog: Object.assign(withWalk_(dog, w), { date: a.date }) });
-
-    const i = day[Number(id)];
-    if (i === undefined) return answer(emptyWalk_(a.date, id));
-    const w = mapWalkRow_(rows[i]);
-    if (w.status === STATUS.FREE && !w.who && !w.time) return answer(w);   // nic do zwalniania
-
-    const group = w.group;
-    w.status = STATUS.FREE; w.who = ''; w.time = ''; w.group = 0;
-    rows[i] = walkToRow_(w);
-    const changed = [i];
-    if (group) {
-      const left = Object.keys(day).map(Number).filter(d => mapWalkRow_(rows[day[d]]).group === group);
-      if (left.length === 1) {
-        const lone = mapWalkRow_(rows[day[left[0]]]);
-        lone.group = 0;
-        rows[day[left[0]]] = walkToRow_(lone);
-        changed.push(day[left[0]]);
-      }
-    }
-    changed.forEach(k => sh.getRange(k + 2, 1, 1, WALK_WIDTH).setValues([rows[k]]));
-    return answer(w);
+  return dogAction_(id, a.date, (w, dog, d) => {
+    if (w.status === STATUS.FREE && !w.who && !w.time) return false;   // nic do zwalniania
+    const undo = w.status === STATUS.WALKED;
+    w.status = STATUS.FREE;
+    w.who = '';
+    w.time = '';
+    if (undo) leaveGroup_(d, w);
+    return true;
   });
 }
 
@@ -540,27 +554,25 @@ function setAllWalks(walks, pin) {
       dogs.getRange(2, DOG.WALKS, lastDog - 1, 1).setValues(col);
     }
 
-    const date = businessDate_();
-    const sh = walksSheetLocked_();
-    const last = sh.getLastRow();
-    if (last >= 2) {
-      const rows = sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues();
-      rows.forEach((r, i) => {
-        const w = mapWalkRow_(r);
-        if (w.date !== date) return;
-        if (n === 2 && w.status === STATUS.WALKED && !w.who1) {
-          w.who1 = w.who; w.time1 = w.time;
-          w.status = STATUS.FREE; w.who = ''; w.time = '';
-        } else if (n === 1 && w.status === STATUS.FREE && w.who1) {
-          w.who = w.who1; w.time = w.time1;
-          w.status = STATUS.WALKED; w.who1 = ''; w.time1 = '';
-        } else {
-          return;
-        }
-        rows[i] = walkToRow_(w);
-      });
-      sh.getRange(2, 1, rows.length, WALK_WIDTH).setValues(rows);
-    }
+    // przestawiony pies wychodzi ze swojej grupy (leaveGroup_): odbyty spacer staje się
+    // pierwszym z dwóch, a drugi to osobny spacer; w drugą stronę — pies zaplanowany
+    // w grupie na drugi spacer ma już swoje z głowy i z tą grupą nie idzie
+    const d = walkDay_(walksSheetLocked_(), businessDate_());
+    d.ids().forEach(id => {
+      const w = d.walk(id);
+      if (n === 2 && w.status === STATUS.WALKED && !w.who1) {
+        w.who1 = w.who; w.time1 = w.time;
+        w.status = STATUS.FREE; w.who = ''; w.time = '';
+      } else if (n === 1 && w.status === STATUS.FREE && w.who1) {
+        w.who = w.who1; w.time = w.time1;
+        w.status = STATUS.WALKED; w.who1 = ''; w.time1 = '';
+      } else {
+        return;
+      }
+      d.put(w);
+      leaveGroup_(d, w);
+    });
+    d.save();
     return getData();
   });
 }

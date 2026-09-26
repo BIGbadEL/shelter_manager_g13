@@ -1,4 +1,4 @@
-// S71-S81: spacery grupowe. Przytrzymanie kafelka jest mierzone prawdziwym
+// S71-S82: spacery grupowe. Przytrzymanie kafelka jest mierzone prawdziwym
 // zegarem (jak na telefonie), więc zestaw jest asynchroniczny.
 const { buildApp, dogFree } = require('./harness');
 let failures = 0;
@@ -275,46 +275,34 @@ async function S78(){
 }
 
 async function S79(){
-  console.log('S79: „Zwolnij" wyprowadza psa z grupy; grupa z jednym psem znika');
+  console.log('S79: „Zwolnij" zostawia psa w grupie — grupa znów czeka na jego rezerwację');
   const app = buildApp();
   app.seed(base({walks:[
     {date:D, dogId:1, status:'reserved', who:'Ala', group:1},
     {date:D, dogId:2, status:'reserved', who:'Ola', group:1},
-    {date:D, dogId:3, status:'free', group:1},
-    {date:D, dogId:4, status:'reserved', who:'Iza', group:2},
-    {date:D, dogId:5, status:'free', group:2},
   ]}));
   const c1 = bgOf(app, 1)[1];
-  check('start: Borys czeka na Rexa', /czeka na rezerwację: Rex$/.test(li(app, 1).querySelector('.grpwait').textContent.trim()));
+  check('start: grupa gotowa do wyjścia', /data-act="walk" data-id="1"/.test(li(app, 1).outerHTML));
 
   app.click('[data-act="free"][data-id="2"]');         // Ola rezygnuje z Luny
   const job = lastJob(app);
   check('setFree(pies, dzień)', job.fn==='setFree' && job.args[0]===2 && job.args[1]===D, JSON.stringify(job.args));
-  check('Luna od razu bez koloru i znacznika', !bgOf(app, 2) && !/👥 grupa/.test(li(app, 2).textContent));
-  check('...także w stanie', S(app).walks[D+'|2'].group===0 && S(app).walks[D+'|2'].status==='free',
+  check('Luna dalej w grupie — kolor i znacznik', !!bgOf(app, 2) && bgOf(app, 2)[1]===c1
+    && /👥 grupa/.test(li(app, 2).textContent));
+  check('...także w stanie', S(app).walks[D+'|2'].group===1 && S(app).walks[D+'|2'].status==='free',
     JSON.stringify(S(app).walks[D+'|2']));
-  check('Borys i Rex dalej razem', bgOf(app, 1)[1]===c1 && bgOf(app, 3)[1]===c1
-    && S(app).walks[D+'|1'].group===1 && S(app).walks[D+'|3'].group===1);
-  check('Borys czeka już tylko na Rexa, nie na wolną Lunę',
-    /czeka na rezerwację: Rex$/.test(li(app, 1).querySelector('.grpwait').textContent.trim()),
-    li(app, 1).querySelector('.grpwait').textContent.trim());
-  app.respondNext({dog: dogFree({id:2, name:'Luna'})});
-
-  app.click('[data-act="free"][data-id="4"]');         // z grupy 2 zostaje sam Fado
-  check('Cyra bez grupy', !bgOf(app, 4) && S(app).walks[D+'|4'].group===0);
-  check('Fado sam to nie grupa — kafelek przerysowany', !bgOf(app, 5) && !/👥 grupa/.test(li(app, 5).textContent)
-    && S(app).walks[D+'|5'].group===0, JSON.stringify(S(app).walks[D+'|5']));
-  check('grupa 1 nietknięta', S(app).walks[D+'|1'].group===1 && S(app).walks[D+'|3'].group===1);
-  app.respondNext({dog: dogFree({id:4, name:'Cyra'})});
-  check('odpowiedź serwera tego nie cofa', !bgOf(app, 4) && !bgOf(app, 5) && bgOf(app, 1)[1]===c1);
+  check('Borys czeka na nową rezerwację Luny (kafelek towarzysza przerysowany)',
+    !/data-act="walk" data-id="1"/.test(li(app, 1).outerHTML) && /czeka na rezerwację: Luna/.test(li(app, 1).textContent),
+    li(app, 1).textContent.replace(/\s+/g, ' '));
+  app.respondNext({dog: dogFree({id:2, name:'Luna', group:1})});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
 async function S80(){
-  console.log('S80: grupa psów 1- i 2-spacerowych — drugi spacer da się odhaczyć');
-  // tu pracuje reguła „nikt z grupy nie jest wolny" zamiast „wszyscy zarezerwowani":
-  // po wspólnym spacerze Borys jest wyprowadzony, a Luna czeka na drugi
+  console.log('S80: grupa to jeden spacer — pies na dwa spacery po pierwszym wychodzi z grupy');
+  // zgłoszenie z terenu: Borys + Luna (2 spacery) razem, potem Luna na drugi spacer z Rexem —
+  // wyglądało, jakby Borys szedł z Rexem
   const app = buildApp();
   app.seed(base({
     dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna', walks:2}), dogFree({id:3, name:'Rex'})],
@@ -322,25 +310,55 @@ async function S80(){
   }));
   app.click('[data-act="walk"][data-id="1"]');
   const w1 = app.pending.filter(p => p.fn==='markWalked');
-  check('wspólny spacer odhacza oba', w1.length===2, app.pending.map(p=>p.fn).join(','));
-  check('Luna po pierwszym z dwóch: wolna i dalej w grupie',
-    S(app).walks[D+'|2'].status==='free' && S(app).walks[D+'|2'].who1==='Ola' && S(app).walks[D+'|2'].group===1,
-    JSON.stringify(S(app).walks[D+'|2']));
+  check('wspólny spacer odhacza oba — Lunę jako pierwszy z dwóch', w1.length===2
+    && w1.find(p => p.args[0]===2).args[2]===1, JSON.stringify(w1.map(p => p.args)));
+  const luna = S(app).walks[D+'|2'];
+  check('Luna po pierwszym spacerze: wolna i bez grupy', luna.status==='free' && luna.who1==='Ola' && luna.group===0,
+    JSON.stringify(luna));
+  check('z pary został sam Borys — to już nie grupa', S(app).walks[D+'|1'].group===0 && !bgOf(app, 1) && !bgOf(app, 2));
+  // odpowiedź dla Borysa policzona na serwerze, zanim przyszła kolej na Lunę — jeszcze z grupą
   app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', time:'10:00', group:1})});
-  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, who1:'Ola', time1:'10:00', group:1})});
+  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, who1:'Ola', time1:'10:00'})});
+  check('spóźniona odpowiedź nie przywraca rozwiązanej grupy', S(app).walks[D+'|1'].group===0 && !bgOf(app, 1),
+    JSON.stringify(S(app).walks[D+'|1']));
 
-  app.click('[data-act="reserve"][data-id="2"]');
-  app.type('[data-input="2"]', 'Ola');
-  app.click('[data-act="confirm"][data-id="2"]');
-  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, status:'reserved', who:'Ola', who1:'Ola', time1:'10:00', group:1})});
-  check('drugi spacer Luny do odhaczenia (Borys już wyszedł, nikt nie jest wolny)',
-    /data-act="walk" data-id="2"/.test(li(app, 2).outerHTML), li(app, 2).outerHTML.slice(0, 300));
-  const n = app.pending.length;
+  await press(app, 2);                                 // drugi spacer Luny — z Rexem
+  check('przytrzymanie Luny zaczyna NOWĄ grupę, nie otwiera porannej', !!S(app).select && S(app).select.gid===0
+    && JSON.stringify(S(app).select.ids)==='[2]', JSON.stringify(S(app).select));
+  tapEl(app, li(app, 3));
+  tapEl(app, groupBtn(app));
+  const job = lastJob(app);
+  check('setGroup: Luna + Rex, nowa grupa', job.fn==='setGroup' && JSON.stringify(job.args[1])==='[2,3]' && job.args[2]===0,
+    JSON.stringify(job.args));
+  check('Borys nie wygląda, jakby szedł z Rexem', !bgOf(app, 1) && !!bgOf(app, 2) && bgOf(app, 2)[1]===bgOf(app, 3)[1]);
+  app.respondNext({group:1, walks:[{date:D, dogId:2, group:1}, {date:D, dogId:3, group:1}]});
+  check('kolejka pusta', drained(app), JSON.stringify(app.state()));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+async function S82(){
+  console.log('S82: grupa z psem już wyprowadzonym — nic się nie blokuje');
+  // Luna dołożona do składu po spacerze (albo stan z innego telefonu). Reguła „nikt z grupy
+  // nie jest wolny", nie „wszyscy zarezerwowani": „Zwolnij" nie wyprowadza z grupy, więc
+  // dosłowna reguła nie zostawiłaby Lunie żadnego wyjścia
+  const app = buildApp();
+  app.seed(base({walks:[
+    {date:D, dogId:1, status:'walked', who:'Ala', time:'9:00', group:1},
+    {date:D, dogId:2, status:'reserved', who:'Ola', group:1},
+    {date:D, dogId:3, status:'walked', who:'Ewa', time:'9:00', group:1},
+  ]}));
+  check('Lunę da się odhaczyć', /data-act="walk" data-id="2"/.test(li(app, 2).outerHTML), li(app, 2).outerHTML.slice(0, 300));
   app.click('[data-act="walk"][data-id="2"]');
-  const w2 = app.pending.slice(n);
-  check('odhacza tylko Lunę, jako drugi spacer', w2.length===1 && w2[0].args[0]===2 && w2[0].args[2]===2,
-    JSON.stringify(w2.map(p=>p.args)));
-  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, status:'walked', who:'Ola', who1:'Ola', time1:'10:00', group:1})});
+  const w = app.pending.filter(p => p.fn==='markWalked');
+  check('odhacza tylko ją', w.length===1 && w[0].args[0]===2, JSON.stringify(w.map(p => p.args)));
+  app.respondNext({dog: dogFree({id:2, name:'Luna', status:'walked', who:'Ola', time:'10:00', group:1})});
+
+  const c1 = bgOf(app, 1)[1];
+  app.click('[data-act="free"][data-id="1"]');         // „Cofnij" u Borysa
+  check('cofnięty Borys wychodzi z grupy', !bgOf(app, 1) && S(app).walks[D+'|1'].group===0);
+  check('Luna i Rex zostają grupą (dwa psy to grupa)', bgOf(app, 2)[1]===c1 && bgOf(app, 3)[1]===c1
+    && S(app).walks[D+'|2'].group===1 && S(app).walks[D+'|3'].group===1);
+  app.respondNext({dog: dogFree({id:1, name:'Borys'})});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
@@ -379,6 +397,7 @@ async function S81(){
     await S79();
     await S80();
     await S81();
+    await S82();
   }catch(e){
     failures++;
     console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e));

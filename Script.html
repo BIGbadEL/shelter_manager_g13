@@ -994,11 +994,13 @@
      więc każdy telefon widzi ją tak samo. Kolor wynika z numeru grupy tego dnia:
      każda kolejna jest w innym, a na wszystkich telefonach w tym samym.
 
-     „Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych —
-     ale tylko wtedy, gdy nikt z grupy nie jest WOLNY (każdy pies ma opiekuna).
-     Nie „wszyscy zarezerwowani": po spacerze i cofnięciu jednego psa pozostali są
-     już wyprowadzeni, a nie zarezerwowani, i tamta reguła zablokowałaby na zawsze
-     ponowne odhaczenie cofniętego. Cofnięcie cofa tylko jednego psa.
+     Grupa to JEDEN wspólny spacer. „Wyprowadzony ✓" na dowolnym psie z grupy odhacza
+     wszystkich zarezerwowanych — ale tylko wtedy, gdy nikt z grupy nie jest WOLNY
+     (każdy pies ma opiekuna). Nie „wszyscy zarezerwowani": w grupie bywa pies już
+     wyprowadzony (dołożony do składu po spacerze albo z innego telefonu), a „Zwolnij"
+     z grupy nie wyprowadza — dosłowna reguła zablokowałaby resztę bez wyjścia.
+     Zwolniony pies zostaje w grupie; cofnięty spacer i pierwszy z dwóch spacerów
+     wyprowadzają psa z grupy (leaveGroup). Cofnięcie cofa tylko jednego psa.
      ========================================================= */
   const GROUP_COLORS = [
     {bg:'#ebe7fb', ink:'#5a45b0'},   // lawenda
@@ -1012,6 +1014,28 @@
   function groupMates(date, gid){ return dogsAt(date).filter(d => d.group === gid); }
   /** Psy z grupy, które nie mają opiekuna — dopóki są, grupa nie może ruszyć. */
   function groupWaiting(date, gid){ return groupMates(date, gid).filter(d => d.status === 'free'); }
+  /**
+   * Pies wychodzi z grupy — to samo, co leaveGroup_ na serwerze: cofnięty spacer albo
+   * pierwszy z dwóch (drugi to osobny spacer). Grupa, w której został jeden pies,
+   * przestaje być grupą. Zwraca dawnych towarzyszy — ich kafelki też trzeba przerysować.
+   */
+  function leaveGroup(date, id){
+    const g = walkOf(date, id).group;
+    if(!g) return [];
+    setWalk(date, id, Object.assign({}, walkOf(date, id), {group:0}));
+    const left = groupMates(date, g).map(d=>d.id);
+    if(left.length===1) state.walks[wkey(date, left[0])].group = 0;
+    return left;
+  }
+  /**
+   * Odpowiedź {dog} z akcji na psie — bez grupy. Skład zmieniają też akcje na INNYCH
+   * psach (spacer towarzysza, cofnięcie), więc odpowiedź wysłana przed nimi przywróciłaby
+   * rozwiązaną już grupę. Grupy przychodzą z setGroup i z odświeżenia (getData),
+   * a skutki własnych akcji klient liczy sam, tak jak serwer.
+   */
+  function applyDog(date, id, dog){
+    setWalk(date, id, Object.assign({}, dog, {group: walkOf(date, id).group}));
+  }
   /** Kolejny numer grupy tego dnia — dokładnie tak samo liczy go serwer (setGroup). */
   function nextGroupId(date){
     let max = 0;
@@ -1235,7 +1259,7 @@
     patchDog(id);
     enqueue('reserve',[id,who,date],{key:keyDog(id,date),reconcile:res=>{
       if(!res || !res.dog){ safeRender(); return; }
-      setWalk(date, id, res.dog);
+      applyDog(date, id, res.dog);
       if(!(res.dog.status==='reserved' && res.dog.who===who)){
         toast('Ubiegł Cię ktoś inny — pies już zajęty');
         if(date===state.date) patchDog(id);   // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
@@ -1261,9 +1285,11 @@
       w.status='walked'; w.time=localHM();
     }
     setWalk(date, id, w);
+    const mates = first ? leaveGroup(date, id) : [];   // drugi spacer to osobny spacer — i osobna grupa
     patchDog(id);
+    mates.forEach(x=>patchDog(x));
     enqueue('markWalked',[id,'',first?1:2,date],{key:keyDog(id,date),reconcile:res=>{
-      if(res && res.dog) setWalk(date, id, res.dog);
+      if(res && res.dog) applyDog(date, id, res.dog);
       if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
@@ -1276,29 +1302,28 @@
     setWalk(date, id, Object.assign({}, w, {who1:'', time1:''}));
     patchDog(id);
     enqueue('undoFirstWalk',[id,date],{key:keyDog(id,date),reconcile:res=>{
-      if(res && res.dog) setWalk(date, id, res.dog);
+      if(res && res.dog) applyDog(date, id, res.dog);
       if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   /**
-   * „Zwolnij" / „Cofnij". Pies bez opiekuna wypada ze swojej grupy, a grupa z jednym
-   * psem przestaje być grupą — dokładnie jak robi to serwer (setFree). Kafelki
-   * dawnych towarzyszy też się zmieniają: kolor, podpowiedź „czeka na…", przycisk.
+   * „Zwolnij" (rezerwacja) albo „Cofnij" (spacer) — dokładnie jak setFree na serwerze.
+   * Zwolniony pies zostaje w grupie, a grupa znów czeka na jego rezerwację. Cofnięty
+   * wychodzi z grupy (leaveGroup): kafelki dawnych towarzyszy też się wtedy zmieniają.
    */
   function doFree(id){
     const date=state.date;
     if(!date || !findDog(id)) return;
     if(isPast(date)){ dayClosed(); return; }
     const w=walkOf(date, id);
-    const gid=(w.status==='free' && !w.who && !w.time) ? 0 : w.group;   // wolnego nie ma skąd zwalniać
-    const mates=gid ? groupMates(date, gid).map(d=>d.id).filter(x=>x!==id) : [];
-    setWalk(date, id, Object.assign({}, w, {status:'free', who:'', time:''}, gid ? {group:0} : {}));
-    if(mates.length===1) state.walks[wkey(date, mates[0])].group = 0;
+    const undo=w.status==='walked';
+    setWalk(date, id, Object.assign({}, w, {status:'free', who:'', time:''}));
+    const mates=undo ? leaveGroup(date, id) : [];
     patchDog(id);
     mates.forEach(x=>patchDog(x));
     enqueue('setFree',[id,date],{key:keyDog(id,date),reconcile:res=>{
-      if(res && res.dog) setWalk(date, id, res.dog);
+      if(res && res.dog) applyDog(date, id, res.dog);
       if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
