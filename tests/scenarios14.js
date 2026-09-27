@@ -342,8 +342,51 @@ async function S99(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S100(){
+  console.log('S100: konflikt na 1/2 nie kasuje imienia, które ktoś właśnie wpisuje w 2/2 (ani u towarzysza z grupy)');
+  const app = buildApp();
+  app.seed(base({dogs:[d2(1,'Bari'), d1(2,'Azor')]}));
+  const inp = n => doc(app).querySelector(`[data-input="1"][data-slot="${n}"]`);
+  app.click('[data-act="reserve"][data-id="1"][data-slot="1"]'); app.type('[data-input="1"][data-slot="1"]', 'Ala');
+  app.click('[data-act="confirm"][data-id="1"][data-slot="1"]');
+  app.click('[data-act="reserve"][data-id="1"][data-slot="2"]');   // zaraz potem popołudnie
+  app.type('[data-input="1"][data-slot="2"]', 'Janek'); inp(2).focus(); inp(2).setSelectionRange(5, 5);
+  app.respondNext({slot:{slot:1, status:'reserved', who:'Ola'}});   // 1/2 wziął ktoś inny
+  check('konflikt na 1/2 widać od razu', /Ubiegł/.test(toastTxt(app)) && /Ola/.test(txt(tile(app, 'm1'))), txt(tile(app, 'm1')));
+  check('pole 2/2 zostaje otwarte, z wpisanym imieniem', !!doc(app).querySelector('[data-entry="1"][data-slot="2"]:not(.hidden)')
+    && inp(2).value==='Janek', inp(2) ? inp(2).value : '(brak pola)');
+  check('fokus i kursor wracają do pola', doc(app).activeElement===inp(2) && inp(2).selectionStart===5);
+  check('„Zarezerwuj" 2/2 schowany pod otwartym polem',
+    doc(app).querySelector('[data-act="reserve"][data-id="1"][data-slot="2"]').classList.contains('hidden'));
+  app.click('[data-act="confirm"][data-id="1"][data-slot="2"]');
+  check('rezerwację 2/2 da się dokończyć', app.pending.some(p => p.fn==='reserve' && p.args[1]==='Janek' && p.args[3]===2),
+    app.pending.map(p => p.fn + JSON.stringify(p.args)).join(' '));
+
+  // towarzysz z grupy: konflikt u Azora przerysowuje też kafelek Bariego, w którym ktoś pisze
+  const g = buildApp();
+  g.seed(base({dogs:[d1(1,'Azor'), d1(2,'Bari')], slots:[sl(1,1,{group:1}), sl(2,1,{group:1})]}));
+  g.click('li[data-tile="s1.1"] [data-act="reserve"]'); g.type('[data-input="1"]', 'Ala'); g.click('li[data-tile="s1.1"] [data-act="confirm"]');
+  g.click('li[data-tile="s2.1"] [data-act="reserve"]'); g.type('[data-input="2"]', 'Iza');
+  g.respondNext({slot:{slot:1, status:'reserved', who:'Ola'}});
+  const bi = doc(g).querySelector('[data-input="2"]');
+  check('grupa: imię u towarzysza przeżywa konflikt obok', !!doc(g).querySelector('[data-entry="2"]:not(.hidden)') && bi.value==='Iza',
+    bi ? bi.value : '(brak pola)');
+
+  // pole znika, gdy jego spaceru nie da się już zarezerwować — tu stan z serwera: 2/2 zajęty
+  const z = buildApp();
+  z.seed(base({dogs:[d2(1,'Bari')]}));
+  z.click('[data-act="reserve"][data-id="1"][data-slot="1"]'); z.type('[data-input="1"][data-slot="1"]', 'Ala');
+  z.click('[data-act="confirm"][data-id="1"][data-slot="1"]');
+  z.click('[data-act="reserve"][data-id="1"][data-slot="2"]'); z.type('[data-input="1"][data-slot="2"]', 'Janek');
+  S(z).slots[D+'|1|2'] = {status:'reserved', who:'Ewa', time:'', group:0};   // w międzyczasie z odświeżenia
+  z.respondNext({slot:{slot:1, status:'reserved', who:'Ola'}});
+  check('pole spaceru już zajętego nie wraca', !doc(z).querySelector('[data-entry="1"][data-slot="2"]:not(.hidden)'));
+  check('bez błędów', app.errors.length===0 && g.errors.length===0 && z.errors.length===0,
+    app.errors.concat(g.errors, z.errors).join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

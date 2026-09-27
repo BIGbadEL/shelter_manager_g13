@@ -255,7 +255,11 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   plus linijkę podsumowania (liczoną w spacerach). Gdy zmienił się sam układ (spacer wszedł do
   grupy albo z niej wyszedł), pełny render. Pełny render porównuje HTML z poprzednim i przy braku
   różnic nie dotyka DOM. Ręczna zmiana DOM (otwarcie pola „Twoje imię") unieważnia
-  cache przez `invalidateHtml()`.
+  cache przez `invalidateHtml()`. **`patchDog` przenosi otwarte pole imienia przez
+  przerysowanie** (`takeEntry`/`putEntry`: wartość, fokus, kursor) — idzie także wtedy, gdy ktoś
+  pisze (konflikt rezerwacji), a przy dwóch polach na psa i kafelkach towarzyszy z grupy
+  przerysowany kafelek to często nie ten, o który chodziło w odpowiedzi (review PR #2, S100).
+  Pole wraca tylko, gdy jego spacer wciąż jest wolny.
 
 ## Testy — obowiązkowe przy każdej zmianie
 

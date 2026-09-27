@@ -716,7 +716,41 @@
    * zamrożonej kolejności, więc i tak nic nie ucieka spod palca.
    */
   function patchDog(id, cause){
-    cause = cause || 'data';
+    const typing = takeEntry();
+    patchTiles(id, cause || 'data');
+    putEntry(typing);
+  }
+
+  /**
+   * Otwarte pole „Twoje imię" (najwyżej jedno — openEntry zamyka pozostałe), żeby przeżyło
+   * przerysowanie kafelka. patchDog idzie też wtedy, gdy ktoś pisze (konflikt rezerwacji
+   * pokazujemy od razu), a pies dwuspacerowy ma dwa pola: konflikt na 1/2 kasował imię
+   * wpisywane właśnie w 2/2 (review PR #2, S100). To samo z kafelkami towarzyszy z grupy.
+   */
+  function takeEntry(){
+    const entry = viewEl.querySelector('[data-entry]:not(.hidden)');
+    const input = entry && entry.querySelector('[data-input]');
+    if(!input) return null;
+    const focused = document.activeElement === input;
+    return {id: entry.dataset.entry, n: entry.dataset.slot, date: state.date, value: input.value, focused,
+            start: focused ? input.selectionStart : null, end: focused ? input.selectionEnd : null};
+  }
+  /** Odtwarza pole po przerysowaniu — o ile ten spacer wciąż da się zarezerwować (inaczej pola nie ma). */
+  function putEntry(t){
+    if(!t || t.date !== state.date || state.view!=='today' || state.admin) return;
+    const entry = viewEl.querySelector(`[data-entry="${t.id}"][data-slot="${t.n}"]`);
+    const input = entry && entry.querySelector('[data-input]');
+    if(!input || !entry.classList.contains('hidden')) return;
+    invalidateHtml();                                // DOM zmieniony poza render()
+    entry.classList.remove('hidden');
+    const li = entry.closest('li') || viewEl;
+    const btn = li.querySelector(`[data-act="reserve"][data-id="${t.id}"][data-slot="${t.n}"]`);
+    if(btn) btn.classList.add('hidden');
+    input.value = t.value;
+    if(t.focused){ input.focus(); try{ input.setSelectionRange(t.start, t.end); }catch(e){} }
+  }
+
+  function patchTiles(id, cause){
     if(state.view!=='today' || state.admin || state.select || state.editId!==null || isPast(state.date)
        || !findDog(id)){ render(cause); return; }
     const lay = layoutDay(state.date);
@@ -1678,7 +1712,8 @@
       if(!got){ safeRender(); return; }
       if(!(got.status==='reserved' && got.who===who)){
         toast('Ubiegł Cię ktoś inny — ten spacer już zajęty');
-        if(date===state.date) patchDog(id);   // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
+        // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię — pole przeżyje (patchDog)
+        if(date===state.date) patchDog(id);
       } else if(date===state.date && !busyEditing()) patchDog(id);
     }});
     patchDog(id, 'self');
