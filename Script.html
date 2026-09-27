@@ -144,16 +144,18 @@
     return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
   }
   /**
-   * Dymek u góry ekranu: „Zapisuję…", dopóki cokolwiek leci na serwer, potem
-   * „Aktualizuję…", dopóki lista czeka na przestawienie (patrz decideOrder). Dawny
-   * napis „zapisywanie…" w nagłówku był za mały, żeby ktokolwiek go zauważył, a to
-   * on ma mówić, że stuknięcie zostało przyjęte. Kropki animuje CSS (.dots).
-   * Znika najwcześniej po T.busyMin — krótszego mignięcia nikt nie zobaczy.
+   * Dymek u góry ekranu: „Zapisuję…", dopóki cokolwiek leci na serwer, a „Aktualizuję…"
+   * tylko w oknie zapowiedzi (reorderDueAt, T.announce) — tuż przed tym, jak lista
+   * naprawdę się przesunie. Nie przez całą ciszę przed nią: przy ciągłej pracy dymek
+   * świeciłby wtedy bez przerwy i mówił „czekaj, coś się mieli" (review PR #2).
+   * Dawny napis „zapisywanie…" w nagłówku był za mały, żeby ktokolwiek go zauważył.
+   * Kropki animuje CSS (.dots). Znika najwcześniej po T.busyMin — krótszego mignięcia
+   * nikt nie zobaczy.
    */
   let busyShownAt = 0, busyHideTimer = null;
   function busyKind(){
     if(inflight.size || queue.length) return 'save';
-    if(orderPending && state.view==='today' && !state.admin && !busyEditing()) return 'sort';
+    if(orderPending && reorderDueAt && state.view==='today' && !state.admin && !busyEditing()) return 'sort';
     return null;
   }
   function updateBusy(){
@@ -485,6 +487,7 @@
     reorderDueAt = 0;
     clearTimeout(reorderTimer);
     reorderTimer = setTimeout(()=>{ if(canReorder()) safeRender(); }, T.quiet + 200);
+    updateBusy();                                  // odwołana zapowiedź gasi „Aktualizuję…"
   }
 
   /**

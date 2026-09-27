@@ -162,8 +162,10 @@ Samo „jak posortować" to połowa. Druga połowa to **kiedy**: pies nie może 
 5. **Kliknięcie zmienia kafelek w miejscu** (`patchDog`). Pełny render tylko wtedy, gdy
    zmienił się sam układ (spacer wszedł do grupy albo z niej wyszedł).
 
-Dymek: „Zapisuję…" dopóki cokolwiek leci na serwer, potem „Aktualizuję…" dopóki lista
-czeka na przestawienie (`orderPending`), a znika najwcześniej po `T.busyMin`.
+Dymek: „Zapisuję…" dopóki cokolwiek leci na serwer, „Aktualizuję…" tylko w oknie zapowiedzi
+(`reorderDueAt`, p. 2) — gdy ruch jest już przesądzony. Nie przez całą ciszę przed nim: przy
+ciągłej pracy dymek świeciłby bez przerwy (review PR #2, S99). Dotknięcie, które odwołuje
+zapowiedź, gasi go od razu. Znika najwcześniej po `T.busyMin`.
 
 ## 8. Osłona stuknięć
 

@@ -216,8 +216,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   sufit 4 naraz. Zapis, który utknął, blokuje wyłącznie swój tor. Akcja najpierw wkłada zapis
   do kolejki, potem przerysowuje kafelek — dzięki temu kafelek od razu ma kręciołek „zapisuję".
 - **Dymek „Zapisuję…" / „Aktualizuję…"** (`updateBusy`, `#busy`): ciemny, u góry ekranu,
-  kropki animuje CSS. „Zapisuję…" dopóki coś leci na serwer, „Aktualizuję…" dopóki lista czeka
-  na przestawienie; znika najwcześniej po `T.busyMin`. Zastąpił niewidoczny napis w nagłówku.
+  kropki animuje CSS. „Zapisuję…" dopóki coś leci na serwer, „Aktualizuję…" tylko w oknie
+  zapowiedzi (`reorderDueAt` > 0), nie przez całą ciszę przed nią — przy ciągłej pracy świeciłby
+  bez przerwy (review PR #2, S99); `markTap` go gasi. Znika najwcześniej po `T.busyMin`.
+  Zastąpił niewidoczny napis w nagłówku.
 - **Osłona stuknięć** (`tapRefused`, bug nr 13): stuknięcie w akcję na spacerze nie liczy się,
   gdy lista przesunęła się albo kafelek zmienił pod palcem (w oknie `T.tapGuard` przed
   przyłożeniem palca albo między przyłożeniem a kliknięciem) — z komunikatem, a przy własnym

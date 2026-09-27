@@ -172,7 +172,7 @@ async function S94(){
   await sleep(TIMING.announce / 2);
   doc(app).body.dispatchEvent(ev(app, 'pointerdown'));   // ktoś dotyka ekranu w czasie zapowiedzi
   await sleep(TIMING.announce + 30);
-  check('dotknięcie odwołuje zapowiedź — lista dalej stoi', ord(app)==='[1,2,3]' && busy(app).startsWith('sort:'), busy(app));
+  check('dotknięcie odwołuje zapowiedź — lista dalej stoi, dymek gaśnie', ord(app)==='[1,2,3]' && busy(app)==='', busy(app));
   await sleep(TIMING.quiet + 200 - TIMING.announce + 20);   // cisza minęła: przestawienie zapowiedziane OD NOWA
   check('po ciszy najpierw znów zapowiedź, nie ruch z zaskoczenia', ord(app)==='[1,2,3]' && busy(app).startsWith('sort:'), ord(app));
   await sleep(TIMING.announce + 60);
@@ -320,8 +320,30 @@ async function S98(){
   check('bez błędów', g.errors.length===0 && c.errors.length===0, g.errors.concat(c.errors).join('; '));
 }
 
+async function S99(){
+  console.log('S99: „Aktualizuję…" tylko tuż przed ruchem listy — przy ciągłej pracy nie świeci');
+  const app = buildApp({timing:TIMING});
+  app.seed(base({dogs:[d1(1,'Azor'), d1(2,'Bari'), d1(3,'Cezar')]}));
+  const touch = () => doc(app).body.dispatchEvent(ev(app, 'pointerdown'));
+  touch();
+  app.click('[data-act="reserve"][data-id="1"]'); app.type('[data-input="1"]', 'Ala'); app.click('[data-act="confirm"][data-id="1"]');
+  app.respondNext({slot:{slot:1, status:'reserved', who:'Ala'}});
+  // sonda z review: dalsze stukanie co ~0,75 s przy ciszy 4 s — tu w skali TIMING
+  const seen = new Set();
+  for(let i = 0; i < 8; i++){ await sleep(TIMING.quiet / 2); touch(); seen.add(busy(app).split(':')[0]); }
+  check('przy ciągłym stukaniu „Aktualizuję…" się nie pokazuje', !seen.has('sort'), [...seen].join(','));
+  check('…a lista stoi', ord(app)==='[1,2,3]', ord(app));
+  await sleep(TIMING.quiet + 200 + 20);                 // ręce znieruchomiały
+  check('po ciszy: zapowiedź przed ruchem', busy(app).startsWith('sort:') && ord(app)==='[1,2,3]', busy(app) + ' ' + ord(app));
+  await sleep(TIMING.announce + 60);
+  check('ruch listy', ord(app)==='[2,3,1]', ord(app));
+  await sleep(TIMING.busyMin + 30);
+  check('dymek zgasł', busy(app)==='', busy(app));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }
