@@ -280,7 +280,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **921 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **969 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -313,7 +313,10 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
   w `backend.js` startuje domyślnie o 10:00 i podaje stan dnia w STARYM układzie (`walks`,
   wiersz na psa) — przepisuje się sam przy pierwszym dostępie, więc każdy taki test przechodzi
   też przez migrację; import ze starych kolumn Psy tylko z `legacy: true`. Arkusz zapisuje
-  formaty (`sheet._formats`), żeby dało się sprawdzić tekstowe kolumny godzin.
+  formaty (`sheet._formats`), żeby dało się sprawdzić tekstowe kolumny godzin, i liczy odczyty
+  (`sheet._reads`). Zakładka ma id (`getSheetId`, kopia z `insertSheet(n, {template})` — inne)
+  i zmienia nazwę (`setName`) — tak test odgrywa cofnięcie wdrożenia (B45). `env.failProps(f)`
+  psuje usługę właściwości dla wybranych kluczy (B46).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -332,7 +335,9 @@ po przełomie, notatka „bez terminu", widziany skład grupy, spóźniona odpow
 w trybie edycji, `setFree` z widzianym stanem), S90 reguły kolejności (SORTING.md), S91 spacer
 wychodzący z grupy przy zamrożonej liście, S92 zaznaczanie konkretnego spaceru, S93 osłona
 stuknięć, S94 dymek i zapowiedź przestawienia, S95 kolory wolontariuszy, S96 szybkie stuknięcia
-w tego samego psa, S97 2/2 zarezerwowany przed 1/2, 1/2 w grupie,
+w tego samego psa, S97 2/2 zarezerwowany przed 1/2, 1/2 w grupie, S98–S101 poprawki po review
+PR #2 (stuknięcie zaraz po własnej nawigacji, „Aktualizuję…" tylko w zapowiedzi, imię w 2/2
+przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -344,7 +349,9 @@ B33 przejście ze starego modelu w godzinie czyszczenia, B34 numer grupy całkow
 „bez terminu", B36 widziany skład grupy, B37 `removeDog` a grupa, B38 godzina czyszczenia nie
 cofa dnia, B39 daty akcji, B40 `setFree` z widzianym stanem, B41 układ Spacery sprawdzany raz
 i jedno czytanie właściwości na `getData`, B42 przepisanie starego układu Spacery na spacery,
-B43 kolory wolontariuszy, B44 akcje na spacerach i zgodność ze starymi kartami,
+B43 kolory wolontariuszy, B44 akcje na spacerach i zgodność ze starymi kartami, B45 kopia starego
+układu Spacery i cofnięcie wdrożenia, B46 kolor wolontariusza nie blokuje zapisu (awaria, sufity),
+B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna

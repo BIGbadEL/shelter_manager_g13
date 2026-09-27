@@ -446,6 +446,21 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
+**Po review PR #2:**
+- Przepisanie zakładki Spacery na nowy układ nie miało drogi powrotu — poprzednia wersja kodu
+  czyta nowy układ jako śmieci. Teraz przed przepisaniem powstaje kopia `Spacery (stary układ)`,
+  znacznik układu pamięta id zakładki, a README opisuje cofnięcie (*Cofnięcie wdrożenia*).
+- Nieudany zapis koloru wolontariusza (limit właściwości skryptu) blokował rezerwację i spacer.
+  Kolor nie blokuje już niczego, a przydział ma sufity — publiczne API pozwalało go rozdmuchać.
+- Stuknięcie zaraz po strzałce dnia, „Grupa" albo „Anuluj" ginęło po cichu w osłonie stuknięć.
+- „Aktualizuję…" świeciło przez całe 4 s ciszy przed przestawieniem listy, przy ciągłej pracy
+  bez przerwy. Teraz tylko przez chwilę tuż przed ruchem.
+- Konflikt rezerwacji 1/2 kasował imię wpisywane właśnie w 2/2 tego samego psa (i u towarzysza
+  z grupy).
+- Karty otwarte na poprzedniej wersji gubiły grupy po własnym „Grupa" (do odświeżenia).
+- Rysowanie listy zwalniało z każdą rezerwacją naprzód (rok rezerwacji: kilkanaście razy wolniej);
+  zapis psa w katalogu czytał zakładkę Spacery raz na każdy otwarty dzień.
+
 **Spacery zamiast psów, nowe sortowanie, osłona stuknięć:**
 - **„Kliknąłem w jednego psa, a zapisało się na innym"** — lista przestawiała się z zegara
   w chwili, gdy palec już leciał, a podwójne stuknięcie trafiało w przycisk, który właśnie
