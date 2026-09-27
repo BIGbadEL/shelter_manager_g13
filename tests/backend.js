@@ -1170,7 +1170,7 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
     (env.api.markWalked(2, 'Bartek', 1, D), 'bartek' in colors(D)));
 
   const map = {};
-  for(let i = 0; i < 12; i++) env.api.volAssign_(map, 'osoba' + i, env.conf.VOLUNTEER_COLORS);
+  for(let i = 0; i < 12; i++) env.api.volAssign_(map, 'osoba' + i, env.conf.VOLUNTEER_COLORS, env.conf.VOLUNTEER_MAX);
   const used = Object.keys(map).map(k => map[k]);
   check('po wyczerpaniu palety kolory się powtarzają, ale pierwsze 10 osób — bez powtórek',
     new Set(used.slice(0, 10)).size===10, JSON.stringify(map));
@@ -1262,6 +1262,45 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   f.ctx.SpreadsheetApp.getActiveSpreadsheet = orig;
   check('nieudana kopia: przepisanie i tak przechodzi, aplikacja działa',
     ok && f.sheets['Spacery']._data[0][2]==='spacer' && f.api.getData().slots.some(s => s.dogId===1 && s.who==='Ala'));
+})();
+
+/* ---------- B46: kolor wolontariusza nigdy nie blokuje rezerwacji ---------- */
+(()=>{
+  console.log('B46: przydział koloru — awaria właściwości i sufity nie zatrzymują zapisu');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'}]);
+  const isVol = k => k.indexOf('vol:')===0;
+  let r = null;
+
+  env.failProps((k, op) => isVol(k) && op==='set');      // np. limit rozmiaru właściwości
+  const ok = !throws(() => { r = env.api.reserve(1, 'Ala', D, 1); });
+  check('limit właściwości: rezerwacja zapisana, bez błędu dla wolontariusza',
+    ok && slotAt(env, 1, D).who==='Ala' && r && r.slot.status==='reserved', JSON.stringify(r));
+  env.failProps(k => isVol(k));                           // odczyt też pada
+  const ok2 = !throws(() => { r = env.api.markWalked(1, '', 1, D); });
+  check('awaria odczytu: spacer zapisany, odpowiedź bez kolorów (telefon zostaje przy swoich)',
+    ok2 && slotAt(env, 1, D).status==='walked' && r && r.volunteers===undefined, JSON.stringify(r));
+  env.failProps(null);
+
+  // rezerwuj -> zwolnij -> inne imię: przydział dnia nie rośnie bez końca
+  const MAX = env.conf.VOLUNTEER_MAX;
+  for(let i = 0; i < MAX + 5; i++){
+    env.api.reserve(2, 'Osoba ' + i, D, 1);
+    env.api.setFree(2, D, {status:'reserved', who:'Osoba ' + i}, 1);
+  }
+  const map = JSON.parse(env.props['vol:' + D] || '{}');
+  check('przydział dnia zatrzymuje się na suficie', Object.keys(map).length===MAX, String(Object.keys(map).length));
+  check('wartość daleko od limitu 9 KB na właściwość', (env.props['vol:' + D] || '').length < 4500,
+    String((env.props['vol:' + D] || '').length));
+  r = env.api.reserve(3, 'Ktoś Nowy', D, 1);
+  check('osoba ponad sufit rezerwuje normalnie (kolor z imienia)', r.slot.who==='Ktoś Nowy' && slotAt(env, 3, D).who==='Ktoś Nowy');
+
+  // rok rezerwacji naprzód: dni z przydziałem mają sufit
+  const DAYS = env.conf.VOLUNTEER_DAYS;
+  for(let i = 1; i <= DAYS + 3; i++) env.api.reserve(1, 'Ala', env.api.addDays_(D, i), 1);
+  const days = Object.keys(env.props).filter(isVol).length;
+  check('dni z przydziałem kolorów nie więcej niż sufit', days <= DAYS, String(days));
+  check('rezerwacje na dalsze dni i tak zapisane', slotAt(env, 1, env.api.addDays_(D, DAYS + 3)).who==='Ala');
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

@@ -396,10 +396,12 @@ function volHash_(s) {
  * Przydział koloru na dzień: od koloru „z imienia" do pierwszego wolnego — bez powtórek,
  * dopóki starczy palety; potem kolor z imienia (powtórka, ale imię i tak jest napisane).
  * Raz przydzielony zostaje do końca dnia, więc nowy wolontariusz nie przestawia innym
- * kolorów, a wszystkie telefony widzą to samo. Ta sama funkcja żyje w Script.html.
+ * kolorów, a wszystkie telefony widzą to samo. Pełny przydział (`max` osób) nie przyjmuje
+ * nikogo więcej — kolor z imienia, bez wpisu. Ta sama funkcja żyje w Script.html.
  */
-function volAssign_(map, norm, n) {
+function volAssign_(map, norm, n, max) {
   if (Object.prototype.hasOwnProperty.call(map, norm)) return map[norm];
+  if (Object.keys(map).length >= max) return volHash_(norm) % n;
   const used = {};
   Object.keys(map).forEach(k => { used[map[k]] = true; });
   const start = volHash_(norm) % n;
@@ -411,20 +413,40 @@ function volAssign_(map, norm, n) {
   return start;
 }
 
-/** Kolory wolontariuszy dnia — świeży odczyt (pod blokadą, przed przydziałem). */
+/**
+ * Kolory wolontariuszy dnia — świeży odczyt (pod blokadą, przed przydziałem).
+ * null = nie udało się odczytać: bez kolorów, ale akcja, która o nie pyta, przechodzi.
+ */
 function volunteersOf_(date) {
-  const raw = PropertiesService.getScriptProperties().getProperty(PROP_VOL_PREFIX + date);
-  try { return raw ? JSON.parse(raw) : {}; } catch (e) { return {}; }
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(PROP_VOL_PREFIX + date);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return null;
+  }
 }
 
-/** Przydziela kolor wolontariuszowi dnia, jeśli jeszcze go nie ma. Tylko pod blokadą. */
+/**
+ * Przydziela kolor wolontariuszowi dnia, jeśli jeszcze go nie ma. Tylko pod blokadą.
+ * Kolor to kosmetyka, a woła się go z samego środka rezerwacji i spaceru: żaden jego
+ * błąd (limit właściwości, awaria usługi) nie może zatrzymać zapisu — review PR #2.
+ * Sufity: VOLUNTEER_MAX osób na dzień, VOLUNTEER_DAYS dni z przydziałem naraz.
+ */
 function noteVolunteer_(date, name) {
-  const norm = volNorm_(name);
-  if (!norm) return;
-  const map = volunteersOf_(date);
-  if (Object.prototype.hasOwnProperty.call(map, norm)) return;
-  volAssign_(map, norm, VOLUNTEER_COLORS);
-  setProp_(PROP_VOL_PREFIX + date, JSON.stringify(map));
+  try {
+    const norm = volNorm_(name);
+    if (!norm) return;
+    const map = volunteersOf_(date);
+    if (!map || Object.prototype.hasOwnProperty.call(map, norm)) return;
+    const key = PROP_VOL_PREFIX + date;
+    if (!Object.keys(map).length
+        && Object.keys(props_()).filter(k => k.indexOf(PROP_VOL_PREFIX) === 0 && k !== key).length >= VOLUNTEER_DAYS) return;
+    volAssign_(map, norm, VOLUNTEER_COLORS, VOLUNTEER_MAX);
+    if (!Object.prototype.hasOwnProperty.call(map, norm)) return;   // przydział pełny
+    setProp_(key, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Kolor wolontariusza nie zapisany (' + date + '): ' + e);
+  }
 }
 
 /** Kolory wolontariuszy dni otwartych (od `from`) — do getData, z pamięci wykonania. */
@@ -494,11 +516,13 @@ function slotAction_(id, date, choose, change) {
       d.put(s);
       d.save();
     }
-    return {
+    const out = {
       slot: Object.assign({}, s),
       dog: Object.assign(legacyView_(dog, d.slotsOf(id)), { date: date }),   // karty sprzed spacerów
-      volunteers: { [date]: volunteersOf_(date) },
     };
+    const vol = volunteersOf_(date);                 // brak odczytu = bez pola: telefon zostaje przy swoich
+    if (vol) out.volunteers = { [date]: vol };
+    return out;
   });
 }
 

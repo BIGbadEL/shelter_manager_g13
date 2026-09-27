@@ -220,6 +220,16 @@ async function S95(){
 
   const config = fs.readFileSync(path.join(__dirname, '..', 'Config.gs'), 'utf8');
   check('paleta tej samej długości co na serwerze', PALETTE.length===Number(config.match(/VOLUNTEER_COLORS = (\d+)/)[1]));
+  const MAX = Number(config.match(/VOLUNTEER_MAX = (\d+)/)[1]);
+  check('sufit przydziału ten sam co na serwerze', Number((script.match(/const VOL_MAX = (\d+)/) || [])[1])===MAX);
+  // przydział dnia pełny — nowa osoba dostaje kolor z imienia, bez wpisu (jak serwer)
+  const full = {}; for(let i = 0; i < MAX; i++) full['osoba ' + i] = i % PALETTE.length;
+  const f = buildApp();
+  f.seed(base({dogs:[d1(1,'Azor')], volunteers:{[D]: full}}));
+  f.click('[data-act="reserve"][data-id="1"]'); f.type('[data-input="1"]', 'Nowa'); f.click('[data-act="confirm"][data-id="1"]');
+  check('pełny przydział: przeglądarka nie dopisuje osoby ponad sufit', Object.keys(S(f).volunteers[D]).length===MAX
+    && !Object.prototype.hasOwnProperty.call(S(f).volunteers[D], 'nowa') && f.errors.length===0,
+    Object.keys(S(f).volunteers[D]).length + ' ' + f.errors.join('; '));
   const groups = script.match(/const GROUP_COLORS = \[[\s\S]*?\];/)[0].match(/#[0-9a-f]{6}/gi).map(x => x.toLowerCase());
   const difs = script.match(/const DIF = \{[\s\S]*?\};/)[0].match(/#[0-9a-f]{6}/gi).map(x => x.toLowerCase());
   check('kolory wolontariuszy nie powtarzają kolorów grup ani trudności',

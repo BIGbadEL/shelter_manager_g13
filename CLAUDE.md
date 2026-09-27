@@ -118,6 +118,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   powtórek do `VOLUNTEER_COLORS` (10) osób, stały do końca dnia, ten sam na każdym telefonie.
   `endOfDay` zapomina dni zamknięte. Imię normalizowane (`volNorm_`: wielkość liter, ogonki).
   Przeglądarka liczy przydział tą samą funkcją od razu po rezerwacji (`volAssign`).
+  **Kolor to kosmetyka na ścieżce rezerwacji i spaceru — żaden jego błąd nie może zatrzymać
+  zapisu** (review PR #2): `noteVolunteer_` łapie wszystko, `volunteersOf_` przy awarii daje
+  `null` i odpowiedź idzie bez `volunteers`. Sufity (`VOLUNTEER_MAX` osób na dzień — też
+  `VOL_MAX` w Script.html, `VOLUNTEER_DAYS` dni naraz), bo właściwości mają limit 9 KB na
+  wartość i 500 KB razem, a imiona z przydziału nie znikają do końca dnia — publiczne API
+  pozwalało zapchać właściwości, a wtedy nie zapisałby się nawet znacznik układu Spacery (B46).
 - **Zadanie ma dzień, od którego się pokazuje** (kolumna `data`): `addTask(text, pin, date)`,
   brak daty = bieżący dzień rezerwacyjny (nie kalendarzowy — zadanie dodane po resecie nie może
   być od razu „od wczoraj"). Na liście bieżącego dnia: zadania z dniem ≤ bieżący; na przyszłym:

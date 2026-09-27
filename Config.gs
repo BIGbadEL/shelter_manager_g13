@@ -90,6 +90,20 @@ const WALKS_BACKUP = 'Spacery (stary układ)';
  */
 const VOLUNTEER_COLORS = 10;
 
+/**
+ * Sufity przydziału kolorów. Przydział dnia siedzi we właściwości skryptu, a właściwości
+ * mają limity: 9 KB na wartość i 500 KB na wszystkie razem. Imię raz wpisane zostaje
+ * w przydziale do końca dnia (także po zwolnieniu rezerwacji), a rezerwować można z
+ * publicznego API na rok naprzód — bez sufitów da się zapchać właściwości, a wtedy nie
+ * zapisze się nic, także znacznik układu Spacery. Ponad sufit: kolor „z imienia", bez zapisu.
+ *  - VOLUNTEER_MAX — osób w przydziale jednego dnia (60 imion to ok. 3 KB),
+ *  - VOLUNTEER_DAYS — dni z przydziałem naraz (nocne czyszczenie zapomina dni zamknięte,
+ *    więc w zwykłym użyciu to kilka dni).
+ * VOLUNTEER_MAX jest też w Script.html (VOL_MAX) — pilnuje tego test.
+ */
+const VOLUNTEER_MAX = 60;
+const VOLUNTEER_DAYS = 31;
+
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
 const TASK_HEADERS = ['id', 'tresc', 'data', 'status'];
