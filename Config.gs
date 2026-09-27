@@ -78,6 +78,13 @@ const WALK_WIDTH = WALK_HEADERS.length;
 const WALK_V1 = { DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7, GROUP: 8 };
 
 /**
+ * Nazwa kopii zakładki Spacery w starym układzie, robionej tuż przed jej przepisaniem.
+ * Poprzednia wersja kodu nie umie czytać nowego układu, więc bez kopii cofnięcie
+ * wdrożenia nie miałoby do czego wrócić (procedura w README, „Cofnięcie wdrożenia").
+ */
+const WALKS_BACKUP = 'Spacery (stary układ)';
+
+/**
  * Ile kolorów mają wolontariusze. Dzień przydziela je po kolei (bez powtórek, dopóki
  * starczy), a interfejs ma paletę dokładnie tej długości — pilnuje tego test.
  */

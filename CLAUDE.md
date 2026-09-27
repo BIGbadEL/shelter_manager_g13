@@ -52,6 +52,11 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   (wiersz na psa, drugi spacer w `kto1/godzina1`) przepisuje się sama przy pierwszym dostępie
   (`ensureWalksLayout_` → `migrateWalksLayout_`, raz — właściwość `walksLayout`), z formatem
   `@` na nowej kolumnie godziny PRZED zapisem (bug nr 3). Model opisuje `SORTING.md`.
+  **Przepisanie jest w jedną stronę** — poprzednia wersja kodu czyta nowy układ jako śmieci
+  (review PR #2: rezerwacje znikały, godzina w polu „kto"). Dlatego przed przepisaniem powstaje
+  kopia `Spacery (stary układ)` (`backupWalksSheet_`; nieudana kopia nie blokuje aplikacji),
+  a znacznik `walksLayout` to `2:<id zakładki>`: przywrócona po cofnięciu kopia ma inne id i przy
+  ponownym wdrożeniu przepisze się od nowa (B45). Procedura cofnięcia: README.
 - **Historia** — zamknięte dni: `data | pies | kto | godzina` (pies jako etykieta, nie id)
 - **Zadania** — `id | tresc | data | status`
 
@@ -423,7 +428,9 @@ nie omijaj tego testu.**
 2. **Właściwość skryptu `pin`** (Ustawienia projektu → Właściwości skryptu) — bez niej
    tryb edycji jest zamknięty. Ustawiana raz, poza kodem i poza repozytorium.
 3. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny
-   i formaty, danych nie rusza). Przy pustym projekcie: `setup()`.
+   i formaty, danych nie rusza). Przy pustym projekcie: `setup()`. Wersja, która sama
+   przepisuje układ zakładki (jak Spacery w PR #2), wymaga **przed** `deploy:prod` kopii
+   całego arkusza — cofnięcie kodu nie cofa układu (README, „Cofnięcie wdrożenia").
 4. `installTriggers()` — bez tego nie ma nocnego resetu.
 5. Ustawienia web appki: „wykonaj jako: ja", „dostęp: wszyscy". Strefa `Europe/Warsaw`.
 
@@ -455,9 +462,10 @@ autoryzacji** przy pierwszym uruchomieniu.
   liczy się kontrast tekstu i to, żeby kolory trudności dało się rozróżnić w słońcu.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Przed wdrożeniem na produkcję** tej wersji: produkcja nie ma jeszcze zakładki Spacery,
-  więc powstanie ona od razu w nowym układzie (import ze starych kolumn Psy, `warmup`).
-  Projekt testowy ma zakładkę w starym układzie — przepisze się sama przy pierwszym dostępie.
+- **Przed wdrożeniem na produkcję** tej wersji: kopia całego arkusza (*Plik → Utwórz kopię*).
+  Produkcja nie ma jeszcze zakładki Spacery, więc powstanie ona od razu w nowym układzie (import
+  ze starych kolumn Psy, `warmup`). Projekt testowy przepisał się już przy wdrożeniu @8 — jeszcze
+  bez kopii (kopia doszła po review PR #2), więc jego stary układ jest tylko w historii wersji arkusza.
 
 ## Jak ze mną pracować
 

@@ -12,7 +12,7 @@ const PROP_RESET_HOUR = 'resetHour';
 const PROP_PIN = 'pin';
 const PROP_ENV = 'env';
 const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesienia stanu dnia z Psy do Spacery
-const PROP_WALKS_LAYOUT = 'walksLayout';       // układ zakładki Spacery, który już sprawdziliśmy ('2' = spacery)
+const PROP_WALKS_LAYOUT = 'walksLayout';       // zakładka Spacery sprawdzona: '2:<id zakładki>' (patrz ensureWalksLayout_)
 const PROP_VOL_PREFIX = 'vol:';                // 'vol:2026-09-27' -> kolory wolontariuszy tego dnia (JSON)
 
 /**

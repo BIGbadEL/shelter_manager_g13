@@ -1091,7 +1091,8 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   console.log('B41: układ Spacery zapamiętany, a getData czyta właściwości jednym wywołaniem');
   const env = build([{id:1,name:'Borys'}], {walks:[]});
   env.api.getData();
-  check('zapamiętane we właściwości', env.props.walksLayout==='2', JSON.stringify(env.props));
+  check('zapamiętane we właściwości — razem z id zakładki', env.props.walksLayout==='2:' + env.sheets['Spacery'].getSheetId(),
+    JSON.stringify(env.props));
   const sh = env.sheets['Spacery'];
   let heads = 0;
   const orig = sh.getRange;
@@ -1210,6 +1211,57 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   const g = env.api.getData();
   check('getData: `slots` z numerami spacerów, bez starego `walks`', Array.isArray(g.slots) && g.walks===undefined
     && g.slots.every(s => s.slot >= 1), JSON.stringify(g.slots));
+})();
+
+/* ---------- B45: kopia starego układu Spacery i powrót po cofnięciu wdrożenia ---------- */
+(()=>{
+  console.log('B45: przepisanie zostawia kopię starego układu; przywrócona kopia przepisuje się od nowa');
+  const D = '2026-08-04';
+  const OLD = ['data','pies_id','status','kto','godzina','kto1','godzina1','grupa'];
+  const oldRows = [OLD,
+    [D, 1, 'reserved', 'Ala', '', '', '', ''],
+    [D, 2, 'reserved', 'Ola', '', 'Iza', '9:15', ''],
+    [D, 3, 'walked', 'Zu', '8:00', '', '', '']];
+  const fresh = () => makeContext({ now:'2026-08-04T10:00:00+02:00', props:{ pin: TEST_PIN, walksImported:'2026-01-01' }, sheets: [
+    { name:'Psy',      rows:[DOG_HEADERS, dogRow({id:1,name:'Borys'}), dogRow({id:2,name:'Luna',walks:2}), dogRow({id:3,name:'Rex'})] },
+    { name:'Historia', rows:[HIST_HEADERS] },
+    { name:'Zadania',  rows:[TASK_HEADERS] },
+    { name:'Spacery',  rows: oldRows },
+  ]});
+  const e = fresh();
+  const BACKUP = e.conf.WALKS_BACKUP;
+  const at = (id, n) => e.api.getData().slots.filter(s => s.dogId===id && s.slot===n && s.date===D)[0] || {status:'free', who:''};
+  e.api.getData();
+  const bak = e.sheets[BACKUP];
+  check('przed przepisaniem powstaje kopia starego układu', !!bak && JSON.stringify(bak._data)===JSON.stringify(oldRows),
+    Object.keys(e.sheets).join(', '));
+  check('kopia to osobna zakładka (inne id)', bak && bak.getSheetId()!==e.sheets['Spacery'].getSheetId());
+  check('zakładka Spacery już w nowym układzie', e.sheets['Spacery']._data[0][2]==='spacer');
+
+  // Cofnięcie wdrożenia (README): nowa zakładka odłożona, kopia wraca pod nazwę Spacery,
+  // stara wersja kodu pracuje na niej dalej — tu: Luna 2/2 zwolniona, Rex bez zmian
+  e.sheets['Spacery'].setName('Spacery (nowy układ)');
+  bak.setName('Spacery');
+  e.sheets['Spacery']._data[2] = [D, 2, 'free', '', '', 'Iza', '9:15', ''];
+  // ktoś zatrzymał sobie jeszcze jedną kopię pod nazwą, której użyłaby migracja
+  e.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet(BACKUP);
+
+  // ponowne wdrożenie nowej wersji: właściwość mówi „sprawdzone", ale to INNA zakładka
+  check('ponowne wdrożenie: przywrócony stary układ przepisany od nowa', at(2,1).status==='walked' && at(2,1).who==='Iza'
+    && at(2,2).status==='free' && at(3,1).status==='walked' && at(1,1).who==='Ala',
+    JSON.stringify(e.sheets['Spacery']._data.slice(0,4)));
+  check('…znów z kopią — pod wolną nazwą', !!e.sheets[BACKUP + ' 2'] && e.sheets[BACKUP + ' 2']._data[0][2]==='status',
+    Object.keys(e.sheets).join(', '));
+
+  // kopia, która się nie uda (np. limit zakładek), nie może zatrzymać aplikacji
+  const f = fresh();
+  const orig = f.ctx.SpreadsheetApp.getActiveSpreadsheet;
+  f.ctx.SpreadsheetApp.getActiveSpreadsheet = () => Object.assign(orig(), { insertSheet(){ throw new Error('limit zakładek'); } });
+  let ok = true;
+  try{ f.api.getData(); }catch(err){ ok = false; }
+  f.ctx.SpreadsheetApp.getActiveSpreadsheet = orig;
+  check('nieudana kopia: przepisanie i tak przechodzi, aplikacja działa',
+    ok && f.sheets['Spacery']._data[0][2]==='spacer' && f.api.getData().slots.some(s => s.dogId===1 && s.who==='Ala'));
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

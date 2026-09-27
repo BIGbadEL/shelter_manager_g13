@@ -146,25 +146,53 @@ let walksLayoutOk_ = false;
  * raz (pilnuje tego właściwość walksLayout; zmienne globalne żyją jedno wykonanie).
  * Dotyczy projektu, który miał już wersję z datami; świeża zakładka powstaje od razu
  * w nowym układzie.
+ *
+ * Znacznik to '2:<id zakładki>', a nie samo „sprawdzone". Cofnięcie wdrożenia to
+ * przywrócenie kopii starego układu pod nazwą Spacery (README) — ta kopia ma inne id,
+ * więc przy ponownym wdrożeniu znów zostanie sprawdzona i przepisana. Z samym
+ * „sprawdzone" nowa wersja czytałaby stary układ jak nowy i nikt by tego nie zauważył,
+ * dopóki nie zabrakłoby czyichś rezerwacji.
  */
 function ensureWalksLayout_(sh) {
   if (walksLayoutOk_) return sh;
-  if (prop_(PROP_WALKS_LAYOUT) === '2') { walksLayoutOk_ = true; return sh; }
+  const mark = walksLayoutMark_(sh);
+  if (prop_(PROP_WALKS_LAYOUT) === mark) { walksLayoutOk_ = true; return sh; }
   withLock_(() => {
     if (String(sh.getRange(1, WALK.SLOT).getValue()) !== WALK_HEADERS[WALK.SLOT - 1]) migrateWalksLayout_(sh);
-    setProp_(PROP_WALKS_LAYOUT, '2');
+    setProp_(PROP_WALKS_LAYOUT, mark);
   });
   walksLayoutOk_ = true;
   return sh;
 }
 
+function walksLayoutMark_(sh) { return '2:' + sh.getSheetId(); }
+
+/**
+ * Kopia zakładki w starym układzie, zanim zostanie przepisana — jedyna droga powrotu:
+ * poprzednia wersja kodu nowego układu nie przeczyta (statusy i godziny wypadają jej
+ * w innych kolumnach). Nazwa zajęta (druga migracja po cofnięciu) = kolejny numer.
+ * Kopia, która się nie uda, nie zatrzymuje przepisania: bez niego aplikacja nie
+ * działałaby nikomu, a przed wdrożeniem na produkcję i tak robimy kopię całego arkusza.
+ */
+function backupWalksSheet_(sh) {
+  try {
+    const ss = ss_();
+    let name = WALKS_BACKUP;
+    for (let i = 2; ss.getSheetByName(name); i++) name = WALKS_BACKUP + ' ' + i;
+    ss.insertSheet(name, { template: sh });
+  } catch (e) {
+    console.error('Kopia zakładki Spacery przed przepisaniem nie powstała: ' + e);
+  }
+}
+
 /**
  * Przepisanie starego układu. Wiersz z odbytym pierwszym z dwóch spacerów staje się
- * dwoma wierszami (1 — wyprowadzony, 2 — bieżący). Format tekstowy idzie PRZED zapisem:
- * godzina ląduje teraz w innej kolumnie, a bez formatu '@' arkusz zrobiłby z „17:21"
- * datę z 1899 roku (bug nr 3).
+ * dwoma wierszami (1 — wyprowadzony, 2 — bieżący). Najpierw kopia starego układu
+ * (backupWalksSheet_). Format tekstowy idzie PRZED zapisem: godzina ląduje teraz
+ * w innej kolumnie, a bez formatu '@' arkusz zrobiłby z „17:21" datę z 1899 roku (bug nr 3).
  */
 function migrateWalksLayout_(sh) {
+  backupWalksSheet_(sh);
   const width = Math.max(WALK_WIDTH, Math.min(sh.getMaxColumns(), WALK_V1.GROUP));
   const last = sh.getLastRow();
   const old = last >= 2 ? sh.getRange(2, 1, last - 1, width).getValues() : [];
@@ -219,7 +247,7 @@ function createWalksSheet_() {
   sh.setFrozenRows(1);
   textFormatWalks_(sh);
   importDayState_(sh);
-  setProp_(PROP_WALKS_LAYOUT, '2');
+  setProp_(PROP_WALKS_LAYOUT, walksLayoutMark_(sh));
   walksLayoutOk_ = true;
   return sh;
 }

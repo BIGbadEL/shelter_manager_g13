@@ -89,7 +89,8 @@ wdrożenia — link do aplikacji zostaje ten sam — i na koniec **sam otwiera a
 (`scripts/warmup.js`), tak jakby ktoś kliknął link. Czerwony test przerywa całość, więc zepsuty
 kod nie ma jak wyjechać do wolontariuszy. Jeśli otwarcie się nie uda, polecenie kończy się
 komunikatem „Otwórz link ręcznie TERAZ" — zrób to przed godziną czyszczenia (dlaczego: niżej,
-*Przejście ze starego modelu*).
+*Przejście ze starego modelu*). Wersja, która zmienia układ arkusza, wymaga wcześniej kopii
+arkusza — patrz *Cofnięcie wdrożenia*.
 
 Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` — to świadoma decyzja:
 nie ma argumentu, który dałoby się pomylić. Nie są tajemnicą, produkcyjny jest po prostu
@@ -270,6 +271,7 @@ spacerem w `kto1`/`godzina1`): przy pierwszym dostępie wiersz z odbytym pierwsz
 rozpada się na spacer 1/2 (odbyty, z tą samą osobą i godziną) i 2/2 (stan bieżący), a grupa
 zostaje przy spacerze, który trwa. Kolumny dostają format tekstowy przed zapisem. Pilnuje tego
 właściwość skryptu `walksLayout` — sprawdzenie arkusza odbywa się raz, a nie przy każdym żądaniu.
+Tuż przed przepisaniem aplikacja kopiuje zakładkę do **`Spacery (stary układ)`**.
 
 **Nocne czyszczenie niczego nie zeruje** — kolejny dzień ma własne, puste wiersze, a zmiana
 dnia na liście dzieje się punktualnie sama. Czyszczenie tylko **domyka** dni sprzed bieżącego:
@@ -300,6 +302,30 @@ Karty otwarte jeszcze przed wdrożeniem działają dalej: akcja bez daty trafia 
 akcja bez numeru spaceru — w spacer, który właśnie trwa (rezerwacja: pierwszy wolny; spacer:
 pierwszy nieodbyty; zwolnienie: ostatni obsadzony), a `getData` i odpowiedzi akcji wciąż niosą
 stan psa w starym kształcie (`status`/`kto`/`kto1`).
+
+### Cofnięcie wdrożenia
+
+Przepisanie zakładki Spacery działa w jedną stronę. Poprzednia wersja kodu nowego układu nie
+przeczyta: statusy i godziny wypadają jej w innych kolumnach, rezerwacje znikają, a w polu „kto"
+pojawiają się liczby. Dlatego:
+
+1. **Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
+   od kopii, którą robi aplikacja.
+2. Żeby wrócić do poprzedniej wersji:
+   - wdroż poprzednią wersję kodu (w Apps Script: *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
+     albo `git checkout` poprzedniego commita i `npm run deploy:*`);
+   - w arkuszu zmień nazwę zakładki `Spacery` na np. `Spacery (nowy układ)`, a `Spacery (stary układ)`
+     na `Spacery`.
+   Co wolontariusze zapisali na nowej wersji, zostaje tylko w odłożonej zakładce — w razie potrzeby
+   trzeba to przepisać ręcznie.
+3. Ponowne wdrożenie nowej wersji przepisze przywróconą zakładkę od nowa, znów z kopią. Znacznik
+   `walksLayout` pamięta id zakładki (`2:<id>`), więc podmiana zakładki nie przejdzie niezauważona
+   i nowa wersja nie przeczyta starego układu jak nowego.
+
+Projekt, który nie miał jeszcze wersji z datami (nie ma zakładki Spacery), dostaje zakładkę od razu
+w nowym układzie — kopii nie ma czego robić. Poprzednia wersja czyta tam stare kolumny Psy, których
+nowa nie rusza: po cofnięciu lista wraca do stanu sprzed wdrożenia, a zmiany z czasu działania
+nowej wersji przepadają.
 
 ## Godzina czyszczenia listy
 
