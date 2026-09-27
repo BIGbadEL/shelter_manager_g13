@@ -8,7 +8,11 @@
  * Masz już arkusz z danymi ze starszej wersji? Zamiast setup() uruchom migrate().
  */
 
-/** Tworzy zakładki Psy / Historia / Zadania (istniejących nie nadpisuje). */
+/**
+ * Tworzy zakładki Psy / Spacery / Historia / Zadania (istniejących nie nadpisuje).
+ * Zakładkę Spacery aplikacja umie też założyć sama przy pierwszym dostępie —
+ * tu robimy to od razu, żeby świeży projekt miał komplet.
+ */
 function setup() {
   const s = ss_();
 
@@ -34,6 +38,8 @@ function setup() {
     tasks.getRange(1, 1, 1, TASK_WIDTH).setValues([TASK_HEADERS]);
     tasks.setFrozenRows(1);
   }
+
+  walksSheet_();   // dzień psa — patrz Dogs.gs
 
   applyTextFormats_();
   warnIfNoPin_();
@@ -89,6 +95,7 @@ function applyTextFormats_() {
   const s = ss_();
   const textCols = [
     [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],
+    [SHEETS.WALKS, [WALK.DATE, WALK.TIME, WALK.TIME1]],
     [SHEETS.HIST,  [HIST.DATE, HIST.TIME]],
     [SHEETS.TASKS, [TASK.DATE]],
   ];
@@ -101,7 +108,9 @@ function applyTextFormats_() {
 
 /**
  * Zakłada dzienny wyzwalacz endOfDay o godzinie z ustawień (patrz Settings.gs).
- * BEZ NIEGO Historia pozostaje pusta, a lista nie zeruje się w nocy.
+ * BEZ NIEGO zamknięte dni nie trafiają do Historii, a notatki bez terminu
+ * nie znikają. (Sama zmiana dnia na liście działa i bez niego — liczy ją
+ * businessDate_ z zegara.)
  * Bezpieczna do wielokrotnego uruchomienia — najpierw usuwa duplikaty.
  *
  * Uwaga Apps Script: `atHour(h)` to okno h:00–h:59, nie punkt czasowy.

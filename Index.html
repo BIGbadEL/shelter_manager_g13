@@ -27,23 +27,35 @@
     <div class="pinerr hidden" id="pinErr">Zły PIN.</div>
   </header>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="today">Dziś</button>
-    <button class="tab" data-tab="history">Historia</button>
+  <!-- Strzałki rysujemy sami: znaki ← → każdy telefon bierze ze swojego fontu, często
+       z różnymi marginesami, i wtedy para wygląda krzywo. Prawa to dokładne lustro lewej. -->
+  <div class="datebar" id="dateBar">
+    <button class="daynav" id="prevDay" aria-label="Poprzedni dzień"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5 8.5 12 15.5 19"/></svg></button>
+    <button class="daylabel" id="dayLabel" title="Wróć do bieżącego dnia">
+      <span class="dayname" id="dayName">…</span>
+      <span class="dayrel" id="dayRel"></span>
+    </button>
+    <button class="daynav" id="nextDay" aria-label="Następny dzień"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5 15.5 12 8.5 19"/></svg></button>
+  </div>
+
+  <div class="tabs hidden" id="adminTabs">
+    <button class="tab active" data-tab="today">Lista</button>
     <button class="tab hidden" data-tab="diag" id="tabDiag">Panel</button>
   </div>
 
   <div id="view"><div class="empty">Ładowanie…</div></div>
 
-  <footer>
-    <b>Kolor po lewej = trudność psa.</b> <b>Zarezerwuj</b> = biorę go dziś.
-    <b>Wyprowadzony ✓</b> = spacer odbyty, wpada do historii.
-    Zadania odhaczamy stuknięciem; nieodhaczone przechodzą na kolejny dzień.
-    Lista zeruje się codziennie o <span id="resetNoteFoot">22:00</span>.
-  </footer>
-
   <div class="toast" id="toast"></div>
 
+  <!-- tryb zaznaczania psów do spaceru grupowego (przytrzymanie kafelka) -->
+  <div class="selectbar hidden" id="selectBar">
+    <span class="info" id="selInfo">Zaznacz psy do wspólnego spaceru</span>
+    <button class="btn ghost" id="selCancel">Anuluj</button>
+    <button class="btn ghost hidden" id="selDissolve">Rozwiąż</button>
+    <button class="btn add-btn" id="selGroup" disabled>Grupa</button>
+  </div>
+
+  <script type="application/json" id="boot"><?!= boot ?></script>
 <?!= include('Script'); ?>
 </body>
 </html>

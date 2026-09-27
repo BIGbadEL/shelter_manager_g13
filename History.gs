@@ -55,80 +55,129 @@ function histCount_() {
   return last < 2 ? 0 : last - 1;
 }
 
-/* ---------- NOCNY RESET ---------- */
-
 /**
- * Data, pod którą archiwizujemy spacery — czyli dzień, KTÓRY WŁAŚNIE SIĘ SKOŃCZYŁ.
+ * Minione dni do podglądu, od `from` do `to` włącznie: wpisy z Historii plus
+ * spacery z dni, których nocne czyszczenie jeszcze nie domknęło (wyzwalacz
+ * odpala się gdzieś w godzinie resetu, a w projekcie testowym nie ma go wcale).
  *
- * Przy resecie wieczorem (domyślne 22:00) to po prostu dziś. Ale godzina jest
- * ustawialna z panelu: reset o 3:00 czy 6:00 wypada już następnego dnia
- * kalendarzowego, a spacery odbyły się poprzedniego — bez tej korekty wpadłyby
- * do Historii pod złą datą i pies wyglądałby na wyprowadzonego dzisiaj.
- * Granicę stawiamy w południe: reset przed 12:00 zamyka dzień poprzedni.
+ * Historia bywa długa, więc najpierw czytamy samą kolumnę dat, a w pełnej
+ * szerokości tylko zakres wierszy, w którym leżą szukane dni.
  */
-function archiveDate_() {
-  const now = new Date();
-  const hour = Number(Utilities.formatDate(now, tz_(), 'H'));
-  if (hour >= 12) return today_();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  return Utilities.formatDate(yesterday, tz_(), 'yyyy-MM-dd');
+function readHistoryDays_(from, to) {
+  const out = [];
+  const sh = ss_().getSheetByName(SHEETS.HIST);
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const dates = sh.getRange(2, HIST.DATE, last - 1, 1).getValues().map(r => cellDate_(r[0]));
+    let lo = -1, hi = -1;
+    dates.forEach((d, i) => { if (d >= from && d <= to) { if (lo < 0) lo = i; hi = i; } });
+    if (lo >= 0) {
+      sh.getRange(lo + 2, 1, hi - lo + 1, HIST_WIDTH).getValues().forEach(r => {
+        const d = cellDate_(r[HIST.DATE - 1]);
+        if (d < from || d > to) return;
+        out.push({ date: d, name: String(r[HIST.DOG - 1]), who: String(r[HIST.WHO - 1] || ''),
+                   time: cellTime_(r[HIST.TIME - 1]) });
+      });
+    }
+  }
+
+  const labels = {};
+  readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); });
+  readWalks_(walksSheet_()).forEach(w => {
+    if (w.date < from || w.date > to) return;
+    const name = labels[w.dogId] || ('Pies ' + w.dogId);
+    if (w.who1) out.push({ date: w.date, name: name, who: w.who1, time: w.time1 });
+    if (w.status === STATUS.WALKED) out.push({ date: w.date, name: name, who: w.who, time: w.time });
+  });
+  return out;
 }
+
+/* ---------- NOCNE CZYSZCZENIE ---------- */
 
 /**
  * Uruchamiany przez wyzwalacz czasowy o godzinie z ustawień
  * (zakłada go installTriggers() — patrz Setup.gs i Settings.gs).
- * Robi trzy rzeczy:
- *   1. odbyte spacery (oba u psów 2-spacerowych) -> Historia + data w ostatni_spacer,
- *   2. wszystkie psy z powrotem na "wolny", notatki bez terminu znikają,
+ *
+ * Nie zeruje już żadnych psów: kolejny dzień i tak ma w zakładce Spacery
+ * własne, puste wiersze, a aplikacja przechodzi na niego sama, punktualnie
+ * o godzinie resetu (businessDate_). Czyszczenie tylko DOMYKA dni sprzed
+ * bieżącego dnia rezerwacyjnego:
+ *   1. ich odbyte spacery -> Historia (pod datą z wiersza) + data w ostatni_spacer,
+ *      wiersze znikają ze Spacery; rezerwacje, z których nic nie wyszło, przepadają,
+ *   2. notatki bez terminu znikają, z terminem — po swoim dniu,
  *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień.
- * Do testów można uruchomić ręcznie z edytora.
+ *
+ * Bezpieczne do uruchomienia w dowolnej chwili i dowolną liczbę razy: dzień,
+ * który trwa, zostaje nietknięty, a zaległe dni (wyzwalacz nie zadziałał)
+ * domykają się przy najbliższym uruchomieniu, w kolejności dat.
  */
 function endOfDay() {
   withLock_(() => {
-    archiveAndResetDogs_();
+    const current = businessDate_();
+    const lastWalk = closeWalks_(w => w.date < current);
+    closeDogs_(current, lastWalk);
     clearDoneTasks_();
   });
 }
 
-function archiveAndResetDogs_() {
-  const s = ss_();
-  const sh = s.getSheetByName(SHEETS.DOGS);
+/**
+ * Zamyka wiersze zakładki Spacery spełniające `match`: odbyte spacery trafiają
+ * do Historii pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania,
+ * który dzień właśnie się skończył. Same wiersze znikają. Zwraca mapę
+ * pies -> data jego ostatniego zamkniętego spaceru. Tylko pod blokadą.
+ */
+function closeWalks_(match) {
+  const sh = walksSheetLocked_();
+  const last = sh.getLastRow();
+  if (last < 2) return {};
+  const rows = sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues();
+  const labels = {};
+  readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); });
+
+  const keep = [], toHist = [], lastWalk = {};
+  rows.forEach(r => {
+    const w = mapWalkRow_(r);
+    if (!isDate_(w.date) || !(w.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
+    if (!match(w)) { keep.push(r); return; }
+    const label = labels[w.dogId] || ('Pies ' + w.dogId);
+    const before = toHist.length;
+    if (w.who1) toHist.push([w.date, label, w.who1, w.time1]);                    // pierwszy z dwóch
+    if (w.status === STATUS.WALKED) toHist.push([w.date, label, w.who, w.time]);  // jedyny albo drugi
+    if (toHist.length > before && !(lastWalk[w.dogId] >= w.date)) lastWalk[w.dogId] = w.date;
+  });
+  if (keep.length === rows.length) return lastWalk;
+
+  if (toHist.length) {
+    // chronologicznie: domykając kilka zaległych dni naraz, Historia zostaje po kolei
+    toHist.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    const hist = ss_().getSheetByName(SHEETS.HIST);
+    hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist);
+  }
+  // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste
+  const blanks = rows.slice(keep.length).map(() => Array(WALK_WIDTH).fill(''));
+  sh.getRange(2, 1, rows.length, WALK_WIDTH).setValues(keep.concat(blanks));
+  return lastWalk;
+}
+
+/**
+ * Katalog po zamknięciu dni: data ostatniego spaceru i notatki.
+ * Notatka bez terminu żyje do czyszczenia; z terminem — do swojego dnia włącznie;
+ * z terminem „nigdy" — dopóki ktoś jej nie skasuje.
+ */
+function closeDogs_(current, lastWalk) {
+  const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return;
-
-  const today = archiveDate_();
   const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
-  const toHist = [];
-
   vals.forEach(r => {
-    const label = dogLabel_(String(r[DOG.NAME - 1] || ''), String(r[DOG.IDENT - 1] || ''), r[DOG.ID - 1]);
-    let walkedAny = false;
-    if (String(r[DOG.WHO1 - 1] || '') !== '') {          // pierwszy z dwóch spacerów
-      toHist.push([today, label, String(r[DOG.WHO1 - 1]), cellTime_(r[DOG.TIME1 - 1])]);
-      walkedAny = true;
-    }
-    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) {   // spacer (jedyny lub drugi)
-      toHist.push([today, label, String(r[DOG.WHO - 1] || ''), cellTime_(r[DOG.TIME - 1])]);
-      walkedAny = true;
-    }
-    if (walkedAny) r[DOG.LAST_WALK - 1] = today;         // zapamiętaj datę ostatniego spaceru
-    r[DOG.STATUS - 1] = STATUS.FREE;
-    r[DOG.WHO - 1] = '';
-    r[DOG.TIME - 1] = '';
-    // notatka bez terminu żyje jeden dzień; z terminem — do tego dnia włącznie
+    const lw = lastWalk[Number(r[DOG.ID - 1])];
+    if (lw && lw > cellDate_(r[DOG.LAST_WALK - 1])) r[DOG.LAST_WALK - 1] = lw;
     const until = cellDate_(r[DOG.NOTE_UNTIL - 1]);
-    if (!until || until <= today) {
+    if (until !== NOTE_FOREVER && (!until || until < current)) {
       r[DOG.NOTE - 1] = '';
       r[DOG.NOTE_UNTIL - 1] = '';
     }
-    r[DOG.WHO1 - 1] = '';
-    r[DOG.TIME1 - 1] = '';
   });
-
-  if (toHist.length) {
-    const hist = s.getSheetByName(SHEETS.HIST);
-    hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist);
-  }
   sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
 }
 

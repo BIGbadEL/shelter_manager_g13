@@ -40,8 +40,28 @@
     padding:0 16px;border-radius:10px;cursor:pointer;}
   .pinerr{color:var(--hard);font-size:12.5px;margin-top:5px;font-weight:600;}
 
-  /* ---------- zakładki i legenda ---------- */
-  .tabs{display:flex;gap:6px;margin:14px 0 4px;}
+  /* ---------- wybór dnia ----------
+     Strzałki duże, bo naciska się je w rękawicach i w biegu. Środek to też
+     przycisk: dotknięcie wraca do bieżącego dnia, gdy się od niego odeszło. */
+  .datebar{display:flex;align-items:stretch;gap:8px;margin:14px 0 4px;}
+  .daynav{flex:none;width:52px;min-height:52px;border:1px solid var(--line);background:var(--card);
+    border-radius:12px;color:var(--ink);cursor:pointer;padding:0;
+    display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+  .daynav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.6;
+    stroke-linecap:round;stroke-linejoin:round;display:block;}
+  .daynav:active{transform:scale(.96);}
+  .daylabel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:12px;padding:6px 8px;
+    font-family:inherit;cursor:pointer;touch-action:manipulation;}
+  .daylabel .dayname{font-size:16px;font-weight:800;letter-spacing:-.01em;}
+  .daylabel .dayrel{font-size:12px;font-weight:600;opacity:.8;}
+  /* poza bieżącym dniem etykieta jaśnieje — widać od razu, że to nie „dziś" */
+  .daylabel.away{background:var(--card);color:var(--ink);border-color:var(--line);}
+  .daylabel.past{background:#ece8dd;color:var(--muted);border-color:var(--line);}
+  .dayhint{margin:12px 2px 0;font-size:12.5px;color:var(--muted);font-weight:600;}
+
+  /* ---------- zakładki prowadzącej i legenda ---------- */
+  .tabs{display:flex;gap:6px;margin:8px 0 4px;}
   .tab{flex:1;padding:9px;border:1px solid var(--line);background:var(--card);border-radius:10px;
     font-family:inherit;font-size:14px;font-weight:700;color:var(--muted);cursor:pointer;}
   .tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
@@ -54,7 +74,9 @@
   .count b{color:var(--ink);font-weight:700;}
 
   /* ---------- zadania na dziś ---------- */
-  .tasksbox{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  /* ramka zadań idzie za kafelkami psów: ten sam kształt i akcent z lewej */
+  .tasksbox{margin-top:12px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--forest);
+    border-radius:12px;padding:12px 14px;}
   .tasksbox h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--forest);margin-bottom:4px;}
   .task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;}
   .task:last-of-type{border-bottom:none;}
@@ -64,10 +86,24 @@
   .task .txt{font-size:14.5px;flex:1;}
   .task.done .txt{text-decoration:line-through;text-decoration-color:#aeb8b0;color:var(--muted);}
   .age{font-size:11px;font-weight:700;color:var(--warn-ink);background:var(--warn-bg);padding:2px 8px;border-radius:6px;flex:none;}
+  /* zadanie zaplanowane na później: widać je, ale odhacza się w jego dniu */
+  .task.planned{cursor:default;}
+  .task.planned .box{border-style:dashed;opacity:.55;}
+  .plan{font-size:11px;font-weight:700;color:var(--forest);background:#e2ebe3;padding:2px 8px;border-radius:6px;flex:none;}
+  .taskform{margin-top:10px;display:flex;flex-direction:column;gap:7px;}
+  .taskform input[type=text]{font-family:inherit;font-size:15px;padding:10px 12px;border:1.5px solid var(--forest);
+    border-radius:10px;background:#fff;color:var(--ink);outline:none;}
+  .taskform-row{display:flex;align-items:center;gap:8px;}
+  .taskform-row label{font-size:12.5px;color:var(--muted);font-weight:600;flex:none;}
+  .taskform-row input[type=date]{flex:1;min-width:0;font-family:inherit;font-size:14px;padding:8px 10px;
+    border:1px solid #bcccbc;border-radius:9px;background:#fff;}
 
   /* ---------- lista psów ---------- */
   ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:10px;}
-  .dog{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 14px;}
+  .dog{background:var(--card);border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:12px 14px;
+    /* przytrzymanie kafelka to gest grupy — telefon nie może pod nie podpinać menu ani zaznaczania */
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .dog input{-webkit-user-select:text;user-select:text;}
   .dog.walked{opacity:.6;}
   .row{display:flex;align-items:center;gap:10px;}
   .name{font-size:17px;font-weight:700;letter-spacing:-.01em;}
@@ -82,6 +118,29 @@
   .dif{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;}
   .flex{flex:1;}
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
+
+  /* ---------- spacery grupowe ----------
+     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy),
+     a znacznik „👥 grupa" mówi to samo tekstem, gdy w słońcu tła nie widać. */
+  .grp{font-size:11px;font-weight:800;padding:1px 7px;border-radius:6px;background:#fff;border:1px solid;}
+  .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
+  /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
+     w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
+  .dog.pick{cursor:pointer;position:relative;}
+  .dog.pick .status,.dog.pick .grpwait{opacity:.35;pointer-events:none;}
+  .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
+    border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
+    display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
+  .dog.picked{box-shadow:0 0 0 2px var(--ink);}
+  .dog.picked .pickbox{background:var(--ink);}
+  .dog.nopick{opacity:.4;cursor:default;}
+  .selectbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card);
+    border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08);}
+  .selectbar .info{flex:1;font-size:13px;font-weight:700;color:var(--ink);}
+  .selectbar .btn{padding:11px 14px;}
+  body.selecting{padding-bottom:84px;}
+  body.selecting .toast{bottom:84px;}
 
   /* ---------- przyciski ---------- */
   .btn{border:none;font-family:inherit;font-weight:700;cursor:pointer;border-radius:10px;
@@ -113,15 +172,16 @@
   .add-btn{background:var(--forest);color:#fff;font-size:14px;padding:10px 15px;}
   .editform{margin-top:10px;display:flex;flex-direction:column;gap:7px;}
   .editform .adminrow input{background:#fff;}
+  .check{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
+  .adminrow .check input{flex:none;min-width:0;width:18px;height:18px;padding:0;margin:0;accent-color:var(--forest);}
+  .adminrow input[type=date]:disabled{opacity:.45;}
 
-  /* ---------- historia, komunikaty ---------- */
+  /* ---------- miniony dzień (podgląd), komunikaty ---------- */
   .hist-day{margin-top:14px;}
-  .hist-date{font-size:13px;font-weight:800;color:var(--forest);margin-bottom:6px;text-transform:capitalize;}
+  .hist-date{font-size:13px;font-weight:800;color:var(--forest);margin-bottom:6px;}
   .hist-item{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);}
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
-  .hist-note{margin-top:16px;padding-top:10px;border-top:1px solid var(--line);
-    color:var(--muted);font-size:12px;text-align:center;}
   .saving{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--honey);
     border-radius:50%;vertical-align:-1px;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -131,9 +191,6 @@
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
     font-size:13px;font-weight:600;padding:9px 15px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;}
   .toast.show{opacity:1;}
-
-  footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.55;}
-  footer b{color:var(--ink);}
 
   /* ---------- zakładka Panel (ustawienia + diagnostyka) ---------- */
   .panelbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-top:12px;}

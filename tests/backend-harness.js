@@ -61,7 +61,9 @@ function makeSheet(name, rows){
 
 function makeContext(opts){
   opts = opts || {};
-  const nowMs = opts.now ? Date.parse(opts.now) : Date.parse('2026-08-04T22:10:00+02:00');
+  // zegar zamrożony, ale przestawialny (setNow) — dzień rezerwacyjny zmienia się
+  // o godzinie resetu i testy muszą umieć przejść przez tę granicę w jednym scenariuszu
+  let nowMs = opts.now ? Date.parse(opts.now) : Date.parse('2026-08-04T22:10:00+02:00');
   const props = Object.assign({}, opts.props);
   const sheets = {};
   (opts.sheets||[]).forEach(s=>{ sheets[s.name] = makeSheet(s.name, s.rows); });
@@ -99,6 +101,7 @@ function makeContext(opts){
     PropertiesService: { getScriptProperties: ()=>({
       getProperty: k => (k in props ? props[k] : null),
       setProperty: (k,v) => { props[k] = v; },
+      deleteProperty: k => { delete props[k]; },
     })},
     ScriptApp: {
       getProjectTriggers: ()=>triggers.slice(),
@@ -121,14 +124,21 @@ function makeContext(opts){
   // `const` na najwyższym poziomie skryptu ląduje w globalnym zakresie leksykalnym
   // kontekstu, a nie jako pole sandboxa — to, czego testy potrzebują, wystawiamy jawnie.
   const expose = `
-    ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, setResetHour,
-                          resetHour_, installTriggers, archiveDate_, getDiagnostics, migrate, setup,
+    ;globalThis.__api = { endOfDay, getData, readDogs_, addDog, updateDog, removeDog, setResetHour,
+                          resetHour_, installTriggers, getDiagnostics, migrate, setup,
                           reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
-                          readHistory_, getHistory, histCount_, checkPin, requirePin_, pin_, env_ };
-    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS };
+                          readHistory_, getHistory, getHistoryDays, histCount_,
+                          checkPin, requirePin_, pin_, env_,
+                          businessDate_, addDays_, readDogCatalog_, withLock_,
+                          addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
+                          isDate_, posInt_ };
+    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD };
+    // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
+    ;globalThis.__newExecution = () => { walkColsOk_ = false; lockDepth_ = 0; };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
-  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers };
+  const setNow = iso => { nowMs = Date.parse(iso); };
+  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution };
 }
 
 module.exports = { makeContext, makeSheet };

@@ -56,9 +56,14 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   app.type('[data-ef="note"]','Wyjazd na AW');
   app.window.document.querySelector('[data-ef="walks"]').value='2';
   app.click('[data-act="editSave"]');
-  check('optymistycznie: nowa notatka + 2 spacery', /📌 Wyjazd na AW/.test(app.html()) && /spacery 0\/2/.test(app.html()), app.html().slice(0,400));
+  // tryb edycji to katalog: widać USTAWIENIE psa, nie postęp dnia
+  check('optymistycznie w katalogu: nowa notatka + 2 spacery dziennie',
+    /📌 Wyjazd na AW/.test(app.html()) && /2 spacery dziennie/.test(app.html()), app.html().slice(0,400));
   app.respondNext({dogs:[dogFree({note:'Wyjazd na AW',walks:2})],tasks:[],today:'2026-07-08'});
-  check('po serwerze bez zmian wizualnych', /📌 Wyjazd na AW/.test(app.html()) && /spacery 0\/2/.test(app.html()));
+  check('po serwerze bez zmian wizualnych', /📌 Wyjazd na AW/.test(app.html()) && /2 spacery dziennie/.test(app.html()));
+  app.window.document.getElementById('gear').dispatchEvent(new app.window.Event('click',{bubbles:true}));
+  check('po wyjściu z edycji lista dnia pokazuje postęp 0/2',
+    /spacery 0\/2/.test(app.html()) && /📌 Wyjazd na AW/.test(app.html()), app.html().slice(0,400));
   check('kolejka pusta', drained(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
@@ -81,15 +86,17 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
 
 /* ---------- S18: porządki UI ---------- */
 (()=>{
-  console.log('S18: nazewnictwo i footer');
+  console.log('S18: nazewnictwo, bez opisu na dole strony');
   const fs=require('fs'), path=require('path');
   const idx=fs.readFileSync(path.join(ROOT,'Index.html'),'utf8');
   const scr=fs.readFileSync(path.join(ROOT,'Script.html'),'utf8');
+  const sty=fs.readFileSync(path.join(ROOT,'Styles.html'),'utf8');
   check('brak "prowadzącej" w Index', !/prowadząc/i.test(idx));
   check('brak "PROWADZĄCEJ" w Script (UI)', !/PROWADZĄCEJ/.test(scr));
   check('placeholder to samo "PIN"', /placeholder="PIN"/.test(idx));
-  check('footer bez tłumaczenia odznaki', !/bez spaceru/.test(idx.match(/<footer>[\s\S]*<\/footer>/)[0]));
-  check('footer bez "wyznaczone osoby"', !/wyznaczone/.test(idx));
+  // opis na dole i tak nikt nie czytał (zgłoszenie z terenu) — nie wraca
+  check('brak stopki z opisem', !/<footer/i.test(idx) && !/resetNoteFoot/.test(idx + scr));
+  check('brak stylów stopki', !/(^|\s)footer\s*\{/m.test(sty));
 })();
 
 /* ---------- S39: klient mówi serwerowi, KTÓRY to spacer ---------- */

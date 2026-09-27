@@ -45,5 +45,19 @@ check('nie ma dwuznacznego „deploy" bez nazwy środowiska', !S.deploy, S.deplo
 check('produkcja i test to dwa różne wdrożenia',
   redeployId(S['deploy:prod']) !== redeployId(S['deploy:test']));
 
+/* ---------- T4: wdrożenie od razu otwiera aplikację ---------- */
+// Pierwsze otwarcie wersji z datami przenosi stan dnia ze starych kolumn i datuje go
+// dniem, który wtedy trwa — ma się to stać w chwili wdrożenia, nie przy nocnym czyszczeniu.
+console.log('T4: po wdrożeniu aplikacja otwiera się sama — to samo wdrożenie, które właśnie wysłano');
+const warmupId = cmd => { const m = String(cmd || '').match(/warmup\.js\s+(\S+)/); return m ? m[1] : null; };
+['deploy:prod', 'deploy:test'].forEach(k => {
+  const steps = String(S[k] || '').split('&&').map(s => s.trim());
+  check(k + ': ostatni krok to otwarcie aplikacji', /^node scripts\/warmup\.js\s/.test(steps[steps.length-1] || ''), S[k]);
+  check(k + ': otwiera to samo wdrożenie', !!warmupId(S[k]) && warmupId(S[k])===redeployId(S[k]), S[k]);
+});
+check('skrypt otwierający istnieje', fs.existsSync(path.join(ROOT, 'scripts', 'warmup.js')));
+check('...i nie jedzie do Apps Script', !/scripts/.test(fs.readFileSync(path.join(ROOT, '.claspignore'), 'utf8')
+  .split('\n').filter(l => l.startsWith('!')).join('\n')));
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

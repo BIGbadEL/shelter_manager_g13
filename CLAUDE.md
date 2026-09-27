@@ -23,23 +23,32 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | plik | rola |
 |---|---|
 | `Config.gs` | nazwy zakładek, mapy kolumn, limity długości, strefa, domyślna godzina resetu, okno Historii |
-| `Utils.gs` | pomocnicze: `withLock_`, `requirePin_`, konwersje dat/godzin, walidacje |
-| `Settings.gs` | Script Properties: PIN (`pin_()`) i godzina czyszczenia + przekładanie wyzwalacza |
+| `Utils.gs` | pomocnicze: `withLock_` (znosi zagnieżdżenie), `requirePin_`, daty (`addDays_`, `isDate_`), walidacje |
+| `Settings.gs` | Script Properties: PIN (`pin_()`), godzina czyszczenia + wyzwalacz, `businessDate_()` |
 | `Setup.gs` | `setup()`, `migrate()`, `installTriggers()` |
-| `WebApp.gs` | `doGet()`, `include()`, `getData()`, `getDiagnostics()`, `getHistory()`, `checkPin()` |
-| `Dogs.gs` | odczyt psów + akcje na psach |
+| `WebApp.gs` | `doGet()`, `include()`, `getData()`, `getDiagnostics()`, `getHistoryDays()`, `getHistory()` (stare karty), `checkPin()` |
+| `Dogs.gs` | katalog psów + dzień psa (zakładka Spacery, jednorazowy import) + akcje na psach |
 | `Tasks.gs` | zadania |
-| `History.gs` | odczyt historii + `endOfDay()` (archiwizacja i reset) |
+| `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
+| `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
 
 **Nazwy plików HTML w Apps Script muszą brzmieć dokładnie `Index`, `Styles`, `Script`** —
 `include()` odwołuje się do nich po nazwie.
 
 ## Arkusz
 
-- **Psy** — `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`
-- **Historia** — `data | pies | kto | godzina`
+- **Psy** — KATALOG, kim jest pies: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
+  **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
+  tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
+  Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
+- **Spacery** — stan psa KONKRETNEGO DNIA: `data | pies_id | status | kto | godzina | kto1 | godzina1 | grupa`.
+  Wiersz na parę (dzień, pies), brak wiersza = wolny. Tylko dni otwarte (bieżący + przyszłe,
+  ewentualnie niezamknięte) — `endOfDay()` przenosi zamknięte do Historii, grupy znikają razem
+  z nimi. Kolumnę `grupa` do zakładki sprzed grup dokłada sam `ensureWalkColumns_()` przy
+  pierwszym dostępie (getRange poza szerokość rzuca błędem).
+- **Historia** — zamknięte dni: `data | pies | kto | godzina` (pies jako etykieta, nie id)
 - **Zadania** — `id | tresc | data | status`
 
 Statusy psa: `free` / `reserved` / `walked`. Trudności: `easy` / `med` / `hard`
@@ -62,8 +71,55 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   bez wartości domyślnej: nieustawiony = tryb edycji zamknięty. Nigdy nie wpisuj PIN-u
   do pliku „na chwilę" — pierwszy commit czyni go publicznym na zawsze, a `git rm`
   tego nie cofa. Testy tego pilnują (B9 skanuje źródła).
-- **Historia jedzie do przeglądarki tylko za ostatnie `HISTORY_DAYS` dni.** Arkusz trzyma
-  komplet. Liczniki w panelu mają pokazywać komplet (`histCount_()`), nie widoczny wycinek.
+- **Minione dni jadą do przeglądarki blokami** (`getHistoryDays`, po dwa tygodnie), nigdy
+  w całości. Arkusz trzyma komplet. Liczniki w panelu mają pokazywać komplet (`histCount_()`).
+- **Każda akcja na psie niesie datę** (`reserve(id, name, date)`, `markWalked(id, name, slot,
+  date)`, `undoFirstWalk(id, date)`, `setFree(id, date, seen)`).
+  Brak daty = bieżący dzień — tak wołają karty otwarte przed wprowadzeniem dat i mają działać.
+  Serwer (`actionDate_`) odrzuca dzień miniony, datę nieistniejącą (`isDate_` sprawdza kalendarz,
+  nie tylko wzorzec) i dalszą niż `MAX_DAYS_AHEAD`; spacer (i jego cofnięcie) tylko w bieżącym.
+- **`setFree` dostaje `seen` = {status, who}** — stan psa z ekranu w chwili kliknięcia — i zwalnia
+  tylko ten stan. Jest w `RETRIABLE`, a bez `seen` powtórka po zaginionej odpowiedzi zwalniała
+  rezerwację, którą ktoś zrobił w międzyczasie (bug nr 11). Brak `seen` = stara karta.
+- **Grupa (spacer grupowy) jest na dzień**: `setGroup(date, ids, gid, seen)` — `gid` 0 = nowa
+  (kolejny numer dnia, od numeru zależy kolor), >0 = zmiana składu; mniej niż 2 psy = rozwiązanie.
+  Numer grupy to zawsze dodatnia liczba całkowita (`posInt_` / `posInt`) — 1.5 wywracało rysowanie.
+  `seen` = skład widziany przy otwarciu zaznaczania: zdejmujemy tylko spośród niego (pies
+  dołożony w międzyczasie przez kogoś innego zostaje), a gdy pod `gid` stoi już inna grupa
+  (numery wracają do obiegu), zmiana idzie jako nowa grupa (B36).
+  Pies przeniesiony z innej grupy znika z tamtej; grupa z jednym psem przestaje istnieć (także
+  po `removeDog`); pies po spacerze nie dołącza do nowej. **Nie jest w `RETRIABLE`** — nowa grupa
+  bierze kolejny numer, więc powtórka przepisałaby ją pod inny numer i kolor. Wspólny spacer to
+  NIE osobny endpoint: klient woła zwykłe `markWalked` dla każdego zarezerwowanego psa z grupy.
+  **Grupa to JEDEN wspólny spacer, nie dzień.** Wychodzi z niej (`leaveGroup_`) pies, którego
+  spacer cofnięto („Cofnij" → `setFree` na wyprowadzonym), i pies na dwa spacery po pierwszym
+  z nich (`markWalked` slot 1, też `setAllWalks`) — drugi spacer planuje się osobno. Bez tego
+  towarzysz drugiego spaceru trafiał do porannej grupy i wyglądało, jakby szły z nim tamte psy
+  (zgłoszenie z terenu). Grupa z jednym psem przestaje istnieć. **„Zwolnij" zostawia psa
+  w grupie** — grupa znów czeka na jego rezerwację (decyzja właściciela; B30, S79).
+  Akcje na psie widzą cały dzień (`walkDay_` w `dogAction_`) i zostają idempotentne.
+- **Zadanie ma dzień, od którego się pokazuje** (kolumna `data`): `addTask(text, pin, date)`,
+  brak daty = bieżący dzień rezerwacyjny (nie kalendarzowy — zadanie dodane po resecie nie może
+  być od razu „od wczoraj"). Na liście bieżącego dnia: zadania z dniem ≤ bieżący; na przyszłym:
+  tylko zaplanowane dokładnie na niego, bez odhaczania; `setTaskDone` odrzuca zadanie z przyszłości.
+- **Notatka „nigdy"** — `notatka_do = NOTE_FOREVER` (`'nigdy'`, ta sama stała w `Config.gs`
+  i `Script.html`): nie znika przy żadnym czyszczeniu. Uwaga: jako napis „nigdy" sortuje się
+  po każdej dacie, więc nawet bez jawnego warunku zachowanie byłoby to samo — jawny warunek
+  zostaje dla czytelności, testy tego odróżnić nie mogą.
+- **Notatka „bez terminu" ma w arkuszu termin = bieżący dzień rezerwacyjny** (`noteUntil_`).
+  Pusty termin znikał przy KAŻDYM `endOfDay` — także tym o 20:30, zaraz po dodaniu notatki
+  na jutrzejszą listę (B35). Klient pokazuje taki termin jak brak terminu (`noteDated`: bez
+  odznaki, puste pole w edycji). Pusty `notatka_do` zostaje tylko w starych notatkach.
+- **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
+  po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
+- **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
+  id="boot">`), więc lista rysuje się bez drugiego przelotu do serwera. To stan początkowy,
+  nie wartość w szablonie kafelka (bug nr 7). Błąd odczytu = `null` = zwykłe `getData`.
+- **Dzień rezerwacyjny (`businessDate_()`) zaczyna się o godzinie resetu, nie o północy.**
+  Reset ≥ 12:00: przed nim dziś, od niego jutro. Reset < 12:00: przed nim wczoraj, od niego
+  dziś. Reguła „po resecie jutro" wzięta wprost ze zgłoszenia jest błędna dla resetu
+  porannego (o 10:00 kazałaby rezerwować na jutro) — B16 tego pilnuje. `today` z `getData`
+  to wciąż data KALENDARZOWA (odznaki „od wczoraj", terminy notatek); `businessDate` to dzień listy.
 - **Środowisko rozpoznajemy po właściwości `env` (`env_()` w `Settings.gs`), a flaga jest
   odwrócona:** pasek „środowisko testowe" gaśnie wyłącznie przy wartości `prod`, wszystko
   inne — łącznie z brakiem właściwości — jest testem z urzędu. Projekt testowy to kopia
@@ -74,9 +130,49 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 
 Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis leci w tle.
 
-- **Kolejka zapisów z torami.** Tor = byt (`dog:1`, `task:3`, `_full`). Ten sam pies
-  obsługiwany po kolei, różne psy równolegle, sufit 4 naraz. Zapis, który utknął,
-  blokuje wyłącznie swój tor.
+- **Stan: katalog + dni.** `state.dogs` to katalog (kim jest pies), `state.walks` to stan
+  dnia pod kluczem `${data}|${id}`, a `dogAt(id, data)` / `dogsAt(data)` łączą je w obiekt,
+  który dostaje rendering. `state.date` = dzień na ekranie, `state.bizDate` = bieżący dzień
+  rezerwacyjny, `state.follow` = czy ekran idzie za bieżącym (po resecie przeskakuje sam —
+  ale **nie** w chwili, gdy ktoś pisze imię: `busyEditing()`).
+  Gdy serwer nie przysyła `walks` (stary kształt), stan z psów trafia pod bieżący dzień —
+  na tym trzymają się wszystkie starsze testy.
+- **Tryb edycji to katalog, nie dzień** (`renderCatalog`): bez paska dat, bez rezerwacji
+  i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
+  zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderDog`) nie ma już przycisków
+  edycji. Wolontariusze nigdy nie widzą katalogu, prowadząca w edycji nigdy nie widzi dnia.
+- **`busyEditing()` łapie wyłącznie pole wolontariusza `[data-entry]`**, fokus w polu, edycję
+  psa i zaznaczanie grupy (`state.select`). Nigdy nie wracaj do ogólnego `.entry` — patrz bug nr 10.
+- **Spacery grupowe.** Przytrzymanie kafelka (`LONG_PRESS_MS` = 550 ms od `pointerdown`,
+  przesunięcie > 10 px albo puszczenie przerywa) włącza `state.select`; w tym trybie każde
+  kliknięcie w liście tylko zaznacza (`togglePick`) — żadnej rezerwacji z puszczenia palca.
+  **Kafelek w tym trybie to ten sam `renderDog`** (`pickBits`: klasa + kółko `position:absolute`
+  w rogu, przyciski bledną, ale zostają). Osobny, krótszy kafelek skracał listę w chwili
+  przytrzymania i pies uciekał spod palca z ekranu (S78). Jeśli przytrzymany pies wypada pod
+  pasek na dole, `keepAboveBar` przesuwa listę dokładnie o tyle (S81).
+  Przytrzymanie psa z grupy otwiera jej skład do zmiany / „Rozwiąż". Kolor grupy wynika z numeru
+  (`GROUP_COLORS`), obok tła jest znacznik „👥 grupa" — w słońcu samo tło znika. Grupa trzyma
+  się razem na liście: blok stoi tam, gdzie stanąłby jej najpilniejszy pies; po zatwierdzeniu
+  lista układa się od razu (to cel akcji). **„Wyprowadzony ✓" w grupie jest aktywny, gdy nikt
+  z grupy nie jest WOLNY** i odhacza wszystkich zarezerwowanych. Nie „wszyscy zarezerwowani" —
+  w grupie bywa pies już wyprowadzony (dołożony do składu po spacerze, stan z innego telefonu),
+  a „Zwolnij" z grupy nie wyprowadza: dosłowna reguła zablokowałaby resztę bez wyjścia
+  (S82 łapie to wstrzyknięte). Cofnięcie cofa jednego psa i wyprowadza go z grupy.
+  `patchDog` psa z grupy przerysowuje też kafelki towarzyszy — od jego stanu zależy ich przycisk;
+  po `leaveGroup` przerysowujemy dodatkowo dawnych towarzyszy, bo `patchDog` już ich nie widzi.
+  **Odpowiedź `{dog}` nie nadpisuje grupy** (`applyDog`): skład zmieniają też akcje na INNYCH
+  psach, a odpowiedź policzona przed nimi przywróciłaby rozwiązaną grupę (S80). Grupy przychodzą
+  z `setGroup` i `getData`; skutki własnych akcji klient liczy sam, tak jak serwer.
+  Ta sama zasada dla odpowiedzi `setGroup`: każda lokalna zmiana grupy psa dostaje numer
+  (`touchGroup`), a `applyGroups(date, res, since)` pomija psy zmienione po wysłaniu tej
+  odpowiedzi i rozwiązuje grupy, w których przez to został jeden pies (S87).
+- **Akcja pamięta swój dzień.** `doReserve` & spółka biorą datę w chwili kliknięcia,
+  wysyłają ją i zapisują odpowiedź pod NIĄ, nie pod `state.date` — wolontariusz mógł
+  w międzyczasie przejść strzałką gdzie indziej (S56). Klik na dniu, który zamknął się pod
+  palcami, dostaje `dayClosed()`: komunikat + przejście na bieżący dzień, nigdy ciszę (S58).
+- **Kolejka zapisów z torami.** Tor = byt (`dog:1@2026-09-24`, `task:3`, `_full`). Ten sam
+  pies tego samego dnia obsługiwany po kolei, różne psy i różne dni równolegle, sufit 4 naraz.
+  Zapis, który utknął, blokuje wyłącznie swój tor.
 - **`pendingKeys`** liczy zapisy w drodze per byt. Odpowiedź serwera stosujemy tylko
   wtedy, gdy dotyczy **ostatniej** operacji dla tego bytu — inaczej szybkie sekwencje
   (rezerwuj → zwolnij) cofałyby się same.
@@ -84,6 +180,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
   w `try/catch` z samonaprawą. Tor zwalniany **przed** jakąkolwiek logiką odpowiedzi.
+  Ratunkowe odświeżenie z `catch` w `render()` najwyżej raz na `RESCUE_GAP_MS` (15 s) —
+  błąd powtarzalny przy każdym rysowaniu robił pętlę `getData` z każdego telefonu (bug nr 12).
+- **Minione dni dociąga `renderPastDay`**, gdy ich nie ma w pamięci (`fetchPast` sama pilnuje
+  dublowania) — po przełomie dnia `applyData` czyści pamięć, a ekran wisiał na „Wczytuję…" (S84).
 - **Kolejność kafelków: najpierw dorobek (`walksDone`), potem status.** Góra listy to
   zawsze to, co dziś jeszcze nie zrobione. Sam status nie wystarcza, bo przy dwóch
   spacerach „wolny" znaczy dwie różne rzeczy: pies, który nie wyszedł ani razu, i pies
@@ -96,7 +196,8 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   otwarte do edycji, `REORDER_QUIET_MS` = 4 s ciszy po ostatnim dotknięciu ekranu).
   Klik zmienia kafelek **w miejscu** przez `patchDog()`; lista układa się dopiero po ciszy,
   z timera umówionego w `markTap()`. Gdyby sortować od razu, pies uciekałby spod palca
-  w środku akcji — a wolontariusz stoi wtedy z psem na smyczy.
+  w środku akcji — a wolontariusz stoi wtedy z psem na smyczy. **Wyjątek: zmiana dnia**
+  strzałką to cała nowa lista, więc kolejność liczy się od razu (`orderDate`, S60).
 - **Oszczędne renderowanie.** Akcja na psie podmienia tylko jego kafelek (`patchDog()`)
   plus linijkę podsumowania. Pełny render porównuje HTML z poprzednim i przy braku
   różnic nie dotyka DOM. Ręczna zmiana DOM (otwarcie pola „Twoje imię") unieważnia
@@ -112,28 +213,60 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **375 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **801 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
-sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`)
-i dopiero czerwony wynik uznaj za dowód, że test faktycznie pilnuje tej regresji.
+sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
+a nowy mechanizm — wstrzykując celowo jego regresję. Dopiero czerwony wynik uznaj za dowód.
+
+**Sprawdzaj STAN, nie tylko ekran.** Przy datach dwa testy (S56, S58) przechodziły mimo
+wstrzykniętego błędu, bo patrzyły na DOM, który się akurat nie przerysował — a stan pod
+spodem był już zepsuty (odpowiedź zapisana pod zły dzień; imię z kafelka 24.09 rezerwujące
+psa na 25.09). Gdy błąd może siedzieć w stanie, wymuś przerysowanie ze stanu albo czytaj
+`__state` wprost. I testuj to, **czego mechanizm faktycznie pilnuje**: ochrona zaznaczania
+grupy przed odświeżeniem nie chroni zaznaczeń (te trzyma stan), tylko dnia przed przeskokiem
+po resecie — pierwsza wersja S76 sprawdzała zaznaczenia i przechodziła bez tej ochrony.
+
+Zestawy `scenarios12.js` i `scenarios13.js` są **asynchroniczne**: przytrzymanie kafelka mierzy prawdziwy zegar
+(czeka ~650 ms), dokładnie jak na telefonie.
 
 - `tests/harness.js` — ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, klika jak
   człowiek, pozwala sterować tym **kiedy i czy w ogóle** odpowie „serwer"
   (`respondNext`, `failNext`, gubienie odpowiedzi, `__force` na watchdog).
 - `tests/backend-harness.js` — uruchamia prawdziwe pliki `.gs` na atrapie arkusza
-  z **zamrożonym zegarem**, więc nocny reset da się sprawdzić o dowolnej dacie
-  i godzinie. Wszystkie `.gs` sklejane w jeden skrypt, bo w Apps Script dzielą
-  wspólny zakres globalny.
+  z **zamrożonym, ale przestawialnym zegarem** (`env.setNow(iso)`), więc przejście przez
+  godzinę resetu da się sprawdzić w jednym scenariuszu. Wszystkie `.gs` sklejane w jeden
+  skrypt, bo w Apps Script dzielą wspólny zakres globalny. `build()` w `backend.js` startuje
+  domyślnie o 10:00 i podaje stan dnia wprost (`walks`); import ze starych kolumn tylko
+  z `legacy: true`.
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery,
 S19–S24 kolejka równoległa, S25–S31 panel i wydajność, S32–S38 termin notatki,
-S39 numer spaceru w `markWalked`, S40–S42 widok Historii, S43–S45 kolejność kafelków
-i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów, S49–S52 pasek środowiska testowego,
-B1–B6 backend, B7–B8 idempotencja `markWalked`, B9 PIN z właściwości,
-B10 okno Historii, B11–B12 `setAllWalks`, B13–B14 pełny dzień psa 2-spacerowego
-i cofanie, B15 oznaczenie środowiska, T1–T3 konfiguracja wdrożeń (`tests/tooling.js`).
+S39 numer spaceru w `markWalked`, S40–S42 miniony dzień (podgląd), S43–S45 kolejność kafelków
+i jej zamrożenie, S46 przełącznik dwóch spacerów, S47–S48 kolejność wg dorobku spacerów,
+S49–S52 pasek środowiska testowego, S53–S62 nawigacja datą, rezerwacje z wyprzedzeniem,
+przeskok dnia po resecie, S63 symetria strzałek, S64 stan wpisany w stronę, S65 tryb edycji
+jako katalog, S66–S67 zadania na konkretny dzień, S68 notatka „nigdy", S69–S70 przerysowanie
+w trybie edycji (bug nr 10), S71–S77 spacery grupowe (przytrzymanie, kolor, sąsiedztwo,
+wspólny spacer, cofanie jednego, zmiana i rozwiązanie, przyszły dzień), S78 zaznaczanie bez
+zmiany układu, S79 „Zwolnij" zostawia w grupie, S80 grupa to jeden spacer (pies na dwa
+spacery), S81 przytrzymany pies nie chowa się pod paskiem, S82 grupa z psem już wyprowadzonym,
+S83–S89 poprawki po review PR #1 (zły numer grupy i pętla ratunkowa, minione dni po przełomie,
+notatka „bez terminu", widziany skład grupy, spóźniona odpowiedź `setGroup`, Enter w trybie
+edycji, `setFree` z widzianym stanem),
+B1–B6 notatki / archiwizacja / godzina resetu,
+B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
+B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
+B16 dzień rezerwacyjny, B17 rezerwacje na daty, B18 przejście przez reset, B19 domykanie
+zaległych dni, B20 podgląd minionych dni, B21 jednorazowy import, B22 usuwanie psa,
+B23 zagnieżdżona blokada, B24–B25 zadania z datą, B26 notatka „nigdy", B27 `bootJson_`,
+B28 `setGroup`, B29 dokładanie kolumny `grupa` do starej zakładki, B30 `setFree` a grupa, B31 pies na dwa spacery wychodzi z grupy, B32 `setAllWalks` a grupy,
+B33 przejście ze starego modelu w godzinie czyszczenia, B34 numer grupy całkowity, B35 notatka
+„bez terminu", B36 widziany skład grupy, B37 `removeDog` a grupa, B38 godzina czyszczenia nie
+cofa dnia, B39 daty akcji, B40 `setFree` z widzianym stanem, B41 kolumny Spacery sprawdzane raz
+(`env.newExecution()` udaje nowe wykonanie Apps Script),
+T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -164,12 +297,43 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
    Klient przekazuje teraz `slot` (1 = pierwszy z dwóch, 2 = ostatni), a serwer na powtórce
    oddaje stan i niczego nie rusza. **Zanim dopiszesz cokolwiek do `RETRIABLE`, sprawdź,
    czy dwa identyczne wywołania dają ten sam skutek co jedno.**
+10. **Tryb edycji nigdy się nie przerysowywał.** Pole nowego zadania miało klasę `.entry`,
+    a `busyEditing()` uznawało każde widoczne `.entry` za „ktoś wpisuje imię". W trybie edycji
+    to pole jest widoczne zawsze, więc `safeRender()` nic nie robiło: dodany pies i dodane
+    zadanie nie pojawiały się po odpowiedzi serwera, a odświeżanie co 15 s stało. Wyszło
+    przy przebudowie trybu edycji (sonda na kodzie z produkcji: oba `false`). Teraz
+    `busyEditing()` patrzy tylko na `[data-entry]`, a formularz zadania to `.taskform` (S69, S70).
+    **Każde pole, które jest widoczne na stałe, nie może udawać „ktoś właśnie pisze".**
+    Dalszy ciąg (review): Enter z klawiatury telefonu zostawiał fokus w polu, a fokus w polu
+    to też „ktoś pisze" — pole wysłane Enterem robi `blur()` (S88).
+11. **`setFree` na liście `RETRIABLE` bez `seen`.** „Zwolnij" doszło, odpowiedź zginęła, w ciągu
+    ~12 s psa zarezerwował ktoś inny — powtórka zwalniała JEGO rezerwację. Ten sam rodzaj błędu
+    co nr 9; klient mówi teraz, jaki stan zwalnia (B40, S89).
+12. **Wyjątek w `render()` → `refresh()` → wyjątek → …** Deterministyczny błąd rysowania (grupa
+    1.5 z publicznego `setGroup` albo z arkusza) wpędzał każdy telefon w pętlę `getData`.
+    Ratunkowe odświeżenie ma odstęp (`RESCUE_GAP_MS`), a dane z zewnątrz są normalizowane
+    (`posInt_`) — S83, B34.
 
 ## Pułapki Apps Script
 
-- `atHour(h)` to **okno h:00–h:59**, nie punkt czasowy.
-- Reset **przed 12:00** archiwizuje pod datą dnia poprzedniego (`archiveDate_()`) —
-  inaczej wieczorne spacery trafiłyby do Historii pod jutrzejszą datą.
+- `atHour(h)` to **okno h:00–h:59**, nie punkt czasowy. Dlatego dzień na liście zmienia się
+  z zegara (`businessDate_`) punktualnie o h:00, a `endOfDay` tylko domyka zamknięte dni,
+  kiedy do niego dojdzie. Archiwizuje pod datą z wiersza Spacery — nie zgaduje jej z zegara.
+- **Blokada Apps Script nie jest wielokrotnego wejścia.** `withLock_` liczy zagnieżdżenie
+  (`lockDepth_`) i wewnątrz już wziętej blokady po prostu wykonuje funkcję. Bez tego
+  `getData()` spod akcji edycyjnej, zakładające brakującą zakładkę, zwolniłoby blokadę
+  zewnętrzną w połowie jej pracy (B23).
+- **Jednorazowy import stanu dnia ze starych kolumn Psy dzieje się przy PIERWSZYM dostępie** —
+  a dostępem jest też sam wyzwalacz `endOfDay`. Gdy po wdrożeniu nikt nie otworzył linku, import
+  przychodził po przełomie dnia: dzisiejsze spacery lądowały na jutrzejszej liście zamiast
+  w Historii (B33). Dlatego `deploy:*` na końcu otwiera aplikację (`scripts/warmup.js`, T4),
+  a import w godzinie resetu datuje stan dniem, który się skończył. **Nie wdrażaj w samej
+  godzinie resetu** — stan zmieszany ze starym czyszczeniem nie ma wtedy jednej dobrej daty.
+- **Zmienne globalne żyją jedno wykonanie** (każde wywołanie z przeglądarki startuje od zera),
+  więc flaga typu `walkColsOk_` niczego nie oszczędza między żądaniami — to, co ma przetrwać,
+  idzie do Script Properties (`walkCols`, B41).
+- Ustawienie z Panelu godziny resetu, która **dziś już minęła**, od razu przełącza listę
+  na kolejny dzień (to spójne z modelem, ale warto o tym wiedzieć — Panel to mówi).
 - `getRange()` poza `getMaxColumns()` rzuca błędem — `migrate()` najpierw dokłada kolumny.
 - Aplikacja działa w zagnieżdżonym iframie `googleusercontent.com`. Wbudowane
   przeglądarki (WhatsApp, Messenger) potrafią zablokować most `postMessage`
@@ -190,11 +354,13 @@ Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` (decyzja wł
 nie ma argumentu do pomylenia, a produkcyjny i tak jest częścią publicznego linku).
 Celowo **nie ma** gołego `deploy` — każde wdrożenie nazywa swoje środowisko.
 `tests/tooling.js` (T1–T3) pilnuje, że każde wywołanie clasp w komendzie `:test` ma
-`-P .clasp.test.json`, a komendy produkcyjne go nie mają. **Zmieniając skrypty w
-`package.json`, nie omijaj tego testu.**
+`-P .clasp.test.json`, a komendy produkcyjne go nie mają; T4 — że każde wdrożenie na końcu
+otwiera to samo wdrożenie, które właśnie wysłało. **Zmieniając skrypty w `package.json`,
+nie omijaj tego testu.**
 
-1. `npm run deploy:prod` — testy, wysyłka plików i nowa wersja **istniejącego**
-   wdrożenia (link zostaje ten sam). Czerwony test przerywa wysyłkę.
+1. `npm run deploy:prod` — testy, wysyłka plików, nowa wersja **istniejącego**
+   wdrożenia (link zostaje ten sam) i otwarcie aplikacji. Czerwony test przerywa wysyłkę.
+   Komunikat „Otwórz link ręcznie TERAZ" znaczy: otwórz go przed godziną resetu.
 2. **Właściwość skryptu `pin`** (Ustawienia projektu → Właściwości skryptu) — bez niej
    tryb edycji jest zamknięty. Ustawiana raz, poza kodem i poza repozytorium.
 3. Przy zmianie struktury arkusza: uruchom `migrate()` z edytora (dokłada kolumny

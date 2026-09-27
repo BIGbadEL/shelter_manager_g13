@@ -31,7 +31,9 @@ const withNote = (o)=>dogFree(Object.assign({id:1,name:'Borys'}, o));
 (()=>{
   console.log('S33: skróty terminów');
   const cases = [
-    ['2026-08-05','do dziś'],
+    // termin = bieżący dzień to dokładnie notatka „bez terminu" (serwer tak ją zapisuje,
+    // patrz noteUntil_) — znika przy dzisiejszym czyszczeniu, więc bez odznaki
+    ['2026-08-05',undefined],
     ['2026-08-06','do jutra'],
     ['2026-08-08','do soboty'],
     ['2026-08-09','do niedzieli'],

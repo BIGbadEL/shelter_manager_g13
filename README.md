@@ -11,18 +11,20 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Utils.gs` | wspólne pomocnicze (blokada zapisu, konwersje dat/godzin, walidacje) |
 | `Settings.gs` | Script Properties: PIN i godzina czyszczenia listy + przekładanie wyzwalacza |
 | `Setup.gs` | `setup()`, `migrate()`, `installTriggers()`, formaty tekstowe kolumn |
-| `WebApp.gs` | `doGet()`, `include()`, API odczytu (`getData`, `getHistory`, `checkPin`) |
-| `Dogs.gs` | psy: odczyt + akcje wolontariuszy i prowadzącej |
+| `WebApp.gs` | `doGet()`, `include()`, API odczytu (`getData`, `getHistoryDays`, `getHistory`, `checkPin`) |
+| `Dogs.gs` | katalog psów + dzień psa (zakładka Spacery) + akcje wolontariuszy i prowadzącej |
 | `Tasks.gs` | zadania na dziś: odczyt + akcje |
-| `History.gs` | historia + nocny reset `endOfDay()` |
+| `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios8`) + harness backendu na atrapie arkusza (`backend.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios12`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 
 Zakładki arkusza (tworzy je `setup()`):
-- **Psy** — `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`
-- **Historia** — `data | pies | kto | godzina`
+- **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
+  Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
+- **Spacery** — stan psa konkretnego dnia: `data | pies_id | status | kto | godzina | kto1 | godzina1 | grupa`. Wiersz na parę (dzień, pies); brak wiersza = pies tego dnia wolny. Trzyma tylko dni otwarte. Kolumnę `grupa` aplikacja dokłada sama do zakładki założonej wcześniej.
+- **Historia** — zamknięte dni: `data | pies | kto | godzina`
 - **Zadania** — `id | tresc | data | status`
 
 Konwencja: funkcje z sufiksem `_` są prywatne (niewywoływalne z przeglądarki); pozostałe to publiczne API dla `google.script.run`.
@@ -81,9 +83,12 @@ na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w re
 npm run deploy:prod
 ```
 
-To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki i podbija wersję *istniejącego*
-wdrożenia — link do aplikacji zostaje ten sam. Czerwony test przerywa całość, więc zepsuty kod
-nie ma jak wyjechać do wolontariuszy. Opis wersji jest opcjonalny: `npm run deploy:prod -- -d "co się zmieniło"`.
+To jedno polecenie: uruchamia **wszystkie testy**, wysyła pliki, podbija wersję *istniejącego*
+wdrożenia — link do aplikacji zostaje ten sam — i na koniec **sam otwiera aplikację**
+(`scripts/warmup.js`), tak jakby ktoś kliknął link. Czerwony test przerywa całość, więc zepsuty
+kod nie ma jak wyjechać do wolontariuszy. Jeśli otwarcie się nie uda, polecenie kończy się
+komunikatem „Otwórz link ręcznie TERAZ" — zrób to przed godziną czyszczenia (dlaczego: niżej,
+*Przejście ze starego modelu*).
 
 Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` — to świadoma decyzja:
 nie ma argumentu, który dałoby się pomylić. Nie są tajemnicą, produkcyjny jest po prostu
@@ -210,32 +215,135 @@ komunikat w logu. Wolontariusze nie odczuwają tego wcale — ich część aplik
 Warto wiedzieć: `checkPin` to publiczny endpoint bez limitu prób, więc czterocyfrowy PIN
 broni się głównie tym, że nikt nie zna adresu aplikacji. Dłuższa wartość kosztuje tyle samo.
 
-## Historia — ostatnie 14 dni
+## Dni: ← data →
 
-Zakładka „Historia" dostaje z serwera **ostatnie `HISTORY_DAYS` dni** (domyślnie 14,
-`Config.gs`). Arkusz trzyma komplet i nic z niego nie znika — to tylko granica tego,
-co ma sens ładować na telefon: przy trzydziestu psach Historia rośnie o kilkanaście
-tysięcy wierszy rocznie, a wcześniej całość szła do przeglądarki przy każdym wejściu
-w zakładkę.
+Zamiast zakładek „Dziś" i „Historia" jest pasek `← 24 września 2026 →`. Strzałki prowadzą
+swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
 
-Serwer czyta najpierw samą kolumnę dat, idzie od dołu i liczy **różne dni** — dopiero
-wyliczony kawałek pobiera w pełnej szerokości. Dni, a nie stała liczba wierszy, bo liczba
-spacerów dziennie zależy od wielkości grupy: „ostatnie 400 wierszy" raz znaczyłoby miesiąc,
-a raz trzy dni. Na dole listy widnieje informacja o zakresie, żeby starsze dni nie wyglądały
-na skasowane. Licznik wpisów w Panelu pokazuje **komplet** z arkusza, nie widoczny wycinek.
+- **Bieżący dzień** — jak dotąd: rezerwacje, spacery, zadania.
+- **Dni przyszłe** — rezerwacje z wyprzedzeniem, dowolnie daleko. Tylko rezerwacja
+  i zwolnienie; spacer odhacza się w dniu spaceru. Wszystkie dni otwarte przychodzą z serwera
+  jednym pobraniem, więc strzałka w przód nie czeka na sieć.
+- **Dni minione** — tylko podgląd tego, co faktycznie się odbyło (zastępuje zakładkę Historia).
+  Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci.
+
+**Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
+o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
+można jeszcze rezerwować na dzień, który trwa, a po nim aplikacja od razu pracuje na
+następnym. Kto patrzył na bieżący dzień, zostaje przeniesiony sam; kto przeglądał sobotę,
+zostaje na sobocie.
+
+Przy resecie **porannym** ta sama reguła byłaby błędna — reset o 6:00 kazałby przez cały dzień
+rezerwować na jutro. Granicą jest więc południe: reset przed 12:00 zamyka dzień **poprzedni**
+(przed resetem — wczoraj, po nim — dziś). `businessDate_()` w `Settings.gs`.
+
+**Notatki na właściwych dniach:** notatka bez terminu widnieje tylko na bieżącym dniu
+(„zdjęcia o 12:00" nie dotyczy soboty), notatka z terminem — na każdym dniu do terminu włącznie,
+notatka „nigdy nie znika" — na każdym dniu. W arkuszu notatka „bez terminu" ma termin równy
+dniowi rezerwacyjnemu, w którym ją zapisano: dodana o 20:10, gdy lista pracuje już na jutrze,
+dożyje jutra, a nie zniknie przy czyszczeniu o 20:30. Na ekranie dalej wygląda na „bez terminu"
+(bez odznaki, puste pole daty w edycji).
+
+**Zadania na właściwych dniach:** na bieżącym dniu widać zadania, których dzień już nadszedł
+(nieodhaczone przechodzą dalej z odznaką „od N dni"); na przyszłym — tylko zaplanowane dokładnie
+na niego, do podejrzenia, bo odhacza się je w ich dniu; na minionym — żadnych.
+
+**Dzień zamknął się pod palcami:** ktoś wpisuje imię o 19:59, a „OK" stuka o 20:00. Zamiast
+cichego braku reakcji dostaje komunikat „Ten dzień jest już zamknięty" i przejście na nowy dzień.
+Serwer odrzuca każdą zmianę na dniu minionym, więc nie ma też sposobu, żeby coś po cichu
+trafiło pod złą datę.
+
+## Jak to leży w arkuszu
+
+Zakładka **Psy** to katalog — kim jest pies. Stan konkretnego dnia żyje w zakładce
+**Spacery**: jeden wiersz na parę (dzień, pies). Rezerwacja na sobotę to po prostu wiersz
+z sobotnią datą.
+
+**Nocne czyszczenie niczego nie zeruje** — kolejny dzień ma własne, puste wiersze, a zmiana
+dnia na liście dzieje się punktualnie sama. Czyszczenie tylko **domyka** dni sprzed bieżącego:
+ich odbyte spacery idą do Historii pod datą zapisaną w wierszu (koniec zgadywania, który dzień
+się właśnie skończył), wiersze znikają ze Spacery, notatki bez terminu wygasają, odhaczone
+zadania też. Jest bezpieczne o każdej porze i dowolną liczbę razy: dzień, który trwa, zostaje
+nietknięty (także jego notatki), a zaległe dni (wyzwalacz nie zadziałał) domykają się przy
+najbliższym uruchomieniu, w kolejności dat. Wyjątek: notatki zapisane bez terminu jeszcze przed
+tą wersją (pusty `notatka_do`) znikają przy każdym uruchomieniu, jak dawniej.
+
+**Przejście ze starego modelu dzieje się samo.** Przy pierwszym dostępie po wdrożeniu aplikacja
+zakłada zakładkę Spacery i przenosi do niej dzisiejszy stan ze starych kolumn Psy — raz
+(pilnuje tego właściwość skryptu `walksImported`, więc skasowana kiedyś zakładka nie wskrzesi
+tygodniowego stanu). Starych kolumn nie czyścimy: gdyby trzeba było cofnąć wdrożenie, poprzednia
+wersja znów z nich skorzysta.
+
+Stan dostaje datę dnia, który trwa w chwili tego pierwszego dostępu — dlatego ważne jest,
+**kiedy** on nastąpi. Dostępem jest każde otwarcie linku, ale też sam nocny wyzwalacz: gdyby po
+wdrożeniu nikt nie otworzył aplikacji, pierwszy dostęp przyszedłby dopiero przy czyszczeniu, po
+przełomie dnia. Dlatego:
+- `npm run deploy:prod` otwiera aplikację sam, zaraz po wdrożeniu — przejście dzieje się wtedy;
+- jeśli mimo to pierwszy dostęp wypadnie w godzinie czyszczenia, stan trafia pod dzień, który
+  właśnie się skończył (spacery idą do Historii, lista jutra zostaje czysta);
+- **nie wdrażaj w samej godzinie czyszczenia** (np. 20:00–20:59) — stan zmieszany ze starym
+  czyszczeniem nie ma wtedy jednej dobrej daty.
+
+Karty otwarte jeszcze przed wdrożeniem działają dalej: akcja bez daty trafia na bieżący dzień,
+a `getData` wciąż wpisuje stan bieżącego dnia w samych psów.
 
 ## Godzina czyszczenia listy
 
 Domyślnie 22:00 (`DEFAULT_RESET_HOUR` w `Config.gs`). Prowadząca zmienia ją bez ruszania kodu: **⚙️ + PIN → zakładka „Panel" → Ustawienia**. Wybór zapisuje się w Script Properties i od razu **przekłada wyzwalacz** `endOfDay` (`setResetHour()` w `Settings.gs`).
 
-Dwie rzeczy warto wiedzieć:
+Trzy rzeczy warto wiedzieć:
 
-- `atHour(h)` w Apps Script to **okno h:00–h:59**, nie punkt czasowy — Google sam wybiera moment w tej godzinie.
-- Reset **przed 12:00** archiwizuje spacery pod datą **dnia poprzedniego** (`archiveDate_()` w `History.gs`). Bez tego reset o 3:00 czy 6:00 wrzucałby wieczorne spacery do Historii pod datą następnego dnia i pies wyglądałby na wyprowadzonego dzisiaj.
+- Godzina czyszczenia to **granica dnia rezerwacyjnego** (patrz wyżej) — zmienia dzień na liście punktualnie.
+- `atHour(h)` w Apps Script to **okno h:00–h:59**, nie punkt czasowy — domknięcie dnia i przeniesienie do Historii dzieje się gdzieś w tej godzinie.
+- Ustawienie godziny, która **dziś już minęła**, od razu przełącza listę na kolejny dzień.
+- Zmiana, która **cofnęłaby** dzień na liście, jest odrzucana — np. z 20:00 na 8:00 o 21:00
+  lista wróciłaby z jutra na dziś, dzień już zamknięty i przeniesiony do Historii. Tę samą zmianę
+  wystarczy zrobić po nowej godzinie (tu: jutro po 8:00); Panel to podpowiada.
+
+## Spacery grupowe
+
+**Przytrzymaj kafelek psa** (ok. pół sekundy) — włącza się zaznaczanie. Przytrzymany pies jest
+zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
+wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
+wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny), znacznik „👥 grupa" i stają
+na liście obok siebie. Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
+kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pies zostaje pod palcem.
+
+- **„Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
+  aktywny, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna; do tego czasu kafelek mówi,
+  na czyją rezerwację grupa czeka. Reguła brzmi „nikt nie jest wolny", a nie „wszyscy
+  zarezerwowani": w grupie bywa pies już wyprowadzony (np. dołożony do składu po spacerze),
+  a dosłowna reguła zablokowałaby wtedy resztę bez wyjścia.
+- **Grupa to jeden wspólny spacer.** „Zwolnij" zostawia psa w grupie — grupa znów czeka na jego
+  rezerwację. „Cofnij" po spacerze wyprowadza psa z grupy (tylko jego — reszta zostaje
+  wyprowadzona). Grupa, w której został jeden pies, przestaje być grupą.
+- **Pies na dwa spacery po pierwszym z nich wychodzi z grupy** — drugi spacer to osobny spacer
+  i planuje się go osobno, z kim trzeba. Dzięki temu nowy towarzysz drugiego spaceru nie trafia
+  do porannej grupy. Para psów, które na oba spacery chodzą razem, potrzebuje więc drugiego
+  „Grupa" przed drugim spacerem.
+- **Przytrzymanie psa, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć psy,
+  albo nacisnąć „Rozwiąż". Pies przeniesiony do nowej grupy znika ze starej; grupa, w której został
+  jeden pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy.
+- Grupę można zaplanować też na przyszły dzień. Na minionym dniu i w trybie edycji przytrzymanie
+  nic nie robi. W trakcie zaznaczania lista stoi w miejscu — także gdy w tle minie godzina resetu.
+
+Grupa zapisuje się w arkuszu (kolumna `grupa` w zakładce Spacery), więc każdy telefon widzi ją
+tak samo, w tym samym kolorze.
+
+## Tryb edycji
+
+⚙️ + PIN. Tryb edycji służy do zarządzania, nie do pracy na konkretnym dniu — dlatego
+**nie ma w nim wyboru daty ani rezerwacji**. Zakładka „Lista" pokazuje:
+
+- **Zadania** — wszystkie, po kolei według dnia; zaplanowane opisane „na sobotę 26.09".
+  Nowe zadanie dostaje dzień, od którego ma się pokazać (domyślnie bieżący) — do tego dnia
+  wolontariusze go nie widzą.
+- **Katalog psów** — w stałej kolejności z arkusza, z ustawieniem „2 spacery dziennie" zamiast
+  postępu dnia, z edycją i usuwaniem, oraz dodawanie psa.
 
 ## Zakładka „Panel"
 
-Trzecia zakładka obok „Dziś" i „Historii", widoczna **tylko w trybie edycji**. Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, a przede wszystkim **czasy przelotu ostatnich 30 wywołań**. To jedyny sposób, żeby na telefonie rozstrzygnąć, czy wisi Apps Script, czy przeglądarka.
+Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, a przede wszystkim **czasy przelotu ostatnich 30 wywołań**. To jedyny sposób, żeby na telefonie rozstrzygnąć, czy wisi Apps Script, czy przeglądarka.
 
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
@@ -281,12 +389,70 @@ raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 
 ## Notatki i dwa spacery
 
-- **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy najbliższym czyszczeniu — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
+- **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy czyszczeniu kończącym dzień, na którym ją zapisano — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
+- **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
 - **Dwa spacery dziennie** (`spacery` = 1/2): pierwszy odbyty spacer zapisuje się w `kto1`/`godzina1`, a pies wraca na „wolny” z odznaką `spacery 1/2` i informacją, kto odbył pierwszy; dopiero drugi spacer daje pełne „wyprowadzony” (`2/2`). Oba spacery trafiają osobno do Historii przy nocnym resecie. Pomyłkę cofa przycisk „Cofnij 1. spacer”. Liczba odbytych spacerów jest wyliczana z danych (kto1 + status), nie przechowywana — brak ryzyka rozjazdu.
-- Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN); footer odchudzony.
+- Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN). Opisu na dole strony
+  już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+**Po review PR #1:**
+- Przejście ze starego modelu mogło zgubić dzisiejsze spacery, gdy pierwszym dostępem po
+  wdrożeniu był nocny wyzwalacz. Wdrożenie otwiera teraz aplikację samo, a przejście w godzinie
+  czyszczenia datuje stan dniem, który się skończył.
+- Numer grupy 1.5 (z publicznego `setGroup` albo wpisany ręcznie) wywracał listę na każdym
+  telefonie i wpędzał ją w pętlę `getData`. Numer musi być dodatnią liczbą całkowitą, a ratunkowe
+  odświeżenie po błędzie rysowania idzie najwyżej raz na 15 s.
+- Podgląd minionego dnia zostawał na „Wczytuję…" po przełomie dnia.
+- Notatka bez terminu dodana po przełomie dnia znikała przy czyszczeniu tego samego wieczoru.
+- Równoległa zmiana składu grupy gubiła psy dołożone przez kogoś innego, a nieaktualny numer
+  grupy potrafił rozbić cudzą, nową grupę. Odpowiedź `setGroup` przywracała też grupę, którą
+  chwilę później rozwiązał spacer.
+- Usunięcie psa zostawiało grupę z jednym psem.
+- Zadanie albo pies dodany Enterem z klawiatury telefonu nie pojawiał się (fokus w polu).
+- Zmiana godziny czyszczenia z wieczornej na poranną potrafiła otworzyć zamknięty dzień.
+- Daty w rodzaju 2026-13-45 albo 9999-01-01 przechodziły.
+- „Zwolnij" ponowione po zaginionej odpowiedzi zwalniało rezerwację, którą w międzyczasie
+  zrobił ktoś inny.
+
+**Grupy — poprawki z testu:**
+- Przytrzymanie kafelka przerysowywało listę krótszymi kafelkami do zaznaczania — wszystko nad
+  palcem się kurczyło i przytrzymany pies uciekał z ekranu. Teraz to te same kafelki z kółkiem
+  w rogu, układ nie zmienia się ani o piksel; pies, który wpadłby pod pasek na dole, jest
+  wysuwany dokładnie o tyle, ile trzeba.
+- Cofnięty spacer zostawiał psa w grupie z jej kolorem. Teraz pies z niej wychodzi, a grupa
+  z jednym psem przestaje istnieć. „Zwolnij" zostawia psa w grupie, jak dotąd.
+- Pies na dwa spacery ciągnął swoją grupę na drugi spacer: dobranie mu towarzysza wyglądało,
+  jakby z tym towarzyszem szły psy z porannej grupy. Teraz po pierwszym spacerze z grupy wychodzi.
+- Usunięty opis na dole strony.
+
+**Spacery grupowe:** przytrzymanie kafelka, zaznaczanie, wspólny kolor i miejsce na liście,
+jedno „Wyprowadzony ✓" dla całej grupy, cofanie pojedynczo, zmiana składu i rozwiązanie grupy.
+
+**Drugi feedback z terenu:**
+- **Tryb edycji nigdy się nie przerysowywał** (błąd na produkcji). Pole nowego zadania udawało
+  „ktoś właśnie wpisuje imię", więc po „Dodaj psa" czy „Dodaj zadanie" odpowiedź serwera nie
+  pojawiała się na ekranie, dopóki prowadząca nie wyszła z trybu edycji. Stare odświeżanie co 15 s
+  też w tym trybie stało.
+- **Strzałki niesymetryczne** — znaki ← → każdy telefon brał ze swojego fontu. Teraz rysunek SVG,
+  prawa strzałka to dokładne lustro lewej.
+- **Wolniejszy start** — po załadowaniu strony telefon musiał jeszcze raz zapytać serwer o dane.
+  Stan startowy jest teraz wpisany w samą stronę (`bootJson_`), więc lista rysuje się od razu.
+- Tryb edycji bez dat i rezerwacji; zadania na konkretny dzień; notatka „nigdy nie znika".
+
+**Daty zamiast „Dziś" i „Historii":**
+- Arkusz znał tylko jeden dzień — stan psa siedział wprost w jego wierszu i był zerowany co noc,
+  więc nie było gdzie zapisać rezerwacji na sobotę. Stan dnia przeniesiony do osobnej zakładki
+  Spacery (wiersz na dzień i psa), nawigacja `← data →`, rezerwacje z wyprzedzeniem, miniony
+  dzień jako podgląd.
+- Dzień rezerwacyjny liczony od godziny czyszczenia. Reguła „po resecie — jutro" działa tylko
+  przy resecie wieczornym; przy porannym granicą jest południe, jak wcześniej przy archiwizacji.
+- Nocne czyszczenie archiwizuje każdy spacer pod datą z jego wiersza. Ręczne uruchomienie
+  `endOfDay()` w środku dnia nie kasuje już bieżącej listy — dawniej zerowało wszystko.
+- `withLock_` znosi zagnieżdżenie. Akcja edycyjna wołająca `getData()` spod blokady mogłaby
+  inaczej zwolnić blokadę zewnętrzną w połowie pracy.
 
 **Pierwszy feedback z terenu:**
 - **Godzina spaceru zniknęła z kafelka** psa wyprowadzonego. Nie niosła nic, czego

@@ -15,15 +15,59 @@ function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd')
 function now_() { return Utilities.formatDate(new Date(), tz_(), 'H:mm'); }
 
 /**
+ * Czy to prawdziwa data 'yyyy-MM-dd'. Sam wzorzec przepuściłby '2026-13-45' —
+ * taki wiersz dostawałby każdy telefon, a nocne czyszczenie nigdy by go nie domknęło.
+ */
+function isDate_(s) {
+  const t = String(s == null ? '' : s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) && addDays_(t, 0) === t;
+}
+
+/**
+ * Dodatnia liczba całkowita albo 0 — numer grupy z arkusza albo z przeglądarki.
+ * Grupa 1.5 (ręcznie w arkuszu albo z publicznego setGroup) wywracała rysowanie
+ * listy na każdym telefonie: kolor grupy to indeks w tablicy.
+ */
+function posInt_(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Data 'yyyy-MM-dd' przesunięta o n dni.
+ * Czysta arytmetyka na kalendarzu (UTC), bez zegara i bez stref — dodawanie
+ * 24 godzin do znacznika czasu potrafi przy zmianie czasu z zimowego na letni
+ * przeskoczyć o dwa dni albo nie przeskoczyć wcale.
+ */
+function addDays_(iso, n) {
+  const p = String(iso).split('-').map(Number);
+  const d = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n));
+  const pad = x => String(x).padStart(2, '0');
+  return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+}
+
+/** Głębokość zagnieżdżenia withLock_ w bieżącym wywołaniu (każde wywołanie z przeglądarki startuje od zera). */
+let lockDepth_ = 0;
+
+/**
  * Wykonuje fn pod globalną blokadą (równoległe zapisy się nie gryzą)
  * i wymusza zapis do arkusza PRZED zwolnieniem blokady.
+ *
+ * Bezpieczne na zagnieżdżenie: blokada Apps Script nie jest wielokrotnego
+ * wejścia, a zwolnienie jej w środku (np. getData() spod akcji edycyjnej,
+ * które musi założyć brakującą zakładkę) puściłoby blokadę zewnętrzną
+ * w połowie jej pracy. Zagnieżdżone wywołanie po prostu działa pod tą,
+ * którą już trzymamy.
  */
 function withLock_(fn) {
+  if (lockDepth_ > 0) return fn();
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);   // czekaj max 20 s
+  lockDepth_++;
   try {
     return fn();
   } finally {
+    lockDepth_--;
     SpreadsheetApp.flush();
     lock.releaseLock();
   }

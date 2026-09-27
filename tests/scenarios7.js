@@ -1,5 +1,6 @@
-// S40-S42: widok Historii — ograniczenie do ostatnich dni nie może wyglądać
-// jak skasowane dane, a liczba dni ma iść z serwera, nie z kodu interfejsu.
+// S40-S42: miniony dzień (strzałka wstecz) — zastępuje dawną zakładkę Historia.
+// Tylko podgląd, dociągany blokami po dwa tygodnie; ekran nigdy nie może utknąć
+// na „Wczytuję…".
 const { buildApp, dogFree } = require('./harness');
 let failures = 0;
 function check(name, cond, extra){
@@ -7,57 +8,93 @@ function check(name, cond, extra){
   else { failures++; console.log('  FAIL ' + name + (extra ? ' | ' + extra : '')); }
 }
 
-function openHistory(app){
-  app.seed({dogs:[dogFree()], tasks:[], today:'2026-07-08'});
-  app.click('.tab[data-tab="history"]');
-  return app;
-}
+const base = o => Object.assign({
+  dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna'})],
+  walks: [], tasks: [], today: '2026-09-24', businessDate: '2026-09-24', resetHour: 20, env: 'prod',
+}, o || {});
+const sentPast = app => app.shipped.filter(f => f === 'getHistoryDays').length;
+const dayRel   = app => app.window.document.getElementById('dayRel').textContent;
+const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay'); };
 
-/* ---------- S40: grupowanie po dniach + informacja o zakresie ---------- */
+/* ---------- S40: podgląd minionego dnia ---------- */
 (()=>{
-  console.log('S40: Historia — dni, spacery i notka o zakresie');
-  const app = openHistory(buildApp());
-  check('poszedł getHistory', app.pending[0] && app.pending[0].fn==='getHistory',
-    app.pending.map(p=>p.fn).join(','));
+  console.log('S40: wczoraj — tylko podgląd, po kolei w ciągu dnia');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  check('zanim dojdą dane: „Wczytuję…", nie pusta lista', /Wczytuję/.test(app.html()), app.html());
+  const job = app.pending[app.pending.length-1];
+  check('pyta o blok dwóch tygodni kończący się wczoraj',
+    job.fn==='getHistoryDays' && job.args[0]==='2026-09-10' && job.args[1]==='2026-09-23', JSON.stringify(job.args));
 
-  app.respondNext({days:14, history:[
-    {date:'2026-07-08', name:'Borys', who:'Ala', time:'10:00'},
-    {date:'2026-07-08', name:'Luna',  who:'Ola', time:'17:00'},
-    {date:'2026-07-07', name:'Borys', who:'Ela', time:'09:30'},
+  app.respondNext({history:[
+    {date:'2026-09-23', name:'Luna',  who:'Ola', time:'17:00'},
+    {date:'2026-09-23', name:'Borys', who:'Ala', time:'9:05'},
+    {date:'2026-09-23', name:'Rex',   who:'Ela', time:'10:30'},
+    {date:'2026-09-20', name:'Borys', who:'Iza', time:'11:00'},
   ]});
   const html = app.html();
-  check('dwa dni w widoku', (html.match(/hist-day/g)||[]).length===2, html.slice(0,200));
-  check('licznik spacerów przy dacie', /2 spacerów/.test(html));
-  check('widać wolontariuszy', /Ala/.test(html) && /Ela/.test(html));
-  check('notka o zakresie', /Pokazane ostatnie 14 dni/.test(html), html.slice(-200));
-  check('notka mówi, gdzie jest komplet', /arkusz/.test(html), html.slice(-200));
+  check('mówi, że to podgląd', /Miniony dzień — tylko podgląd/.test(html));
+  check('liczba z poprawną odmianą', /3 spacery/.test(html), html);
+  check('po kolei w ciągu dnia: 9:05 przed 10:30 przed 17:00',
+    html.indexOf('Ala') < html.indexOf('Ela') && html.indexOf('Ela') < html.indexOf('Ola'), html);
+  check('tylko ten dzień — bez wpisu z 20.09', !/Iza/.test(html));
+  check('żadnego przycisku akcji', !/data-act=/.test(html), html);
+  check('pasek dnia: wczoraj, z drogą powrotu', /wczoraj/.test(dayRel(app)) && /wróć/.test(dayRel(app)), dayRel(app));
+  check('etykieta oznaczona jako przeszłość',
+    app.window.document.getElementById('dayLabel').classList.contains('past'));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-/* ---------- S41: zakres pochodzi z serwera ---------- */
+/* ---------- S41: strzałka w tył nie czeka na serwer w obrębie bloku ---------- */
 (()=>{
-  console.log('S41: liczba dni idzie z serwera, nie jest wpisana w interfejs');
-  const app = openHistory(buildApp());
-  app.respondNext({days:30, history:[{date:'2026-07-08', name:'Borys', who:'Ala', time:'10:00'}]});
-  check('notka pokazuje 30', /Pokazane ostatnie 30 dni/.test(app.html()), app.html().slice(-200));
-  check('nie ma wpieczonego 14', !/ostatnie 14 dni/.test(app.html()));
+  console.log('S41: kolejne dni wstecz z pamięci, dalszy blok dociągany sam');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  app.respondNext({history:[{date:'2026-09-20', name:'Borys', who:'Iza', time:'11:00'}]});
+  back(app, 3);                                        // 20 września — w tym samym bloku
+  check('bez nowego pytania do serwera', sentPast(app)===1, app.shipped.join(','));
+  check('widać wpis z 20.09 od razu', /Iza/.test(app.html()) && /1 spacer\b/.test(app.html()), app.html());
+  back(app);                                           // 19 września — pusty dzień
+  check('pusty dzień nazwany wprost', /nie zapisano żadnego spaceru/.test(app.html()), app.html());
+
+  back(app, 10);                                       // 9 września — poza pierwszym blokiem
+  check('dalszy blok dociągnięty', sentPast(app)===2, app.shipped.join(','));
+  const job = app.pending[app.pending.length-1];
+  check('...kończący się na wybranym dniu', job.args[1]==='2026-09-09' && job.args[0]==='2026-08-27',
+    JSON.stringify(job.args));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-/* ---------- S42: pusta historia i starszy serwer bez pola days ---------- */
+/* ---------- S42: nic nie może zamrozić ekranu ---------- */
 (()=>{
-  console.log('S42: pusta historia oraz odpowiedź bez pola days');
-  const app = openHistory(buildApp());
-  app.respondNext({days:14, history:[]});
-  check('pusto: komunikat zamiast notki', /Brak zapisanych dni/.test(app.html()), app.html());
-  check('pusto: bez notki o zakresie', !/Pokazane ostatnie/.test(app.html()));
+  console.log('S42: błąd, zguba odpowiedzi i strzałki w trakcie ładowania');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  app.click('#nextDay');                               // wracamy, zanim cokolwiek doszło
+  check('strzałka działa w trakcie ładowania', /Zarezerwuj/.test(app.html()), app.html().slice(0,200));
 
-  // odpowiedź bez `days` (np. karta otwarta przed wdrożeniem) nie może wywalić widoku
-  const old = openHistory(buildApp());
-  old.respondNext({history:[{date:'2026-07-08', name:'Borys', who:'Ala', time:'10:00'}]});
-  check('bez pola days: widok żyje', /Borys/.test(old.html()), old.html().slice(0,200));
-  check('bez pola days: notka z wartością domyślną', /Pokazane ostatnie 14 dni/.test(old.html()));
-  check('bez błędów', old.errors.length===0, old.errors.join('; '));
+  app.failNext('boom');
+  back(app);
+  check('po błędzie jest nowa próba, a nie wieczne „Wczytuję…"', sentPast(app)===2, app.shipped.join(','));
+  app.failNext('boom');
+  check('komunikat zamiast zawieszenia', /Nie udało się wczytać/.test(app.html()), app.html());
+
+  // odpowiedź zginęła po drodze: po czasie watchdoga wolno zapytać jeszcze raz
+  app.click('#nextDay');
+  back(app);
+  check('zgubione pytanie trzyma się przez chwilę', sentPast(app)===3, app.shipped.join(','));
+  app.pending.shift();                                 // odpowiedź nigdy nie przyjdzie
+  app.click('#nextDay');
+  back(app);
+  check('...więc nie dublujemy od razu', sentPast(app)===3, app.shipped.join(','));
+  app.window.eval('for (const k in __state.pastLoading) __state.pastLoading[k] = 0;');   // minął watchdog
+  app.click('#nextDay');
+  back(app);
+  check('...ale po watchdogu pytamy znowu', sentPast(app)===4, app.shipped.join(','));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

@@ -1,36 +1,40 @@
 /**
- * G13 Spacery — PSY.
- * Odczyt listy + akcje wolontariuszy (rezerwacja, spacer, zwolnienie)
- * + akcje edycyjne (dodanie, edycja, usunięcie — chronione PIN-em).
+ * G13 Spacery — PSY I ICH DNI.
  *
- * Wydajność: akcje wolontariuszy zwracają TYLKO zmieniony wiersz ({dog}),
+ * Dwie rzeczy, trzymane osobno:
+ *  - zakładka Psy — KATALOG: kim jest pies (imię, boks, trudność, notatka,
+ *    ile spacerów dziennie). Nie wie nic o żadnym konkretnym dniu.
+ *  - zakładka Spacery — co się z psem dzieje KONKRETNEGO DNIA: jeden wiersz
+ *    na parę (data, pies). Brak wiersza = pies tego dnia wolny.
+ *
+ * Dzięki temu rezerwacja na sobotę to po prostu wiersz z sobotnią datą,
+ * a nocne czyszczenie niczego nie zeruje — kolejny dzień ma własne, puste
+ * wiersze. Dawniej stan dnia siedział wprost w wierszu psa i arkusz znał
+ * tylko jeden dzień naraz.
+ *
+ * Wydajność: akcje wolontariuszy zwracają TYLKO zmienionego psa ({dog}),
  * nie cały stan — interfejs jest optymistyczny i dosynchronizowuje się
  * z okresowego odświeżania. Rzadkie akcje edycyjne zwracają pełny stan.
  */
 
-/* ---------- ODCZYT ---------- */
+/* ---------- KATALOG ---------- */
 
-/** Surowy wiersz arkusza -> obiekt psa dla interfejsu. */
+/** Surowy wiersz zakładki Psy -> pies z katalogu (kim jest, bez stanu dnia). */
 function mapDogRow_(r) {
   return {
-    id:       Number(r[DOG.ID - 1]),
-    name:     String(r[DOG.NAME - 1] || ''),
-    ident:    String(r[DOG.IDENT - 1] || ''),
-    box:      String(r[DOG.BOX - 1] || ''),
-    dif:      String(r[DOG.DIF - 1]) || 'easy',
-    status:   String(r[DOG.STATUS - 1]) || STATUS.FREE,
-    who:      String(r[DOG.WHO - 1] || ''),
-    time:     cellTime_(r[DOG.TIME - 1]),
-    lastWalk: cellDate_(r[DOG.LAST_WALK - 1]),
-    note:     String(r[DOG.NOTE - 1] || ''),
-    walks:    Number(r[DOG.WALKS - 1]) === 2 ? 2 : 1,
-    who1:     String(r[DOG.WHO1 - 1] || ''),
-    time1:    cellTime_(r[DOG.TIME1 - 1]),
+    id:        Number(r[DOG.ID - 1]),
+    name:      String(r[DOG.NAME - 1] || ''),
+    ident:     String(r[DOG.IDENT - 1] || ''),
+    box:       String(r[DOG.BOX - 1] || ''),
+    dif:       String(r[DOG.DIF - 1]) || 'easy',
+    lastWalk:  cellDate_(r[DOG.LAST_WALK - 1]),
+    note:      String(r[DOG.NOTE - 1] || ''),
+    walks:     Number(r[DOG.WALKS - 1]) === 2 ? 2 : 1,
     noteUntil: cellDate_(r[DOG.NOTE_UNTIL - 1]),
   };
 }
 
-function readDogs_() {
+function readDogCatalog_() {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return [];
@@ -44,33 +48,280 @@ function readDogRow_(sh, row) {
   return sh.getRange(row, 1, 1, DOG_WIDTH).getValues()[0];
 }
 
+/** Jeden pies z katalogu albo null. */
+function catalogDog_(id) {
+  const sh = ss_().getSheetByName(SHEETS.DOGS);
+  const row = rowById_(sh, id);
+  return row < 0 ? null : mapDogRow_(readDogRow_(sh, row));
+}
+
+/* ---------- DZIEŃ PSA (zakładka Spacery) ---------- */
+
+function emptyWalk_(date, id) {
+  return { date: date, dogId: Number(id), status: STATUS.FREE, who: '', time: '', who1: '', time1: '',
+           group: 0 };
+}
+
+function mapWalkRow_(r) {
+  return {
+    date:   cellDate_(r[WALK.DATE - 1]),
+    dogId:  Number(r[WALK.DOG - 1]),
+    status: String(r[WALK.STATUS - 1] || '') || STATUS.FREE,
+    who:    String(r[WALK.WHO - 1] || ''),
+    time:   cellTime_(r[WALK.TIME - 1]),
+    who1:   String(r[WALK.WHO1 - 1] || ''),
+    time1:  cellTime_(r[WALK.TIME1 - 1]),
+    group:  posInt_(r[WALK.GROUP - 1]),
+  };
+}
+
+function walkToRow_(w) {
+  return [w.date, w.dogId, w.status, w.who, w.time, w.who1, w.time1, w.group || ''];
+}
+
+/**
+ * Czy wiersz niesie cokolwiek poza „wolny bez grupy" — pusty znaczy dokładnie to samo,
+ * co brak wiersza. Wolny pies w grupie to już stan: zaplanowany spacer grupowy.
+ */
+function hasWalkState_(w) {
+  return w.status === STATUS.RESERVED || w.status === STATUS.WALKED || w.who1 !== '' || w.group > 0;
+}
+
+/** Pies z katalogu połączony z tym, co się z nim dzieje danego dnia. */
+function withWalk_(dog, w) {
+  const s = w || emptyWalk_('', dog.id);
+  return Object.assign({}, dog, {
+    status: s.status, who: s.who, time: s.time, who1: s.who1, time1: s.time1, group: s.group || 0,
+  });
+}
+
+/** Czy zakładka Spacery ma już kolumnę `grupa` — sprawdzamy raz na wywołanie. */
+let walkColsOk_ = false;
+
+/**
+ * Zakładka Spacery założona przed wprowadzeniem grup ma o kolumnę mniej, a getRange
+ * poza szerokością arkusza rzuca błędem (pułapka z CLAUDE.md). Dokładamy ją sami,
+ * przy pierwszym dostępie — tak jak samą zakładkę — zamiast liczyć, że ktoś
+ * pamięta o migrate(). Dokładanie pod blokadą, z ponownym sprawdzeniem.
+ */
+function ensureWalkColumns_(sh) {
+  if (walkColsOk_) return sh;
+  // raz sprawdzone zostaje zapamiętane we właściwości skryptu — bez tego każde żądanie
+  // z każdego telefonu płaciło dwoma dodatkowymi odczytami arkusza
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PROP_WALK_COLS) === String(WALK_WIDTH)) { walkColsOk_ = true; return sh; }
+  const header = WALK_HEADERS[WALK.GROUP - 1];
+  const fine = () => sh.getMaxColumns() >= WALK_WIDTH
+                  && String(sh.getRange(1, WALK.GROUP).getValue()) === header;
+  if (!fine()) {
+    withLock_(() => {
+      if (sh.getMaxColumns() < WALK_WIDTH) sh.insertColumnsAfter(sh.getMaxColumns(), WALK_WIDTH - sh.getMaxColumns());
+      if (String(sh.getRange(1, WALK.GROUP).getValue()) !== header) sh.getRange(1, WALK.GROUP).setValue(header);
+    });
+  }
+  props.setProperty(PROP_WALK_COLS, String(WALK_WIDTH));
+  walkColsOk_ = true;
+  return sh;
+}
+
+/** Zakładka Spacery, gdy blokada jest już wzięta. Brakującą zakłada na miejscu. */
+function walksSheetLocked_() {
+  return ensureWalkColumns_(ss_().getSheetByName(SHEETS.WALKS) || createWalksSheet_());
+}
+
+/**
+ * Zakładka Spacery z dowolnego miejsca. Zakładanie idzie pod blokadą, bo kilka
+ * telefonów tuż po wdrożeniu pyta naraz, a drugie insertSheet z tą samą nazwą
+ * rzuciłoby błędem. withLock_ znosi zagnieżdżenie, więc można to wołać także
+ * spod akcji, która blokadę już trzyma.
+ */
+function walksSheet_() {
+  const sh = ss_().getSheetByName(SHEETS.WALKS);
+  return sh ? ensureWalkColumns_(sh) : withLock_(walksSheetLocked_);
+}
+
+function createWalksSheet_() {
+  const sh = ss_().insertSheet(SHEETS.WALKS);
+  sh.getRange(1, 1, 1, WALK_WIDTH).setValues([WALK_HEADERS]);
+  sh.setFrozenRows(1);
+  [WALK.DATE, WALK.TIME, WALK.TIME1]
+    .forEach(c => sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@'));   // bug z datą 1899
+  importDayState_(sh);
+  return sh;
+}
+
+/**
+ * JEDNORAZOWE przeniesienie stanu dnia ze starych kolumn Psy do zakładki Spacery.
+ *
+ * Dzieje się samo, przy pierwszym dostępie po wdrożeniu wersji z datami —
+ * żadnego ręcznego kroku do zapomnienia i żadnego okna, w którym aplikacja
+ * pokazywałaby wszystkie psy jako wolne. `npm run deploy:*` otwiera aplikację
+ * zaraz po wdrożeniu, więc tym dostępem jest zwykle samo wdrożenie.
+ *
+ * Stan należy do dnia, który trwał w chwili wdrożenia. Jeśli pierwszy dostęp
+ * przychodzi dopiero w godzinie czyszczenia — najczęściej sam wyzwalacz endOfDay,
+ * gdy po wdrożeniu nikt nie otworzył linku — dzień zdążył się już przełamać,
+ * a stan jest z dnia, który właśnie się skończył. Z datą bieżącego dnia spacery
+ * nie trafiłyby do Historii, a psy stałyby „wyprowadzone" na jutrzejszej liście.
+ * Wdrożenia w samej godzinie czyszczenia to nie ratuje (patrz README).
+ *
+ * Właściwość skryptu pilnuje, że to się dzieje RAZ. Bez niej ktoś, kto kiedyś
+ * skasuje zakładkę Spacery, wskrzesiłby tygodniowy stan z Psy jako dzisiejszy.
+ * Starych kolumn nie czyścimy — przydadzą się, gdyby trzeba było cofnąć wdrożenie.
+ */
+function importDayState_(sh) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PROP_WALKS_IMPORTED)) return;
+
+  const hour = Number(Utilities.formatDate(new Date(), tz_(), 'H'));
+  const date = hour === resetHour_() ? addDays_(businessDate_(), -1) : businessDate_();
+  const dogs = ss_().getSheetByName(SHEETS.DOGS);
+  const last = dogs ? dogs.getLastRow() : 0;
+  const rows = [];
+  if (last >= 2) {
+    dogs.getRange(2, 1, last - 1, DOG_WIDTH).getValues().forEach(r => {
+      if (r[DOG.ID - 1] === '' || r[DOG.ID - 1] === null) return;
+      const w = {
+        date:   date,
+        dogId:  Number(r[DOG.ID - 1]),
+        status: String(r[DOG.STATUS - 1] || '') || STATUS.FREE,
+        who:    String(r[DOG.WHO - 1] || ''),
+        time:   cellTime_(r[DOG.TIME - 1]),
+        who1:   String(r[DOG.WHO1 - 1] || ''),
+        time1:  cellTime_(r[DOG.TIME1 - 1]),
+      };
+      if (hasWalkState_(w)) rows.push(walkToRow_(w));
+    });
+  }
+  if (rows.length) sh.getRange(2, 1, rows.length, WALK_WIDTH).setValues(rows);
+  props.setProperty(PROP_WALKS_IMPORTED, date);
+}
+
+/** Wszystkie wiersze zakładki Spacery (dni otwarte + ewentualnie jeszcze niezamknięte). */
+function readWalks_(sh) {
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues()
+    .map(mapWalkRow_)
+    .filter(w => isDate_(w.date) && w.dogId > 0);
+}
+
+/**
+ * Jeden dzień zakładki Spacery do zmiany pod blokadą: odczyt raz, zapis tylko
+ * zmienionych wierszy. Akcja na psie widzi cały dzień, bo może ruszyć też jego grupę.
+ */
+function walkDay_(sh, date) {
+  const last = sh.getLastRow();
+  const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
+  const day = {};                                    // pies -> indeks jego wiersza tego dnia
+  rows.forEach((r, i) => { const w = mapWalkRow_(r); if (w.date === date) day[w.dogId] = i; });
+  const changed = {};
+  const walk = id => day[id] === undefined ? emptyWalk_(date, id) : mapWalkRow_(rows[day[id]]);
+  return {
+    walk: walk,
+    ids: () => Object.keys(day).map(Number),
+    inGroup: g => Object.keys(day).map(Number).filter(id => walk(id).group === g),
+    put: w => {
+      if (day[w.dogId] === undefined) { rows.push(walkToRow_(w)); day[w.dogId] = rows.length - 1; }
+      else rows[day[w.dogId]] = walkToRow_(w);
+      changed[day[w.dogId]] = true;
+    },
+    save: () => Object.keys(changed).forEach(k =>
+      sh.getRange(Number(k) + 2, 1, 1, WALK_WIDTH).setValues([rows[Number(k)]])),
+  };
+}
+
+/**
+ * Pies wychodzi ze swojej grupy; grupa, w której został jeden pies, przestaje być grupą.
+ *
+ * Grupa to JEDEN wspólny spacer. Wychodzi z niej pies, którego spacer cofnięto,
+ * i pies na dwa spacery po pierwszym z nich — drugi spacer planuje się osobno.
+ * Gdyby został, nowy towarzysz drugiego spaceru trafiałby do grupy, z którą pies
+ * szedł rano, i wyglądałoby, jakby tamte psy szły razem z nowym.
+ * „Zwolnij" psa NIE wyprowadza z grupy: grupa czeka wtedy na nową rezerwację.
+ */
+function leaveGroup_(d, w) {
+  const g = w.group;
+  if (!g) return;
+  w.group = 0;
+  d.put(w);
+  const left = d.inGroup(g);
+  if (left.length === 1) {
+    const lone = d.walk(left[0]);
+    lone.group = 0;
+    d.put(lone);
+  }
+}
+
+/**
+ * Psy z katalogu ze stanem BIEŻĄCEGO dnia rezerwacyjnego — dokładnie ten kształt,
+ * który znają karty otwarte jeszcze przed wprowadzeniem dat.
+ */
+function readDogs_() {
+  const date = businessDate_();
+  const state = {};
+  readWalks_(walksSheet_()).forEach(w => { if (w.date === date) state[w.dogId] = w; });
+  return readDogCatalog_().map(d => withWalk_(d, state[d.id]));
+}
+
 /* ---------- AKCJE WOLONTARIUSZY (zwracają {dog}) ---------- */
 
 /**
- * Rezerwuje psa — tylko jeśli wciąż wolny (kto pierwszy, ten lepszy).
- * Zwraca faktyczny stan wiersza; interfejs porównuje go ze swoim
- * optymistycznym i pokazuje toast, gdy ktoś zdążył pierwszy.
+ * Data akcji. Brak daty = bieżący dzień rezerwacyjny: tak wołają karty otwarte
+ * jeszcze przed wprowadzeniem dat, i mają dalej działać.
+ *
+ * Miniony dzień jest tylko do podglądu. Zmiana dnia wypada punktualnie o godzinie
+ * czyszczenia, więc klik z ekranu otwartego minutę wcześniej dostaje tu jasny
+ * komunikat, a telefon po odświeżeniu przechodzi na nowy dzień.
  */
-function reserve(id, name) {
+function actionDate_(date) {
+  const current = businessDate_();
+  const d = (date == null || date === '') ? current : String(date);
+  if (!isDate_(d)) throw new Error('Nieprawidłowa data');
+  if (d < current) throw new Error('Ten dzień jest już zamknięty — można go tylko przeglądać');
+  if (d > addDays_(current, MAX_DAYS_AHEAD)) throw new Error('Tak daleko do przodu nie planujemy — najwyżej rok');
+  return { date: d, current: d === current };
+}
+
+/**
+ * Wspólny szkielet akcji na psie danego dnia: pod blokadą czyta pies + dzień,
+ * `change(w, dog, d)` modyfikuje wiersz psa (i przez `d` ewentualnie jego grupę)
+ * i mówi, czy jest co zapisać. Zwraca psa w stanie z tego dnia — interfejs
+ * porównuje go ze swoim optymistycznym.
+ */
+function dogAction_(id, date, change) {
   return withLock_(() => {
-    const sh = ss_().getSheetByName(SHEETS.DOGS);
-    const row = rowById_(sh, id);
-    if (row < 0) return { dog: null };
-    const r = readDogRow_(sh, row);
-    const cur = String(r[DOG.STATUS - 1]);
-    if (cur === STATUS.FREE || cur === '') {
-      r[DOG.STATUS - 1] = STATUS.RESERVED;
-      r[DOG.WHO - 1] = clean_(name);
-      r[DOG.TIME - 1] = '';
-      sh.getRange(row, DOG.STATUS, 1, 3)
-        .setValues([[r[DOG.STATUS - 1], r[DOG.WHO - 1], r[DOG.TIME - 1]]]);
+    const dog = catalogDog_(id);
+    if (!dog) return { dog: null };
+    const d = walkDay_(walksSheetLocked_(), date);
+    const w = d.walk(Number(id));
+    if (change(w, dog, d)) {
+      d.put(w);
+      d.save();
     }
-    return { dog: mapDogRow_(r) };
+    return { dog: Object.assign(withWalk_(dog, w), { date: date }) };
+  });
+}
+
+/**
+ * Rezerwuje psa na dany dzień — tylko jeśli tego dnia wciąż wolny (kto pierwszy,
+ * ten lepszy). Działa na bieżący dzień i dowolny przyszły.
+ */
+function reserve(id, name, date) {
+  const a = actionDate_(date);
+  return dogAction_(id, a.date, w => {
+    if (w.status !== STATUS.FREE) return false;
+    w.status = STATUS.RESERVED;
+    w.who = clean_(name);
+    w.time = '';
+    return true;
   });
 }
 
 /**
  * Oznacza spacer jako odbyty; bez podanego imienia zachowuje rezerwującego.
+ * Tylko na bieżący dzień — w przyszłości nie ma czego odhaczać.
+ *
  * Pies na 2 spacery dziennie: pierwszy spacer zapisuje się w kto1/godzina1,
  * a pies wraca na "wolny" (do wzięcia drugi raz). Dopiero drugi spacer
  * przechodzi w pełny status "wyprowadzony".
@@ -84,82 +335,185 @@ function reserve(id, name) {
  * a do Historii wpadał wpis bez osoby. Brak slotu = stare zachowanie, dla
  * karty otwartej jeszcze przed tym wdrożeniem.
  */
-function markWalked(id, name, slot) {
-  return withLock_(() => {
-    const sh = ss_().getSheetByName(SHEETS.DOGS);
-    const row = rowById_(sh, id);
-    if (row < 0) return { dog: null };
-    const r = readDogRow_(sh, row);
-    const needsTwo = Number(r[DOG.WALKS - 1]) === 2;
-    const firstDone = String(r[DOG.WHO1 - 1] || '') !== '';
-    const first = needsTwo && (slot == null ? !firstDone : Number(slot) === 1);
+function markWalked(id, name, slot, date) {
+  const a = actionDate_(date);
+  if (!a.current) throw new Error('Spacer odhaczysz dopiero w dniu spaceru');
+  return dogAction_(id, a.date, (w, dog, d) => {
+    const firstDone = w.who1 !== '';
+    const first = dog.walks === 2 && (slot == null ? !firstDone : Number(slot) === 1);
 
     if (first) {
-      // powtórka zapisu, który już przeszedł — oddaj prawdę, niczego nie ruszaj
-      if (firstDone) return { dog: mapDogRow_(r) };
-      r[DOG.WHO1 - 1] = clean_(name) || String(r[DOG.WHO - 1] || '');
-      r[DOG.TIME1 - 1] = now_();
-      r[DOG.STATUS - 1] = STATUS.FREE;
-      r[DOG.WHO - 1] = '';
-      r[DOG.TIME - 1] = '';
-      sh.getRange(row, DOG.STATUS, 1, 3).setValues([[STATUS.FREE, '', '']]);
-      sh.getRange(row, DOG.WHO1, 1, 2).setValues([[r[DOG.WHO1 - 1], r[DOG.TIME1 - 1]]]);
-      return { dog: mapDogRow_(r) };
+      if (firstDone) return false;          // powtórka zapisu, który już przeszedł — nic nie ruszamy
+      w.who1 = clean_(name) || w.who;
+      w.time1 = now_();
+      w.status = STATUS.FREE;
+      w.who = '';
+      w.time = '';
+      leaveGroup_(d, w);                    // drugi spacer to osobny spacer — i osobna grupa
+      return true;
     }
 
-    // jw. — powtórzony ostatni spacer nie może przestawiać godziny ani imienia
-    if (String(r[DOG.STATUS - 1]) === STATUS.WALKED) return { dog: mapDogRow_(r) };
-    r[DOG.STATUS - 1] = STATUS.WALKED;
-    r[DOG.WHO - 1] = clean_(name) || String(r[DOG.WHO - 1] || '');
-    r[DOG.TIME - 1] = now_();
-    sh.getRange(row, DOG.STATUS, 1, 3)
-      .setValues([[r[DOG.STATUS - 1], r[DOG.WHO - 1], r[DOG.TIME - 1]]]);
-    return { dog: mapDogRow_(r) };
+    if (w.status === STATUS.WALKED) return false;   // jw. — nie przestawiamy godziny ani imienia
+    w.status = STATUS.WALKED;
+    w.who = clean_(name) || w.who;
+    w.time = now_();
+    return true;
   });
 }
 
-/** Cofa omyłkowo odhaczony PIERWSZY z dwóch spacerów. */
-function undoFirstWalk(id) {
-  return withLock_(() => {
-    const sh = ss_().getSheetByName(SHEETS.DOGS);
-    const row = rowById_(sh, id);
-    if (row < 0) return { dog: null };
-    const r = readDogRow_(sh, row);
-    r[DOG.WHO1 - 1] = '';
-    r[DOG.TIME1 - 1] = '';
-    sh.getRange(row, DOG.WHO1, 1, 2).setValues([['', '']]);
-    return { dog: mapDogRow_(r) };
+/** Cofa omyłkowo odhaczony PIERWSZY z dwóch spacerów (tylko bieżący dzień). */
+function undoFirstWalk(id, date) {
+  const a = actionDate_(date);
+  if (!a.current) throw new Error('Spacer odhaczysz dopiero w dniu spaceru');
+  return dogAction_(id, a.date, w => {
+    if (!w.who1) return false;
+    w.who1 = '';
+    w.time1 = '';
+    return true;
   });
 }
 
-/** Cofa psa do stanu "wolny" (zwolnienie rezerwacji albo cofnięcie spaceru). */
-function setFree(id) {
+/**
+ * Cofa psa do stanu "wolny" danego dnia: „Zwolnij" (rezerwacja) albo „Cofnij" (spacer).
+ *
+ * Zwolniony pies ZOSTAJE w grupie — grupa czeka na nową rezerwację, jak przy
+ * planowaniu. Cofnięty spacer wyprowadza psa z grupy (leaveGroup_): tamten
+ * wspólny spacer już się odbył, a on w nim — jak się okazało — nie był.
+ *
+ * `seen` = {status, who} — pies tak, jak wyglądał na ekranie w chwili kliknięcia.
+ * setFree jest ponawiany po zaginionej odpowiedzi (RETRIABLE), a zanim powtórka
+ * dojdzie (~12 s), ktoś inny mógł psa zarezerwować: bez `seen` powtórka zwalniała
+ * CUDZĄ rezerwację — ten sam rodzaj błędu co bug nr 9. Z `seen` zwalniamy tylko
+ * ten stan, który ktoś widział; inny oddajemy bez zmian. Brak `seen` = karta
+ * otwarta przed tą zmianą, stare zachowanie.
+ */
+function setFree(id, date, seen) {
+  const a = actionDate_(date);
+  return dogAction_(id, a.date, (w, dog, d) => {
+    if (w.status === STATUS.FREE && !w.who && !w.time) return false;   // nic do zwalniania
+    if (seen && (w.status !== String(seen.status) || w.who !== clean_(seen.who))) return false;
+    const undo = w.status === STATUS.WALKED;
+    w.status = STATUS.FREE;
+    w.who = '';
+    w.time = '';
+    if (undo) leaveGroup_(d, w);
+    return true;
+  });
+}
+
+/**
+ * GRUPA — psy wyprowadzane razem danego dnia (spacer grupowy). Ustawia każdy
+ * wolontariusz, bez PIN-u; na bieżący dzień i na przyszłe, nigdy na miniony.
+ *
+ * `ids` to skład grupy PO zmianie, `gid` — 0 dla nowej grupy albo numer grupy,
+ * którą zmieniamy. Mniej niż dwa psy = grupa się rozwiązuje. Nowa grupa dostaje
+ * kolejny numer tego dnia; od numeru zależy kolor w interfejsie, więc każda
+ * następna grupa jest w innym kolorze — i w tym samym na wszystkich telefonach.
+ *
+ * Pies przeniesiony z innej grupy znika z tamtej, a grupa, w której został jeden
+ * pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy — nie ma
+ * już czego planować razem — ale ze swojej nie wypada.
+ *
+ * NIE jest na liście RETRIABLE: nowa grupa bierze kolejny numer, więc powtórka po
+ * zaginionej odpowiedzi przepisałaby tę samą grupę pod nowy numer (i nowy kolor).
+ * Po zaginięciu interfejs po prostu dosynchronizowuje się z getData.
+ *
+ * `seen` — skład grupy `gid` taki, jaki zmieniający widział na ekranie. Zaznaczanie
+ * wstrzymuje odświeżanie, więc w tym czasie ktoś inny mógł grupę zmienić:
+ *  - zdejmujemy tylko psy, które zmieniający WIDZIAŁ i odznaczył — pies dołożony
+ *    w międzyczasie przez kogoś innego zostaje (inaczej znikał bez śladu),
+ *  - numer grupy wraca do obiegu (nowa grupa bierze max+1 z bieżących wierszy): gdy
+ *    pod `gid` stoi już zupełnie inna grupa, nikogo z `seen`, zmiana idzie jako nowa
+ *    grupa, a cudza zostaje nietknięta.
+ * Brak `seen` = karta otwarta przed tą zmianą: zdejmujemy wszystkich spoza `ids`.
+ *
+ * Zwraca {walks, group}: wszystkie wiersze tego dnia (także te z wyczyszczoną grupą)
+ * i numer grupy, która powstała albo została (0 = rozwiązana).
+ */
+function setGroup(date, ids, gid, seen) {
+  const a = actionDate_(date);
+  const ints = list => {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach(x => { const n = posInt_(x); if (n && out.indexOf(n) < 0) out.push(n); });
+    return out;
+  };
+  const want = ints(ids);
+  const saw = Array.isArray(seen) ? ints(seen) : null;
+  let g = posInt_(gid);
+  if (!g && Number(gid)) throw new Error('Nieprawidłowy numer grupy');   // 1.5, -2 — nie zgadujemy
+
   return withLock_(() => {
-    const sh = ss_().getSheetByName(SHEETS.DOGS);
-    const row = rowById_(sh, id);
-    if (row < 0) return { dog: null };
-    const r = readDogRow_(sh, row);
-    r[DOG.STATUS - 1] = STATUS.FREE;
-    r[DOG.WHO - 1] = '';
-    r[DOG.TIME - 1] = '';
-    sh.getRange(row, DOG.STATUS, 1, 3).setValues([[STATUS.FREE, '', '']]);
-    return { dog: mapDogRow_(r) };
+    const known = {};
+    readDogCatalog_().forEach(d => { known[d.id] = true; });
+    const sh = walksSheetLocked_();
+    const last = sh.getLastRow();
+    const rows = last >= 2 ? sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues() : [];
+
+    const day = {};          // pies -> indeks jego wiersza tego dnia w `rows`
+    let maxGroup = 0;
+    rows.forEach((r, i) => {
+      const w = mapWalkRow_(r);
+      if (w.date !== a.date) return;
+      day[w.dogId] = i;
+      if (w.group > maxGroup) maxGroup = w.group;
+    });
+    const walkOf = id => day[id] === undefined ? emptyWalk_(a.date, id) : mapWalkRow_(rows[day[id]]);
+    const put = (id, group) => {
+      const w = walkOf(id);
+      if (w.group === group) return;
+      w.group = group;
+      if (day[id] === undefined) { rows.push(walkToRow_(w)); day[id] = rows.length - 1; }
+      else rows[day[id]] = walkToRow_(w);
+    };
+    const inGroup = group => Object.keys(day).map(Number).filter(id => walkOf(id).group === group);
+
+    // pod tym numerem stoi dziś już inna grupa (ktoś rozwiązał naszą i założył nową) — nie ruszamy jej
+    if (g && saw && inGroup(g).length && !inGroup(g).some(id => saw.indexOf(id) >= 0)) g = 0;
+
+    const members = want.filter(id => known[id]
+      && (walkOf(id).status !== STATUS.WALKED || (g && walkOf(id).group === g)));
+    const target = members.length >= 2 ? (g || maxGroup + 1) : 0;
+
+    if (g) inGroup(g).forEach(id => {                   // wypadli ze składu — tylko ci, których zmieniający widział
+      if (members.indexOf(id) < 0 && (!saw || saw.indexOf(id) >= 0)) put(id, 0);
+    });
+    const touched = {};
+    if (g) touched[g] = true;
+    members.forEach(id => {
+      const old = walkOf(id).group;
+      if (old && old !== target) touched[old] = true;
+      put(id, target);
+    });
+    Object.keys(touched).forEach(x => {                 // grupa, z której zabraliśmy psy, i sama zmieniana
+      const left = inGroup(Number(x));
+      if (left.length === 1) put(left[0], 0);
+    });
+
+    if (rows.length) sh.getRange(2, 1, rows.length, WALK_WIDTH).setValues(rows);
+    return { walks: Object.keys(day).map(id => mapWalkRow_(rows[day[id]])), group: target };
   });
 }
 
 /* ---------- AKCJE EDYCYJNE — chronione PIN-em (zwracają pełny stan) ---------- */
 
 /**
- * Termin ważności notatki ('yyyy-MM-dd' albo '').
- * Pusto oznacza zachowanie domyślne: notatka znika przy najbliższym czyszczeniu.
- * Data z przeszłości albo bez notatki nie ma sensu — normalizujemy do pustej,
- * żeby w arkuszu nie zostawały terminy, których nikt już nie zobaczy.
+ * Termin ważności notatki: 'yyyy-MM-dd', NOTE_FOREVER albo '' (brak notatki).
+ * NOTE_FOREVER — nie znika nigdy, dopóki ktoś jej nie skasuje.
+ *
+ * Notatka „bez terminu" dostaje w arkuszu termin = bieżący dzień rezerwacyjny:
+ * żyje do końca dnia, na którym ją widać. Samo „znika przy najbliższym czyszczeniu"
+ * nie wystarczało — notatka dodana o 20:10, gdy lista pracuje już na jutrze, znikała
+ * przy czyszczeniu o 20:30, zanim jej dzień się zaczął, a każde dodatkowe uruchomienie
+ * endOfDay kasowało dzisiejsze notatki. Z datą czyszczenie jest idempotentne.
+ * Termin wcześniejszy niż bieżący dzień też oznacza „do końca dnia" — inaczej notatka
+ * zapisałaby się, ale nie pokazała nigdzie. Termin bez notatki nie ma sensu.
  */
 function noteUntil_(v, note) {
   const s = clean_(v, 10);
-  if (!note || !s) return '';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
-  return s < today_() ? '' : s;
+  if (!note) return '';
+  if (s === NOTE_FOREVER) return s;
+  const current = businessDate_();
+  return isDate_(s) && s > current ? s : current;
 }
 
 /** Wymusza: pies musi mieć imię LUB identyfikator (nowy pies bywa bez imienia). */
@@ -210,16 +564,19 @@ function validWalks_(walks) {
 }
 
 /**
- * Przestawia CAŁĄ listę na 1 albo 2 spacery dziennie.
+ * Przestawia CAŁĄ listę na 1 albo 2 spacery dziennie — ustawienie psa na stałe,
+ * obowiązujące we wszystkie kolejne dni, dopóki ktoś go nie cofnie.
  * Schronisko dopuszcza drugi spacer przy upałach, decyzja bywa z godziny na
  * godzinę, a przeklikiwanie trzydziestu psów z osobna odpada.
  *
- * Sama kolumna to za mało, bo w środku dnia część psów ma już coś odbyte:
+ * Sama kolumna to za mało, bo w środku BIEŻĄCEGO dnia część psów ma już coś
+ * odbyte:
  *  - włączamy 2 spacery: pies „wyprowadzony" (miał jeden spacer) staje się psem
  *    po PIERWSZYM z dwóch — wraca na „wolny", a odbyty spacer ląduje w kto1/godzina1,
  *    dokładnie tak, jak zapisałby to markWalked;
  *  - wracamy do 1 spaceru: pies „wolny" po pierwszym z dwóch ma swoje z głowy,
  *    więc staje się „wyprowadzony" tym właśnie spacerem.
+ * Dni przyszłe mają same rezerwacje, więc nie ma w nich czego przestawiać.
  *
  * Czego NIE ruszamy: psów zarezerwowanych (ktoś je właśnie prowadzi — zmiana
  * statusu pod ręką wolontariusza byłaby wrogim gestem) oraz psa, który ma już
@@ -230,44 +587,66 @@ function validWalks_(walks) {
  */
 function setAllWalks(walks, pin) {
   requirePin_(pin);
-  const w = validWalks_(walks);
+  const n = validWalks_(walks);
   return withLock_(() => {
-    const sh = ss_().getSheetByName(SHEETS.DOGS);
-    const last = sh.getLastRow();
-    if (last < 2) return getData();
+    const dogs = ss_().getSheetByName(SHEETS.DOGS);
+    const lastDog = dogs.getLastRow();
+    if (lastDog >= 2) {
+      const col = dogs.getRange(2, DOG.WALKS, lastDog - 1, 1).getValues()
+        .map(() => [n]);
+      dogs.getRange(2, DOG.WALKS, lastDog - 1, 1).setValues(col);
+    }
 
-    const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
-    vals.forEach(r => {
-      if (r[DOG.ID - 1] === '' || r[DOG.ID - 1] === null) return;
-      const status = String(r[DOG.STATUS - 1]);
-      const firstDone = String(r[DOG.WHO1 - 1] || '') !== '';
-      r[DOG.WALKS - 1] = w;
-
-      if (w === 2 && status === STATUS.WALKED && !firstDone) {
-        r[DOG.WHO1 - 1]  = String(r[DOG.WHO - 1] || '');
-        r[DOG.TIME1 - 1] = cellTime_(r[DOG.TIME - 1]);
-        r[DOG.STATUS - 1] = STATUS.FREE;
-        r[DOG.WHO - 1] = '';
-        r[DOG.TIME - 1] = '';
-      } else if (w === 1 && status === STATUS.FREE && firstDone) {
-        r[DOG.WHO - 1]  = String(r[DOG.WHO1 - 1] || '');
-        r[DOG.TIME - 1] = cellTime_(r[DOG.TIME1 - 1]);
-        r[DOG.STATUS - 1] = STATUS.WALKED;
-        r[DOG.WHO1 - 1] = '';
-        r[DOG.TIME1 - 1] = '';
+    // przestawiony pies wychodzi ze swojej grupy (leaveGroup_): odbyty spacer staje się
+    // pierwszym z dwóch, a drugi to osobny spacer; w drugą stronę — pies zaplanowany
+    // w grupie na drugi spacer ma już swoje z głowy i z tą grupą nie idzie
+    const d = walkDay_(walksSheetLocked_(), businessDate_());
+    d.ids().forEach(id => {
+      const w = d.walk(id);
+      if (n === 2 && w.status === STATUS.WALKED && !w.who1) {
+        w.who1 = w.who; w.time1 = w.time;
+        w.status = STATUS.FREE; w.who = ''; w.time = '';
+      } else if (n === 1 && w.status === STATUS.FREE && w.who1) {
+        w.who = w.who1; w.time = w.time1;
+        w.status = STATUS.WALKED; w.who1 = ''; w.time1 = '';
+      } else {
+        return;
       }
+      d.put(w);
+      leaveGroup_(d, w);
     });
-    sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
+    d.save();
     return getData();
   });
 }
 
+/**
+ * Usuwa psa z katalogu. Spacery, które już się odbyły (a dzień nie jest jeszcze
+ * zamknięty), najpierw trafiają do Historii — tu, póki jeszcze znamy imię.
+ * Pies adoptowany po południu miał rano spacer, i ten spacer ma zostać
+ * w Historii pod imieniem, a nie jako „Pies 17". Przyszłe rezerwacje przepadają.
+ * Grupa, w której po nim został jeden pies, przestaje być grupą — jak wszędzie.
+ */
 function removeDog(id, pin) {
   requirePin_(pin);
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
-    if (row > 0) sh.deleteRow(row);
+    if (row > 0) {
+      const walks = walksSheetLocked_();
+      const groups = readWalks_(walks).filter(w => w.dogId === Number(id) && w.group);
+      closeWalks_(w => w.dogId === Number(id));
+      sh.deleteRow(row);
+      groups.forEach(w => {
+        const d = walkDay_(walks, w.date);
+        const left = d.inGroup(w.group);
+        if (left.length !== 1) return;
+        const lone = d.walk(left[0]);
+        lone.group = 0;
+        d.put(lone);
+        d.save();
+      });
+    }
     return getData();
   });
 }

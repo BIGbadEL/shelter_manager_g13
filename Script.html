@@ -10,15 +10,22 @@
   const WATCHDOG_MS = 12000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony (i raz ponawiamy)
 
   const state = {
-    dogs:[], tasks:[], history:[],
-    today:null,            // data serwera (Europe/Warsaw) do liczenia "od wczoraj"
-    view:"today",          // today | history | diag
+    dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `walks`
+    walks:{},              // stan psa danego dnia: `${data}|${id}` -> {status, who, time, who1, time1}
+    tasks:[],
+    today:null,            // data kalendarzowa serwera (Europe/Warsaw) — do "od wczoraj" i terminów notatek
+    bizDate:null,          // bieżący dzień rezerwacyjny: od godziny resetu, nie od północy (businessDate_)
+    date:null,             // dzień wybrany strzałkami
+    follow:true,           // czy wybrany dzień idzie za bieżącym (po resecie przeskakuje sam)
+    past:{},               // minione dni do podglądu: data -> [{name, who, time}]
+    pastLoading:{},        // data -> kiedy poszło pytanie o nią
+    view:"today",          // today | diag
     admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie edycji
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
-    historyDays:14,        // ile ostatnich dni Historii przysyła serwer (limit z Config.gs)
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
+    select:null,           // zaznaczanie psów do grupy: {date, anchor, gid, ids} albo null
   };
   const viewEl = document.getElementById('view');
   const gear   = document.getElementById('gear');
@@ -35,8 +42,38 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
   function findDog(id){ return state.dogs.find(x=>x.id===id); }
-  function replaceDog(d){ const i=state.dogs.findIndex(x=>x.id===d.id); if(i>=0) state.dogs[i]=d; }
   function localHM(){ const d=new Date(); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+  /* ---------- dzień psa ----------
+     Katalog mówi, KIM jest pies; `walks` mówi, co się z nim dzieje KONKRETNEGO DNIA.
+     Brak wpisu = pies tego dnia wolny. Rendering dostaje oba połączone w jeden obiekt,
+     więc kafelki nie muszą wiedzieć, że dni jest więcej niż jeden. */
+  const FREE_WALK = {status:'free', who:'', time:'', who1:'', time1:'', group:0};
+  function wkey(date, id){ return date+'|'+id; }
+  function walkOf(date, id){ return state.walks[wkey(date, id)] || FREE_WALK; }
+  function setWalk(date, id, w){
+    state.walks[wkey(date, id)] = {status:w.status||'free', who:w.who||'', time:w.time||'',
+                                   who1:w.who1||'', time1:w.time1||'', group:posInt(w.group)};
+  }
+  /** Numer grupy: dodatnia liczba całkowita albo 0 (jak posInt_ na serwerze) — 1.5 wywracało rysowanie. */
+  function posInt(v){ const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 0; }
+  function dogAt(id, date){ const d=findDog(id); return d ? Object.assign({}, d, walkOf(date, id)) : null; }
+  function dogsAt(date){ return state.dogs.map(d=>Object.assign({}, d, walkOf(date, d.id))); }
+
+  /* ---------- daty ---------- */
+  /** Data przesunięta o n dni — arytmetyka kalendarza w UTC, niezależna od strefy telefonu. */
+  function addDays(iso, n){
+    const p=iso.split('-').map(Number);
+    return new Date(Date.UTC(p[0], p[1]-1, p[2]+n)).toISOString().slice(0,10);
+  }
+  function dayDiff(from, to){ return Math.round((Date.parse(to) - Date.parse(from))/864e5); }
+  function isPast(iso){ return !!state.bizDate && iso < state.bizDate; }
+  function isFuture(iso){ return !!state.bizDate && iso > state.bizDate; }
+  function plural(n, one, few, many){
+    if(n===1) return one;
+    const d=n%10, t=n%100;
+    return (d>=2 && d<=4 && !(t>=12 && t<=14)) ? few : many;
+  }
 
   /** Ile dni temu (względem daty serwera) — null gdy brak danych. */
   function daysAgo(iso){
@@ -48,18 +85,21 @@
     try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date());}
     catch(e){return "dziś";}
   }
-  function fmtDate(iso){
-    // T12:00 zamiast północy — data nie przeskoczy na sąsiedni dzień przy dziwnej strefie telefonu
-    try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(iso+'T12:00:00'));}
-    catch(e){return iso;}
-  }
   function toast(msg){
     const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),2600);
   }
+  /**
+   * Czy ktoś właśnie coś wpisuje — wtedy nie przerysowujemy mu ekranu pod palcami.
+   * Otwarte pole liczy się TYLKO to wolontariusza („Twoje imię", [data-entry]).
+   * Wcześniej łapało każde widoczne `.entry`, a pole nowego zadania w trybie edycji
+   * jest widoczne zawsze — przez to w trybie edycji nic się nigdy nie przerysowywało
+   * i dodany pies czy zadanie nie pojawiały się po odpowiedzi serwera (S70).
+   */
   function busyEditing(){
     if(state.editId!==null) return true;
-    if(document.querySelector('.entry:not(.hidden)')) return true;
+    if(state.select) return true;             // zaznaczanie psów do grupy — lista ma stać w miejscu
+    if(document.querySelector('[data-entry]:not(.hidden)')) return true;
     const a=document.activeElement;
     return !!(a && (a.tagName==='INPUT' || a.tagName==='SELECT'));
   }
@@ -132,7 +172,8 @@
    * To eliminuje przeskoki przy szybkich sekwencjach (rezerwuj -> zwolnij).
    */
   const pendingKeys = new Map();
-  function keyDog(id){ return 'dog:'+id; }
+  /** Klucz psa to pies I dzień — rezerwacja na dziś i na sobotę to dwa różne byty, jadą równolegle. */
+  function keyDog(id, date){ return 'dog:'+id+'@'+(date||state.date); }
   function keyTask(id){ return 'task:'+id; }
   function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
 
@@ -243,6 +284,18 @@
      ========================================================= */
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+    const prevBiz = state.bizDate;
+    state.bizDate = res.businessDate || res.today;
+    state.walks = {};
+    if(Array.isArray(res.walks)) res.walks.forEach(w=>setWalk(w.date, w.dogId, w));
+    else res.dogs.forEach(d=>setWalk(state.bizDate, d.id, d));   // starszy serwer: stan tylko bieżącego dnia, wpisany w psy
+    if(prevBiz && prevBiz !== state.bizDate) state.past = {};    // wczorajszy „bieżący" dzień jest już miniony
+
+    // Kto pracował na bieżącym dniu, po resecie od razu pracuje na nowym — ale nie
+    // w chwili, gdy wpisuje imię albo edytuje psa: wtedy dojdzie przy kolejnym odświeżeniu.
+    if(!state.date || (state.follow && !busyEditing())) state.date = state.bizDate;
+    if(state.date === state.bizDate) state.follow = true;
+
     if(typeof res.resetHour === 'number'){ state.resetHour = res.resetHour; showResetHour(); }
     state.env = typeof res.env === 'string' ? res.env : '';
     showEnv();
@@ -263,13 +316,11 @@
     bar.classList.toggle('hidden', !state.loaded || state.env === 'prod');
   }
 
-  /** Nagłówek i stopka mówią o godzinie czyszczenia — musi iść za ustawieniem. */
+  /** Nagłówek mówi o godzinie czyszczenia — musi iść za ustawieniem. */
   function showResetHour(){
     const hh = String(state.resetHour).padStart(2,'0') + ':00';
     const a = document.getElementById('resetNote');
-    const b = document.getElementById('resetNoteFoot');
     if(a) a.textContent = '↺ czyści się o ' + hh;
-    if(b) b.textContent = hh;
   }
   /** Render, który nie wyrywa nikomu klawiatury spod palców. */
   function safeRender(){ if(!busyEditing()) render(); }
@@ -293,15 +344,38 @@
       })
       .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
       .getData();
-    if(state.view==='history') fetchHistory();
   }
 
-  function fetchHistory(){
-    google.script.run.withSuccessHandler(res=>{
-      state.history=res.history;
-      if(typeof res.days === 'number') state.historyDays=res.days;
-      if(state.view==='history') render();
-    }).getHistory();
+  /**
+   * Minione dni (tylko podgląd) dociągamy blokami po dwa tygodnie wstecz od
+   * wybranego — kolejne stuknięcia strzałką w tył trafiają już w pamięć i nie
+   * czekają na serwer. Dzień, o który pytanie wisi dłużej niż watchdog, wolno
+   * pobrać od nowa; zamrożony ekran „Wczytuję…" nie może się zdarzyć.
+   */
+  const PAST_BLOCK = 14;
+  function fetchPast(date){
+    const now = Date.now();
+    if(state.past[date] || (state.pastLoading[date] && now - state.pastLoading[date] < WATCHDOG_MS)) return;
+    const from = addDays(date, -(PAST_BLOCK-1));
+    const days = [];
+    for(let d=from; d<=date; d=addDays(d,1)) days.push(d);
+    days.forEach(d=>{ state.pastLoading[d] = now; });
+    google.script.run
+      .withSuccessHandler(res=>{
+        const got = {};
+        days.forEach(d=>{ got[d] = []; delete state.pastLoading[d]; });
+        ((res && res.history) || []).forEach(e=>{ if(got[e.date]) got[e.date].push(e); });
+        Object.assign(state.past, got);
+        if(state.view==='today' && isPast(state.date)) safeRender();
+      })
+      .withFailureHandler(()=>{
+        days.forEach(d=>{ delete state.pastLoading[d]; });
+        if(state.view==='today' && state.date===date){
+          viewEl.innerHTML = '<div class="empty">Nie udało się wczytać tego dnia — spróbuj strzałką jeszcze raz.</div>';
+          invalidateHtml();
+        }
+      })
+      .getHistoryDays(from, date);
   }
 
   /* =========================================================
@@ -316,13 +390,14 @@
      zmienia się w miejscu (patchDog), a lista układa się dopiero wtedy, gdy ręce
      znieruchomieją — więc seria szybkich rezerwacji idzie bez ani jednego skoku.
      ========================================================= */
-  const GROUP = { free:0, reserved:1, walked:2 };
+  const STATUS_RANK = { free:0, reserved:1, walked:2 };
   const REORDER_QUIET_MS = 4000;   // tyle ciszy po ostatnim dotknięciu ekranu
   let order = [];                  // id psów w kolejności wyświetlania
+  let orderDate = null;            // dzień, dla którego ta kolejność została policzona
   let lastTapAt = 0;
   let reorderTimer = null;
 
-  function groupOf(dog){ const g = GROUP[dog.status]; return g === undefined ? 0 : g; }
+  function statusRank(dog){ const r = STATUS_RANK[dog.status]; return r === undefined ? 0 : r; }
 
   function canReorder(){
     if(pendingKeys.size || queue.length || inflight.size) return false;
@@ -348,15 +423,26 @@
    * jest przed nami, a nie za nami. Dopiero wewnątrz tego samego dorobku idzie
    * status (wolny przed zarezerwowanym przed wyprowadzonym), a na końcu kolejność
    * z arkusza. Dla psów jednospacerowych daje to dokładnie to, co dotąd.
+   *
+   * Przejście strzałką na inny dzień to cała NOWA lista, nie pies uciekający
+   * spod palca — kolejność liczymy wtedy od razu, bez czekania na ciszę.
+   *
+   * Psy w grupie trzymają się razem: cały blok stoi tam, gdzie stanąłby jej
+   * najpilniejszy pies, a w środku bloku obowiązuje ta sama kolejność co wszędzie.
    */
   function orderedDogs(){
-    if(canReorder()){
-      const base = new Map(state.dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
-      order = state.dogs.slice()
-        .sort((a,b)=> walksDone(a)-walksDone(b) || groupOf(a)-groupOf(b) || base.get(a.id)-base.get(b.id))
-        .map(d=>d.id);
+    const dogs = dogsAt(state.date);
+    if(orderDate !== state.date || canReorder()){
+      const base = new Map(dogs.map((d,i)=>[d.id,i]));   // remisy rozstrzyga kolejność z arkusza
+      const own  = d => [walksDone(d), statusRank(d), base.get(d.id)];
+      const cmp  = (x,y) => { for(let i=0;i<x.length;i++){ if(x[i]!==y[i]) return x[i]-y[i]; } return 0; };
+      const lead = {};                                      // grupa -> klucz jej najpilniejszego psa
+      dogs.forEach(d=>{ if(d.group && (!lead[d.group] || cmp(own(d), lead[d.group]) < 0)) lead[d.group] = own(d); });
+      const key  = d => (d.group ? lead[d.group] : own(d)).concat(own(d));
+      order = dogs.slice().sort((a,b)=>cmp(key(a), key(b))).map(d=>d.id);
+      orderDate = state.date;
     }
-    const byId = new Map(state.dogs.map(d=>[d.id,d]));
+    const byId = new Map(dogs.map(d=>[d.id,d]));
     const out = [];
     order.forEach(id=>{ const d = byId.get(id); if(d){ out.push(d); byId.delete(id); } });
     byId.forEach(d=>out.push(d));   // pies spoza zapamiętanej kolejności (np. świeżo dodany) na koniec
@@ -374,24 +460,39 @@
    */
   let lastHtml = null;
   function invalidateHtml(){ lastHtml = null; }   // po ręcznej zmianie DOM poza render()
+  const RESCUE_GAP_MS = 15000;                    // ratunkowe odświeżenie po wywrotce renderu — nie częściej
+  let rescueAt = 0;
 
   function render(){
     try{
       document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.view));
+      const tabs = document.getElementById('adminTabs');
+      if(tabs) tabs.classList.toggle('hidden', !state.admin);
       const tabDiag = document.getElementById('tabDiag');
       if(tabDiag) tabDiag.classList.toggle('hidden', !state.admin);
       gear.classList.toggle('on',state.admin);
+      // tryb edycji to zarządzanie katalogiem, nie praca na konkretnym dniu — bez wyboru daty
+      const bar = document.getElementById('dateBar');
+      if(bar) bar.classList.toggle('hidden', state.admin);
+      renderDateBar();
+      renderSelectBar();
 
-      const html = state.view==='history' ? renderHistory()
-                 : state.view==='diag'    ? renderDiagView()
-                 : renderToday();
+      const html = state.view==='diag' ? renderDiagView()
+                 : state.admin         ? renderCatalog()
+                 : renderDay();
       if(html !== lastHtml){ viewEl.innerHTML = html; lastHtml = html; }
     } catch(e){
       // Zamrożony interfejs jest niedopuszczalny: pokaż komunikat i dosynchronizuj.
+      // Ratunkowe odświeżenie najwyżej raz na RESCUE_GAP_MS: błąd, który powtarza się
+      // przy każdym rysowaniu (np. zepsuty wiersz w arkuszu), zamieniał się w pętlę
+      // getData z każdego telefonu naraz. Zwykłe odświeżanie co 15 s idzie dalej.
       viewEl.innerHTML = '<div class="empty">Coś poszło nie tak — odświeżam dane…</div>';
       lastHtml = null;
       needRefresh = true;
-      if(!isSending() && !queue.length) refresh();
+      if(Date.now() - rescueAt > RESCUE_GAP_MS && !isSending() && !queue.length){
+        rescueAt = Date.now();
+        refresh();
+      }
     }
   }
 
@@ -401,21 +502,88 @@
    * przy każdym kliknięciu — na telefonie to widoczne szarpnięcie.
    */
   function patchDog(id){
-    if(state.view!=='today' || state.editId!==null){ render(); return; }
-    const li  = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
-    const dog = findDog(id);
-    if(!li || !dog){ render(); return; }
-    li.outerHTML = renderDog(dog);
+    if(state.view!=='today' || state.admin || state.select || state.editId!==null || isPast(state.date)){ render(); return; }
+    const dog = dogAt(id, state.date);
+    if(!dog){ render(); return; }
+    // pies w grupie zmienia też kafelki towarzyszy: od jego stanu zależy, czy grupa
+    // może już ruszyć (przycisk „Wyprowadzony ✓" i podpowiedź, na kogo czekamy)
+    const ids = dog.group ? groupMates(state.date, dog.group).map(d=>d.id) : [id];
+    for(const x of ids){
+      const li = viewEl.querySelector(`li.dog[data-dog="${x}"]`);
+      if(!li){ render(); return; }
+      li.outerHTML = renderDog(dogAt(x, state.date));
+    }
     const cnt = viewEl.querySelector('.count');
     if(cnt) cnt.innerHTML = countLine();
     invalidateHtml();
   }
 
-  /** Odznaka "pies nie wyszedł poprzedniego dnia" na podstawie kolumny ostatni_spacer. */
+  /* ---------- pasek dnia ---------- */
+  const WEEKDAYS = ['niedziela','poniedziałek','wtorek','środa','czwartek','piątek','sobota'];
+  function fmtDay(iso){
+    // T12:00 zamiast północy — data nie przeskoczy na sąsiedni dzień przy dziwnej strefie telefonu
+    try{ return new Intl.DateTimeFormat('pl-PL',{day:'numeric',month:'long',year:'numeric'}).format(new Date(iso+'T12:00:00')); }
+    catch(e){ return iso; }
+  }
+  /** "dziś" / "jutro" / "wczoraj" / "za 3 dni" / "3 dni temu" — względem kalendarza, nie dnia rezerwacyjnego. */
+  function relDay(iso){
+    if(!state.today) return '';
+    const n = dayDiff(state.today, iso);
+    if(isNaN(n)) return '';
+    if(n===0) return 'dziś';
+    if(n===1) return 'jutro';
+    if(n===-1) return 'wczoraj';
+    return n>0 ? `za ${n} ${plural(n,'dzień','dni','dni')}` : `${-n} ${plural(-n,'dzień','dni','dni')} temu`;
+  }
+  /**
+   * Pasek żyje poza #view, więc nie bierze udziału w porównywaniu HTML listy —
+   * zmiana dnia to tylko kilka textContent. Poza bieżącym dniem etykieta
+   * jaśnieje i podpowiada powrót: wystarczy w nią stuknąć.
+   */
+  function renderDateBar(){
+    const name = document.getElementById('dayName');
+    const rel  = document.getElementById('dayRel');
+    const lab  = document.getElementById('dayLabel');
+    if(!name || !rel || !lab) return;
+    if(!state.date){ name.textContent='…'; rel.textContent=''; return; }
+    name.textContent = fmtDay(state.date);
+    const bits = [WEEKDAYS[new Date(state.date+'T12:00:00Z').getUTCDay()]];
+    const r = relDay(state.date);
+    if(r) bits.push(r);
+    if(state.date !== state.bizDate) bits.push('↩ wróć');
+    rel.textContent = bits.join(' · ');
+    lab.classList.toggle('away', state.date !== state.bizDate);
+    lab.classList.toggle('past', isPast(state.date));
+  }
+
+  /**
+   * Ostatni spacer psa: z katalogu (dopisuje go nocne czyszczenie) albo z dni,
+   * których czyszczenie jeszcze nie domknęło — między godziną resetu a chwilą,
+   * w której Google faktycznie odpali wyzwalacz, mija do godziny.
+   */
+  function lastWalkOf(dog){
+    let last = dog.lastWalk || '';
+    for(const k in state.walks){
+      const i = k.indexOf('|'), date = k.slice(0, i);
+      if(Number(k.slice(i+1))!==dog.id || !isPast(date)) continue;
+      const w = state.walks[k];
+      if((w.status==='walked' || w.who1) && date > last) last = date;
+    }
+    return last;
+  }
+
+  /**
+   * Odznaka "pies nie wyszedł poprzedniego dnia". Tylko na bieżącym dniu i liczona
+   * względem niego: po resecie pracujemy już na jutrze, więc „wczoraj" to dzień,
+   * który właśnie się skończył. Na dniach przyszłych nie ma sensu — do nich jeszcze
+   * wszystko może się zmienić.
+   */
   function missBadge(dog){
-    if(dog.status==='walked') return '';
-    const n = daysAgo(dog.lastWalk);
-    if(n===null || n<2) return '';                       // wczoraj wyszedł albo brak danych
+    if(state.date!==state.bizDate || dog.status==='walked') return '';
+    const last = lastWalkOf(dog);
+    if(!last || !state.bizDate) return '';
+    const n = dayDiff(last, state.bizDate);
+    if(isNaN(n) || n<2) return '';                       // wczoraj wyszedł albo brak danych
     const txt = n===2 ? 'wczoraj bez spaceru' : `bez spaceru od ${n-1} dni`;
     return `<span class="miss">⚠ ${txt}</span>`;
   }
@@ -428,6 +596,7 @@
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
     const pills=[];
+    if(dog.group) pills.push(groupPill(dog.group));
     if(dog.walks===2){
       const done=walksDone(dog);
       pills.push(`<span class="twice">🐾 spacery ${done}/2</span>`);
@@ -441,8 +610,15 @@
 
   const WEEKDAY_TO = ['niedzieli','poniedziałku','wtorku','środy','czwartku','piątku','soboty'];
 
-  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08". */
+  /**
+   * Termin notatki „nigdy" — ta sama wartość, co NOTE_FOREVER w Config.gs. Notatka
+   * nie znika przy żadnym czyszczeniu, dopóki ktoś jej nie skasuje.
+   */
+  const NOTE_FOREVER = 'nigdy';
+
+  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08" / "na stałe". */
   function untilLabel(iso){
+    if(iso === NOTE_FOREVER) return 'na stałe';
     const d = new Date(iso+'T12:00:00');
     if(isNaN(d.getTime())) return '';
     const ago = daysAgo(iso);
@@ -457,37 +633,105 @@
   /**
    * Notatka przy psie. Bez terminu znika przy najbliższym czyszczeniu (domyślnie),
    * z terminem dostaje odznakę i dotrwa do wskazanego dnia włącznie.
+   *
+   * Przy przeglądaniu dni ta sama reguła mówi, GDZIE ją pokazać: bez terminu —
+   * tylko na bieżącym dniu („zdjęcia o 12:00" nie dotyczy soboty), z terminem —
+   * na każdym dniu do terminu włącznie; „nigdy" — na każdym dniu.
    */
-  function dogNote(dog){
+  function noteShownOn(dog, date){
+    if(!dog.note) return false;
+    if(dog.noteUntil === NOTE_FOREVER) return true;
+    return dog.noteUntil ? date <= dog.noteUntil : date === state.bizDate;
+  }
+  /**
+   * Czy notatka ma WŁASNY termin. Notatka „bez terminu" dostaje od serwera termin =
+   * dzień rezerwacyjny, w którym ją zapisano (patrz noteUntil_) — dla oka to wciąż
+   * „do czyszczenia": bez odznaki i z pustym polem daty w edycji.
+   */
+  function noteDated(dog){
+    return !!dog.noteUntil && (dog.noteUntil === NOTE_FOREVER || !state.bizDate || dog.noteUntil > state.bizDate);
+  }
+  function noteHtml(dog){
     if(!dog.note) return '';
-    const lab = dog.noteUntil ? untilLabel(dog.noteUntil) : '';
+    const lab = noteDated(dog) ? untilLabel(dog.noteUntil) : '';
     const pill = lab ? ` <span class="until">${esc(lab)}</span>` : '';
     return `<div class="note">📌 ${esc(dog.note)}${pill}</div>`;
   }
+  function dogNote(dog){ return noteShownOn(dog, state.date) ? noteHtml(dog) : ''; }
 
-  function renderTasks(){
-    if(!state.tasks.length && !state.admin) return '';
-    let html=`<div class="tasksbox"><h3>Zadania na dziś</h3>`;
-    if(!state.tasks.length) html+=`<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
-    state.tasks.forEach(t=>{
-      const n=daysAgo(t.date);
-      const age = (n && n>0) ? `<span class="age">${n===1?'od wczoraj':`od ${n} dni`}</span>` : '';
-      const del = state.admin ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
-      const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
-      html+=`<div class="task ${t.done?'done':''}" data-act="taskToggle" data-id="${t.id}">
-        <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${age}${del}</div>`;
-    });
-    if(state.admin){
-      html+=`<div class="entry">
+  /* ---------- zadania ----------
+     Każde zadanie ma dzień, od którego się pokazuje. Na bieżącym dniu widać
+     wszystko, co ma swój dzień dziś albo wcześniej (nieodhaczone przechodzą dalej,
+     odhaczone wiszą do czyszczenia). Na przyszłym — tylko zaplanowane dokładnie
+     na ten dzień, bez odhaczania: to się robi w jego dniu. Na minionym — nic. */
+  function tasksFor(date){
+    if(date === state.bizDate) return state.tasks.filter(t => !t.date || t.date <= date);
+    if(isFuture(date)) return state.tasks.filter(t => t.date === date);
+    return [];
+  }
+  function canTickTask(t){ return !t.date || !isFuture(t.date); }
+
+  /** Wiek zadania względem bieżącego dnia listy: '' / 'od wczoraj' / 'od N dni'. */
+  function taskAge(t){
+    if(!t.date || !state.bizDate) return '';
+    const n = dayDiff(t.date, state.bizDate);
+    return n>0 ? (n===1 ? 'od wczoraj' : `od ${n} dni`) : '';
+  }
+
+  const WEEKDAY_ON = ['niedzielę','poniedziałek','wtorek','środę','czwartek','piątek','sobotę'];
+  /** "na sobotę 26.09" — przy zadaniu zaplanowanym na później. */
+  function taskPlanned(t){
+    const d = new Date(t.date+'T12:00:00Z');
+    if(isNaN(d.getTime())) return '';
+    return `na ${WEEKDAY_ON[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  }
+
+  function taskRow(t, removable){
+    const tick = canTickTask(t);
+    const badge = !tick ? `<span class="plan">${esc(taskPlanned(t))}</span>`
+                : taskAge(t) ? `<span class="age">${taskAge(t)}</span>` : '';
+    const del  = removable ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+    const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
+    const act  = tick ? ` data-act="taskToggle" data-id="${t.id}"` : '';
+    return `<div class="task${t.done?' done':''}${tick?'':' planned'}"${act}>
+      <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${badge}${del}</div>`;
+  }
+
+  /** Zadania na liście dnia — dla wolontariuszy. Pusto = bez ramki, jak dotąd. */
+  function renderTasks(date){
+    const list = tasksFor(date);
+    if(!list.length) return '';
+    const title = date === state.bizDate ? 'Zadania' : 'Zadania zaplanowane na ten dzień';
+    return `<div class="tasksbox"><h3>${title}</h3>${list.map(t=>taskRow(t, false)).join('')}</div>`;
+  }
+
+  /**
+   * Zadania w trybie edycji: wszystkie, po kolei według dnia, z usuwaniem
+   * i dodawaniem na wybrany dzień. Formularz to NIE `.entry` — patrz busyEditing().
+   */
+  function renderTaskAdmin(){
+    const list = state.tasks.slice().sort((a,b)=> String(a.date||'') < String(b.date||'') ? -1
+                                                 : String(a.date||'') > String(b.date||'') ? 1 : 0);
+    let html = `<div class="tasksbox"><h3>Zadania</h3>`;
+    if(!list.length) html += `<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
+    html += list.map(t=>taskRow(t, true)).join('');
+    html += `<div class="taskform">
         <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)">
-        <button class="btn add-btn" data-act="taskAdd">Dodaj</button></div>`;
-    }
-    return html+`</div>`;
+        <div class="taskform-row">
+          <label for="newTaskDate">od dnia</label>
+          <input type="date" id="newTaskDate" value="${esc(state.bizDate||'')}" min="${esc(state.bizDate||'')}">
+          <button class="btn add-btn" data-act="taskAdd">Dodaj</button>
+        </div>
+      </div>
+      <div class="hint">Zadanie pojawi się na liście dopiero w wybranym dniu; nieodhaczone przechodzi na kolejne dni.</div>
+    </div>`;
+    return html;
   }
 
   function renderEditForm(dog){
     const opts=Object.keys(DIF).map(k=>
       `<option value="${k}" ${dog.dif===k?'selected':''}>${DIF[k].label}</option>`).join('');
+    const forever = dog.noteUntil === NOTE_FOREVER;
     return `<li class="dog" style="border-left-color:${(DIF[dog.dif]||DIF.easy).color}">
       <div class="row"><span class="name">Edycja: ${esc(dogLabel(dog))}</span></div>
       <div class="editform">
@@ -501,7 +745,11 @@
           <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka (np. zdjęcia o 12:00)">
         </div>
         <div class="adminrow">
-          <input type="date" data-ef="noteUntil" value="${esc(dog.noteUntil||'')}" min="${esc(state.today||'')}">
+          <input type="date" data-ef="noteUntil" value="${esc(forever || !noteDated(dog) ? '' : dog.noteUntil)}"
+                 min="${esc(state.today||'')}" ${forever?'disabled':''}>
+          <label class="check"><input type="checkbox" data-ef="noteForever" ${forever?'checked':''}> nigdy nie znika</label>
+        </div>
+        <div class="adminrow">
           <select data-ef="walks">
             <option value="1" ${dog.walks!==2?'selected':''}>1 spacer dziennie</option>
             <option value="2" ${dog.walks===2?'selected':''}>2 spacery dziennie</option>
@@ -509,7 +757,8 @@
         </div>
         <div class="hint">Pusta data = notatka znika przy najbliższym czyszczeniu, jak dotąd.
         Datę ustaw tylko wtedy, gdy notatka ma dotrwać do konkretnego dnia — np. w środę
-        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.</div>
+        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.
+        „Nigdy nie znika" — notatka zostaje, dopóki ktoś jej sam nie skasuje.</div>
         <div class="adminrow">
           <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
           <button class="btn ghost" data-act="editCancel">Anuluj</button>
@@ -520,16 +769,15 @@
   function renderDog(dog){
     const dm=DIF[dog.dif]||DIF.easy;
     const label=esc(dogLabel(dog))
-      + (isPending(keyDog(dog.id)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
-    const difChip=`<span class="dif" style="color:${dm.color};background:${dm.color}1a">
-      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
-    const adm = state.admin
-      ? `<button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
-         <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button>` : '';
+      + (isPending(keyDog(dog.id, state.date)) ? ' <span class="saving" title="zapisuję…"></span>' : '');
+    const difChip=difChipHtml(dm);
+    const adm='';   // edycja psa żyje w katalogu (tryb edycji), nie na liście dnia
     const meta=dogMeta(dog)+dogNote(dog);
+    const style=tileStyle(dog, dm);
+    const pk=pickBits(dog);
 
     if(dog.status==='free'){
-      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      return `<li class="dog${pk.cls}" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status"><button class="btn reserve" data-act="reserve" data-id="${dog.id}">Zarezerwuj</button>${
@@ -538,25 +786,73 @@
         <div class="entry hidden" data-entry="${dog.id}">
           <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}">
           <button class="btn reserve" data-act="confirm" data-id="${dog.id}">OK</button>
-        </div></li>`;
+        </div>${pk.box}</li>`;
     }
     if(dog.status==='reserved'){
-      return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      // w przyszłości nie ma czego odhaczać — rezerwację można tylko zwolnić
+      let walkBtn = '', wait = '';
+      if(!isFuture(state.date)){
+        // spacer grupowy rusza dopiero, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna
+        const waiting = dog.group ? groupWaiting(state.date, dog.group) : [];
+        walkBtn = waiting.length
+          ? `<button class="btn walk" disabled>Wyprowadzony ✓</button>`
+          : `<button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>`;
+        if(waiting.length) wait = `<div class="grpwait">Grupa czeka na rezerwację: ${waiting.map(d=>esc(dogLabel(d))).join(', ')}</div>`;
+      }
+      return `<li class="dog${pk.cls}" data-dog="${dog.id}" style="${style}">
         <div class="row"><span class="name">${label}</span>
           <span class="resv-pill">zarezerwowany</span><span class="flex"></span>${difChip}${adm}</div>
         ${meta}
         <div class="status">
           <span class="who"><span class="dot"></span>${esc(dog.who)}</span><span class="spacer"></span>
-          <button class="btn walk" data-act="walk" data-id="${dog.id}">Wyprowadzony ✓</button>
+          ${walkBtn}
           <button class="btn ghost" data-act="free" data-id="${dog.id}">Zwolnij</button>
-        </div></li>`;
+        </div>${wait}${pk.box}</li>`;
     }
-    return `<li class="dog walked" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+    return `<li class="dog walked${pk.cls}" data-dog="${dog.id}" style="${style}">
       <div class="row"><span class="name done">${label}</span><span class="flex"></span>${difChip}${adm}</div>
       ${meta}
       <div class="status"><span class="who">✓ ${esc(dog.who)}</span>
         <button class="btn ghost spacer" data-act="free" data-id="${dog.id}">Cofnij</button>
-      </div></li>`;
+      </div>${pk.box}</li>`;
+  }
+
+  function difChipHtml(dm){
+    return `<span class="dif" style="color:${dm.color};background:${dm.color}1a">
+      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
+  }
+
+  /**
+   * Pies w katalogu (tryb edycji): kim jest, bez stanu żadnego dnia — tu się psy
+   * dodaje, poprawia i usuwa, a nie rezerwuje. Kolejność stała, z arkusza, żeby
+   * nic nie przeskakiwało w trakcie poprawiania.
+   */
+  function renderCatalogDog(dog){
+    const dm=DIF[dog.dif]||DIF.easy;
+    const bits=[];
+    if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
+    if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
+    const pill = dog.walks===2 ? `<span class="twice">🐾 2 spacery dziennie</span>` : '';
+    const meta = (pill || bits.length)
+      ? `<div class="dogmeta">${pill}${pill&&bits.length?' ':''}${bits.join(' · ')}</div>` : '';
+    return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
+      <div class="row"><span class="name">${esc(dogLabel(dog))}</span><span class="flex"></span>${difChipHtml(dm)}
+        <button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
+        <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button></div>
+      ${meta}${noteHtml(dog)}</li>`;
+  }
+
+  /** Tryb edycji: zadania, katalog psów, dodawanie psa. Bez dat i bez rezerwacji. */
+  function renderCatalog(){
+    if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
+    const n = state.dogs.length;
+    let html = `${renderTaskAdmin()}
+      <div class="count"><b>${n}</b> ${plural(n,'pies','psy','psów')} w katalogu</div>
+      <ul>`;
+    state.dogs.forEach(dog=>{
+      html += state.editId===dog.id ? renderEditForm(dog) : renderCatalogDog(dog);
+    });
+    return html + `</ul>` + renderAdminAddBox();
   }
 
   function renderAdminAddBox(){
@@ -580,13 +876,23 @@
 
   /** Podsumowanie nad listą — osobno, bo podmieniamy je też przy patchDog(). */
   function countLine(){
-    const c = st => state.dogs.filter(x=>x.status===st).length;
+    const dogs = dogsAt(state.date);
+    const c = st => dogs.filter(x=>x.status===st).length;
     return `<b>${c('reserved')}</b> zarezerwowane · <b>${c('walked')}</b> wyprowadzone · <b>${c('free')}</b> wolne`;
   }
 
-  function renderToday(){
-    if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
+  /**
+   * Widok wybranego dnia. Bieżący — jak dotąd, z zadaniami. Przyszły — ta sama
+   * lista, ale tylko rezerwacje (spacer odhacza się w dniu spaceru) i zadania
+   * zaplanowane na ten dzień. Miniony — wyłącznie podgląd tego, co zapisała Historia.
+   */
+  function renderDay(){
+    if(!state.loaded || !state.date) return '<div class="empty">Ładowanie…</div>';
+    if(isPast(state.date)) return renderPastDay(state.date);
     const d=orderedDogs();
+    const hint = state.date===state.bizDate ? ''
+      : `<div class="dayhint">Rezerwacja z wyprzedzeniem — spacer odhaczysz w dniu spaceru.</div>`;
+    const top = hint + renderTasks(state.date);
 
     let html=`
       <div class="diflegend">
@@ -594,15 +900,11 @@
         <span><span class="dot" style="background:${DIF.med.color}"></span>wymagający</span>
         <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
       </div>
-      ${renderTasks()}
+      ${top}
       <div class="count">${countLine()}</div>
       <ul>`;
-    d.forEach(dog=>{
-      html += (state.admin && state.editId===dog.id) ? renderEditForm(dog) : renderDog(dog);
-    });
-    html+=`</ul>`;
-    if(state.admin) html+=renderAdminAddBox();
-    return html;
+    d.forEach(dog=>{ html += renderDog(dog); });
+    return html + `</ul>`;
   }
 
   /* =========================================================
@@ -628,9 +930,13 @@
           <label class="lbl" for="resetHour">Godzina czyszczenia listy</label>
           <select id="resetHour">${hourOptions(state.resetHour)}</select>
         </div>
-        <div class="hint">Reset wykonuje się w ciągu tej godziny (Google uruchamia wyzwalacze
-        w oknie ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59).
-        Wtedy spacery trafiają do Historii, psy wracają na „wolny", a notatki znikają.</div>
+        <div class="hint">Od ${String(state.resetHour).padStart(2,'0')}:00 lista pracuje już na kolejnym
+        dniu — wcześniej można jeszcze rezerwować na dzień, który trwa. Zamknięty dzień trafia do
+        Historii w ciągu tej godziny (Google uruchamia wyzwalacze w oknie
+        ${String(state.resetHour).padStart(2,'0')}:00–${String(state.resetHour).padStart(2,'0')}:59),
+        a notatki bez terminu znikają. Uwaga: godzina, która dziś już minęła, przełącza listę
+        na jutro od razu. Zmiana, która cofnęłaby listę na dzień już zamknięty (np. z wieczornej
+        na poranną późnym wieczorem), zostanie odrzucona — wtedy ustaw ją po nowej godzinie.</div>
       </div>
       <div class="panelbox">
         <h3>Spacery dla wszystkich psów</h3>
@@ -649,6 +955,7 @@
       <div class="diagrow"><b>wyzwalacz resetu</b><span>${d.triggerInstalled ? 'aktywny ('+d.triggerCount+')' : 'BRAK — uruchom installTriggers()'}</span></div>
       <div class="diagrow"><b>godzina resetu</b><span>${String(d.resetHour).padStart(2,'0')}:00</span></div>
       <div class="diagrow"><b>czas serwera</b><span>${esc(d.serverDate)} ${esc(d.serverTime)}</span></div>
+      <div class="diagrow"><b>dzień rezerwacyjny</b><span>${esc(d.businessDate || '')}</span></div>
       <div class="diagrow"><b>strefa</b><span>${esc(d.timezone)}</span></div>
       <div class="diagrow"><b>psy / zadania</b><span>${d.dogCount} / ${d.taskCount}</span></div>
       <div class="diagrow"><b>wpisy historii</b><span>${d.histCount}</span></div>`
@@ -680,83 +987,409 @@
       .getDiagnostics(state.pin);
   }
 
-  function renderHistory(){
-    if(!state.history.length) return '<div class="empty">Brak zapisanych dni jeszcze.</div>';
-    const byDate={};
-    state.history.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
-    const dates=Object.keys(byDate).sort().reverse();
-    let html='';
-    dates.forEach(dt=>{
-      const items=byDate[dt];
-      html+=`<div class="hist-day"><div class="hist-date">${fmtDate(dt)} — ${items.length} spacerów</div>`;
-      items.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
-      html+=`</div>`;
-    });
-    // bez tej linijki starsze dni wyglądałyby na skasowane, a one po prostu zostały w arkuszu
-    html+=`<div class="hist-note">Pokazane ostatnie ${state.historyDays} dni. Pełny zapis jest w arkuszu.</div>`;
-    return html;
+  /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
+  function minutesOf(t){ const m=String(t||'').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
+
+  /**
+   * Miniony dzień — tylko podgląd, zastępuje dawną zakładkę Historia. Pokazujemy
+   * to, co się faktycznie odbyło, po kolei w ciągu dnia; rezerwacje, z których
+   * nic nie wyszło, nie są częścią zapisu.
+   */
+  function renderPastDay(date){
+    const items = state.past[date];
+    let html = `<div class="dayhint">Miniony dzień — tylko podgląd.</div>`;
+    if(!items){
+      // brak danych = pobierz, niezależnie od tego, jak tu trafiliśmy: po przełomie dnia
+      // applyData czyści pamięć minionych dni, a ekran stał na „Wczytuję…" do strzałki
+      fetchPast(date);                     // sama pilnuje, żeby nie pytać podwójnie
+      return html + '<div class="empty">Wczytuję…</div>';
+    }
+    if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
+    const sorted = items.slice().sort((a,b)=>minutesOf(a.time)-minutesOf(b.time));
+    html += `<div class="hist-day"><div class="hist-date">${sorted.length} ${plural(sorted.length,'spacer','spacery','spacerów')}</div>`;
+    sorted.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    return html + `</div>`;
   }
+
+  /* =========================================================
+     GRUPY — spacery grupowe
+     Przytrzymanie kafelka włącza zaznaczanie psów do wspólnego spaceru.
+     Grupa jest na konkretny dzień i żyje na serwerze (kolumna `grupa` w Spacery),
+     więc każdy telefon widzi ją tak samo. Kolor wynika z numeru grupy tego dnia:
+     każda kolejna jest w innym, a na wszystkich telefonach w tym samym.
+
+     Grupa to JEDEN wspólny spacer. „Wyprowadzony ✓" na dowolnym psie z grupy odhacza
+     wszystkich zarezerwowanych — ale tylko wtedy, gdy nikt z grupy nie jest WOLNY
+     (każdy pies ma opiekuna). Nie „wszyscy zarezerwowani": w grupie bywa pies już
+     wyprowadzony (dołożony do składu po spacerze albo z innego telefonu), a „Zwolnij"
+     z grupy nie wyprowadza — dosłowna reguła zablokowałaby resztę bez wyjścia.
+     Zwolniony pies zostaje w grupie; cofnięty spacer i pierwszy z dwóch spacerów
+     wyprowadzają psa z grupy (leaveGroup). Cofnięcie cofa tylko jednego psa.
+     ========================================================= */
+  const GROUP_COLORS = [
+    {bg:'#ebe7fb', ink:'#5a45b0'},   // lawenda
+    {bg:'#e0edfa', ink:'#2c67a3'},   // błękit
+    {bg:'#fbe5ee', ink:'#a3336a'},   // róż
+    {bg:'#dcf2ee', ink:'#1e7568'},   // morski
+    {bg:'#f3e3f7', ink:'#86399a'},   // storczyk
+    {bg:'#e4e8ef', ink:'#465266'},   // łupek
+  ];
+  function groupColor(gid){
+    const n = GROUP_COLORS.length, i = (posInt(gid) || 1) - 1;
+    return GROUP_COLORS[i % n];
+  }
+  function groupMates(date, gid){ return dogsAt(date).filter(d => d.group === gid); }
+  /** Psy z grupy, które nie mają opiekuna — dopóki są, grupa nie może ruszyć. */
+  function groupWaiting(date, gid){ return groupMates(date, gid).filter(d => d.status === 'free'); }
+  /**
+   * Pies wychodzi z grupy — to samo, co leaveGroup_ na serwerze: cofnięty spacer albo
+   * pierwszy z dwóch (drugi to osobny spacer). Grupa, w której został jeden pies,
+   * przestaje być grupą. Zwraca dawnych towarzyszy — ich kafelki też trzeba przerysować.
+   */
+  function leaveGroup(date, id){
+    const g = walkOf(date, id).group;
+    if(!g) return [];
+    setWalk(date, id, Object.assign({}, walkOf(date, id), {group:0}));
+    touchGroup(date, id);
+    const left = groupMates(date, g).map(d=>d.id);
+    if(left.length===1){ state.walks[wkey(date, left[0])].group = 0; touchGroup(date, left[0]); }
+    return left;
+  }
+  /**
+   * Odpowiedź {dog} z akcji na psie — bez grupy. Skład zmieniają też akcje na INNYCH
+   * psach (spacer towarzysza, cofnięcie), więc odpowiedź wysłana przed nimi przywróciłaby
+   * rozwiązaną już grupę. Grupy przychodzą z setGroup i z odświeżenia (getData),
+   * a skutki własnych akcji klient liczy sam, tak jak serwer.
+   */
+  function applyDog(date, id, dog){
+    setWalk(date, id, Object.assign({}, dog, {group: walkOf(date, id).group}));
+  }
+  /** Kolejny numer grupy tego dnia — dokładnie tak samo liczy go serwer (setGroup). */
+  function nextGroupId(date){
+    let max = 0;
+    for(const k in state.walks){ if(k.indexOf(date+'|')===0 && state.walks[k].group > max) max = state.walks[k].group; }
+    return max + 1;
+  }
+  /**
+   * Znacznik obok delikatnego tła: w pełnym słońcu samo zabarwienie potrafi zniknąć,
+   * a przynależność do grupy decyduje o tym, czy pies może wyjść.
+   */
+  function groupPill(gid){
+    const c = groupColor(gid);
+    return `<span class="grp" style="color:${c.ink};border-color:${c.ink}55">👥 grupa</span>`;
+  }
+  function tileStyle(dog, dm){
+    return `border-left-color:${dm.color}` + (dog.group ? `;background:${groupColor(dog.group).bg}` : '');
+  }
+
+  /** Czy psa można zaznaczyć: po spacerze nie ma czego planować — chyba że już jest w tej grupie. */
+  function canPick(dog){
+    const sel = state.select;
+    return dog.status !== 'walked' || (sel.gid && dog.group === sel.gid);
+  }
+
+  /**
+   * Kafelek w trybie zaznaczania to TEN SAM kafelek co zwykle: dochodzi tylko klasa
+   * i kółko położone na wierzchu (position:absolute), a przyciski bledną. Osobny,
+   * krótszy kafelek skracał całą listę w chwili przytrzymania — wszystko nad palcem
+   * się kurczyło, a przytrzymany pies uciekał z ekranu.
+   */
+  function pickBits(dog){
+    const sel = state.select;
+    if(!sel) return {cls:'', box:''};
+    const picked = sel.ids.indexOf(dog.id) >= 0, can = canPick(dog);
+    return {
+      cls: ' pick' + (picked ? ' picked' : '') + (can ? '' : ' nopick'),
+      box: can ? `<span class="pickbox">${picked ? '✓' : ''}</span>` : '',
+    };
+  }
+
+  /**
+   * Pasek na dole ekranu zasłania ostatnie ~80 px. Jeśli przytrzymany pies stał
+   * właśnie tam, przesuwamy listę dokładnie o tyle, żeby wyszedł spod paska —
+   * i tylko wtedy.
+   */
+  function keepAboveBar(id){
+    const li = viewEl.querySelector(`li.dog[data-dog="${id}"]`);
+    const bar = document.getElementById('selectBar');
+    if(!li || !bar) return;
+    const top = bar.getBoundingClientRect().top, bottom = li.getBoundingClientRect().bottom;
+    if(top > 0 && bottom > top) window.scrollBy(0, bottom - top + 12);
+  }
+
+  /** Pasek na dole ekranu: ile zaznaczonych, „Grupa" wyszarzone do pierwszego towarzysza. */
+  function renderSelectBar(){
+    const bar = document.getElementById('selectBar');
+    if(!bar) return;
+    const sel = state.select;
+    const on = !!sel && state.view==='today' && !state.admin;
+    bar.classList.toggle('hidden', !on);
+    document.body.classList.toggle('selecting', on);
+    if(!on) return;
+    const n = sel.ids.length;
+    document.getElementById('selInfo').textContent = n < 2
+      ? 'Zaznacz psy do wspólnego spaceru'
+      : `Zaznaczone: ${n} ${plural(n,'pies','psy','psów')}`;
+    document.getElementById('selGroup').disabled = n < 2;
+    document.getElementById('selDissolve').classList.toggle('hidden', !sel.gid);
+  }
+
+  /**
+   * Start zaznaczania z przytrzymanego psa. Pies już w grupie — otwieramy jego grupę
+   * do zmiany składu albo rozwiązania. Pies po spacerze bez grupy — nie ma czego planować.
+   */
+  function startSelect(id){
+    if(state.admin || state.view!=='today' || isPast(state.date)) return;
+    const dog = dogAt(id, state.date);
+    if(!dog) return;
+    if(dog.group){
+      const ids = groupMates(state.date, dog.group).map(d=>d.id);
+      // `seen` — skład, który widać teraz na ekranie; serwer zdejmie tylko spośród niego
+      state.select = {date:state.date, anchor:id, gid:dog.group, ids, seen:ids.slice()};
+    } else {
+      if(dog.status === 'walked') return;
+      state.select = {date:state.date, anchor:id, gid:0, ids:[id], seen:[]};
+    }
+    render();
+    keepAboveBar(id);
+  }
+
+  /** Stuknięcie w kafelek podczas zaznaczania. Przytrzymany pies zostaje w grupie na stałe. */
+  function togglePick(e){
+    const li = e.target.closest && e.target.closest('li.dog[data-dog]');
+    if(!li) return;
+    const id = Number(li.dataset.dog), sel = state.select;
+    if(id === sel.anchor) return;
+    const dog = dogAt(id, sel.date);
+    if(!dog || !canPick(dog)) return;
+    const i = sel.ids.indexOf(id);
+    if(i >= 0) sel.ids.splice(i, 1); else sel.ids.push(id);
+    render();
+  }
+
+  function cancelSelect(){ state.select = null; render(); }
+
+  /**
+   * Lokalne zmiany grup psów z numerem kolejnym. Odpowiedź setGroup liczona na serwerze
+   * PRZED późniejszą lokalną zmianą (spacer towarzysza, cofnięcie) nie może jej cofnąć —
+   * inaczej przywracała rozwiązaną grupę do najbliższego odświeżenia (jak applyDog).
+   */
+  let groupSeq = 0;
+  const groupTouched = {};                          // wkey -> numer ostatniej lokalnej zmiany grupy
+  function touchGroup(date, id){ groupTouched[wkey(date, id)] = ++groupSeq; }
+
+  /**
+   * Numery grup z odpowiedzi serwera — tylko to pole, żeby nie cofnąć czyjejś rezerwacji
+   * w drodze. `since` = numer lokalnej zmiany, na którą to odpowiedź: psy zmienione
+   * lokalnie później zostają, jak są, a grupa, z której po tym został jeden pies, znika.
+   */
+  function applyGroups(date, res, since){
+    const got = {};
+    ((res && res.walks) || []).forEach(w => { if(w.date === date) got[w.dogId] = posInt(w.group); });
+    let skipped = false;
+    state.dogs.forEach(d => {
+      const k = wkey(date, d.id), g = got[d.id] || 0;
+      if(since !== undefined && (groupTouched[k] || 0) > since){ skipped = true; return; }
+      if(state.walks[k]) state.walks[k].group = g;
+      else if(g) setWalk(date, d.id, {group:g});
+    });
+    if(!skipped) return;
+    const count = {};
+    state.dogs.forEach(d => { const g = walkOf(date, d.id).group; if(g) count[g] = (count[g] || 0) + 1; });
+    state.dogs.forEach(d => { const w = state.walks[wkey(date, d.id)]; if(w && w.group && count[w.group] === 1) w.group = 0; });
+  }
+
+  /**
+   * Zatwierdzenie składu (albo rozwiązanie, gdy zostaje mniej niż dwa psy).
+   * Optymistycznie od razu: kolor i miejsce na liście — to, po co ktoś tę grupę robi,
+   * więc lista układa się natychmiast, a nie po ciszy (patrz orderedDogs).
+   */
+  function commitGroup(ids){
+    const sel = state.select;
+    if(!sel) return;
+    const date = sel.date;
+    const gid  = ids.length >= 2 ? (sel.gid || nextGroupId(date)) : 0;
+    const seen = sel.seen || [];
+    const local = {};                                   // stan lokalny taki, jaki zrobi serwer
+    state.dogs.forEach(d => { local[d.id] = walkOf(date, d.id).group; });
+    // z grupy zdejmujemy tylko psy, które było widać przy otwarciu zaznaczania (jak setGroup)
+    if(sel.gid) Object.keys(local).forEach(id => {
+      if(local[id] === sel.gid && ids.indexOf(Number(id)) < 0 && seen.indexOf(Number(id)) >= 0) local[id] = 0;
+    });
+    const touched = {};
+    if(sel.gid) touched[sel.gid] = true;
+    ids.forEach(id => { if(local[id] && local[id] !== gid) touched[local[id]] = true; local[id] = gid; });
+    Object.keys(touched).forEach(g => {
+      const left = Object.keys(local).filter(id => local[id] === Number(g));
+      if(left.length === 1) local[left[0]] = 0;
+    });
+    state.dogs.forEach(d => { if(local[d.id] !== walkOf(date, d.id).group) touchGroup(date, d.id); });
+    applyGroups(date, {walks: Object.keys(local).map(id => ({date, dogId:Number(id), group:local[id]}))});
+    const since = groupSeq;                             // późniejsze lokalne zmiany mają pierwszeństwo przed odpowiedzią
+
+    state.select = null;
+    orderDate = null;
+    render();
+    enqueue('setGroup', [date, ids.length >= 2 ? ids : [], sel.gid || 0, seen], {key:'group@'+date, reconcile:res=>{
+      applyGroups(date, res, since);
+      if(date === state.date) safeRender();
+    }});
+  }
+  function confirmGroup(){ if(state.select && state.select.ids.length >= 2) commitGroup(state.select.ids.slice()); }
+  function dissolveGroup(){ if(state.select && state.select.gid) commitGroup([]); }
+
+  /** „Wyprowadzony ✓" na psie z grupy: odhacza wszystkich zarezerwowanych naraz. */
+  function doGroupWalk(gid){
+    const date = state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date !== state.bizDate) return;
+    const mates = groupMates(date, gid);
+    if(mates.some(d => d.status === 'free')) return;      // przycisk jest wtedy wyłączony
+    // każdy pies osobno, przez zwykłe markWalked — ten sam, sprawdzony i ponawialny zapis
+    mates.filter(d => d.status === 'reserved').forEach(d => doWalk(d.id));
+  }
+
+  /* ---------- przytrzymanie kafelka ----------
+     Liczymy od pointerdown, nie od click (bug nr 6). Przesunięcie palca (przewijanie
+     listy) albo puszczenie przed czasem przerywa. Na kafelku wyłączamy systemowe menu
+     i zaznaczanie tekstu, które telefon podpina pod to samo przytrzymanie. */
+  const LONG_PRESS_MS = 550;
+  let lpTimer = null, lpStart = null;
+  function lpCancel(){ clearTimeout(lpTimer); lpTimer = null; lpStart = null; }
+  function lpBegin(e){
+    if(state.admin || state.select || state.view!=='today' || isPast(state.date)) return;
+    const t = e.target;
+    if(!t || !t.closest || t.closest('input')) return;   // pole imienia — zwykłe zachowanie
+    const li = t.closest('li.dog[data-dog]');
+    if(!li) return;
+    const id = Number(li.dataset.dog);
+    lpStart = {x:e.clientX || 0, y:e.clientY || 0};
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(()=>{ lpTimer = null; startSelect(id); }, LONG_PRESS_MS);
+  }
+  function lpMove(e){
+    if(!lpTimer || !lpStart) return;
+    if(Math.abs((e.clientX||0) - lpStart.x) > 10 || Math.abs((e.clientY||0) - lpStart.y) > 10) lpCancel();
+  }
+  viewEl.addEventListener('pointerdown', lpBegin);
+  viewEl.addEventListener('pointermove', lpMove);
+  ['pointerup','pointercancel','pointerleave'].forEach(t => viewEl.addEventListener(t, lpCancel));
+  if(!window.PointerEvent){                                  // starsze WebView
+    const pt = e => (e.touches && e.touches[0]) || {};
+    viewEl.addEventListener('touchstart', e => lpBegin({target:e.target, clientX:pt(e).clientX, clientY:pt(e).clientY}));
+    viewEl.addEventListener('touchmove',  e => lpMove({clientX:pt(e).clientX, clientY:pt(e).clientY}));
+    ['touchend','touchcancel'].forEach(t => viewEl.addEventListener(t, lpCancel));
+  }
+  viewEl.addEventListener('contextmenu', e => { if(e.target.closest && e.target.closest('li.dog')) e.preventDefault(); });
+
+  document.getElementById('selCancel').addEventListener('click', cancelSelect);
+  document.getElementById('selGroup').addEventListener('click', confirmGroup);
+  document.getElementById('selDissolve').addEventListener('click', dissolveGroup);
 
   /* =========================================================
      AKCJE (optymistyczne: najpierw lokalny stan i render,
      potem zapis w tle; ewentualna korekta po odpowiedzi)
      ========================================================= */
+  /*
+   * Każda akcja zapamiętuje SWÓJ dzień w chwili kliknięcia i wysyła go serwerowi.
+   * Odpowiedź wraca do tego dnia, nawet jeśli wolontariusz zdążył w międzyczasie
+   * przejść strzałką gdzie indziej — kafelek przerysowujemy tylko wtedy, gdy ten
+   * dzień jest wciąż na ekranie.
+   */
+  /**
+   * Dzień zamknął się pod palcami: ktoś wpisywał imię o 19:59, reset minął,
+   * a on stuka OK. Po cichu nic nie zrobić = zamrożony ekran w jego oczach —
+   * mówimy wprost i przechodzimy na bieżący dzień.
+   */
+  function dayClosed(){
+    toast('Ten dzień jest już zamknięty — przechodzę na bieżący');
+    goDate(state.bizDate);
+  }
+
   function doReserve(id, who){
-    const dog=findDog(id); if(!dog || dog.status!=='free') return;
-    dog.status='reserved'; dog.who=who; dog.time='';
+    const date=state.date;
+    if(!date) return;
+    if(isPast(date)){ dayClosed(); return; }
+    const w=walkOf(date, id); if(!findDog(id) || w.status!=='free') return;
+    setWalk(date, id, Object.assign({}, w, {status:'reserved', who, time:''}));
     patchDog(id);
-    enqueue('reserve',[id,who],{key:keyDog(id),reconcile:res=>{
+    enqueue('reserve',[id,who,date],{key:keyDog(id,date),reconcile:res=>{
       if(!res || !res.dog){ safeRender(); return; }
-      replaceDog(res.dog);
+      applyDog(date, id, res.dog);
       if(!(res.dog.status==='reserved' && res.dog.who===who)){
         toast('Ubiegł Cię ktoś inny — pies już zajęty');
-        patchDog(id);           // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
-      } else if(!busyEditing()) patchDog(id);
+        if(date===state.date) patchDog(id);   // konflikt pokazujemy od razu, nawet gdy ktoś pisze imię
+      } else if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doWalk(id){
-    const dog=findDog(id); if(!dog) return;
+    const date=state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date!==state.bizDate) return;           // spacer odhacza się tylko w dniu, który trwa
+    const dog=dogAt(id, date); if(!dog) return;
     // KTÓRY to spacer — wiemy tylko tutaj, w chwili kliknięcia, i musimy to powiedzieć
     // serwerowi. Bez tego automatyczne ponowienie po zaginionej odpowiedzi robiło
     // z pierwszego spaceru pełne 2/2 z pustym "kto" (markWalked jest w RETRIABLE).
     const first = dog.walks===2 && !dog.who1;
+    const w=Object.assign({}, walkOf(date, id));
     if(first){
       // pierwszy z dwóch spacerów: zapisz i zwolnij psa na drugi
-      dog.who1=dog.who; dog.time1=localHM();
-      dog.status='free'; dog.who=''; dog.time='';
+      w.who1=w.who; w.time1=localHM();
+      w.status='free'; w.who=''; w.time='';
     } else {
-      dog.status='walked'; dog.time=localHM();
+      w.status='walked'; w.time=localHM();
     }
+    setWalk(date, id, w);
+    const mates = first ? leaveGroup(date, id) : [];   // drugi spacer to osobny spacer — i osobna grupa
     patchDog(id);
-    enqueue('markWalked',[id,'',first?1:2],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    mates.forEach(x=>patchDog(x));
+    enqueue('markWalked',[id,'',first?1:2,date],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) applyDog(date, id, res.dog);
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doUndoFirst(id){
-    const dog=findDog(id); if(!dog || !dog.who1) return;
-    dog.who1=''; dog.time1='';
+    const date=state.date;
+    if(isPast(date)){ dayClosed(); return; }
+    if(date!==state.bizDate) return;
+    const w=walkOf(date, id); if(!findDog(id) || !w.who1) return;
+    setWalk(date, id, Object.assign({}, w, {who1:'', time1:''}));
     patchDog(id);
-    enqueue('undoFirstWalk',[id],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    enqueue('undoFirstWalk',[id,date],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) applyDog(date, id, res.dog);
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
+  /**
+   * „Zwolnij" (rezerwacja) albo „Cofnij" (spacer) — dokładnie jak setFree na serwerze.
+   * Zwolniony pies zostaje w grupie, a grupa znów czeka na jego rezerwację. Cofnięty
+   * wychodzi z grupy (leaveGroup): kafelki dawnych towarzyszy też się wtedy zmieniają.
+   */
   function doFree(id){
-    const dog=findDog(id); if(!dog) return;
-    dog.status='free'; dog.who=''; dog.time='';
+    const date=state.date;
+    if(!date || !findDog(id)) return;
+    if(isPast(date)){ dayClosed(); return; }
+    const w=walkOf(date, id);
+    const undo=w.status==='walked';
+    // co zwalniamy: serwer zwolni tylko ten stan — powtórka po zaginionej odpowiedzi
+    // nie zwolni rezerwacji, którą w międzyczasie zrobił ktoś inny (setFree w RETRIABLE)
+    const seen={status:w.status, who:w.who};
+    setWalk(date, id, Object.assign({}, w, {status:'free', who:'', time:''}));
+    const mates=undo ? leaveGroup(date, id) : [];
     patchDog(id);
-    enqueue('setFree',[id],{key:keyDog(id),reconcile:res=>{
-      if(res && res.dog) replaceDog(res.dog);
-      if(!busyEditing()) patchDog(id);
+    mates.forEach(x=>patchDog(x));
+    enqueue('setFree',[id,date,seen],{key:keyDog(id,date),reconcile:res=>{
+      if(res && res.dog) applyDog(date, id, res.dog);
+      if(res && res.dog && res.dog.status!=='free') toast('Pies ma już innego opiekuna — pokazuję aktualny stan');
+      if(date===state.date && !busyEditing()) patchDog(id);
     }});
   }
 
   function doTaskToggle(id){
-    const t=state.tasks.find(x=>x.id===id); if(!t) return;
+    const t=state.tasks.find(x=>x.id===id); if(!t || !canTickTask(t)) return;   // przyszłe — w ich dniu
     t.done=!t.done;
     render();
     enqueue('setTaskDone',[id,t.done],{key:keyTask(id)});
@@ -767,12 +1400,31 @@
      ========================================================= */
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
-    state.view=t.dataset.tab; render();
-    if(state.view==='history') fetchHistory();
+    state.view=t.dataset.tab; state.select=null; render();
     if(state.view==='diag') fetchDiag();
   });
 
+  /**
+   * Przejście na inny dzień. Wolno swobodnie w obie strony; w tył to podgląd,
+   * do przodu — rezerwacje. Otwarta edycja psa i zaznaczanie grupy dotyczą listy,
+   * którą właśnie opuszczamy, więc je zamykamy.
+   */
+  function goDate(iso){
+    if(!iso) return;
+    state.date = iso;
+    state.follow = (iso === state.bizDate);
+    state.view = 'today';
+    state.editId = null;
+    state.select = null;
+    render();
+    if(isPast(iso)) fetchPast(iso);
+  }
+  document.getElementById('prevDay').addEventListener('click',()=>{ if(state.date) goDate(addDays(state.date,-1)); });
+  document.getElementById('nextDay').addEventListener('click',()=>{ if(state.date) goDate(addDays(state.date,1)); });
+  document.getElementById('dayLabel').addEventListener('click',()=>{ if(state.bizDate) goDate(state.bizDate); });
+
   gear.addEventListener('click',()=>{
+    if(state.select){ state.select=null; render(); }
     if(state.admin){
       state.admin=false; state.editId=null; state.diag=null;
       if(state.view==='diag') state.view='today';   // zakładka znika razem z trybem edycji
@@ -797,6 +1449,7 @@
 
   /** Wartość pola formularza edycji psa. */
   function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
+  function efChecked(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return !!(el && el.checked); }
 
   /** Otwiera pole "Twoje imię" przy jednym psie, zamykając wszystkie inne. */
   function openEntry(id, clickedBtn){
@@ -813,8 +1466,14 @@
     if(input.value) input.select();                      // ...łatwa do nadpisania
   }
 
-  /** Zmiana godziny czyszczenia — select nie emituje 'click', tylko 'change'. */
+  /** Zmiana godziny czyszczenia i przełącznik „nigdy nie znika" — to 'change', nie 'click'. */
   viewEl.addEventListener('change',e=>{
+    if(e.target.matches && e.target.matches('[data-ef="noteForever"]')){
+      // notatka na stałe nie ma terminu — pole daty wyłączamy, żeby nie udawało, że coś znaczy
+      const until = viewEl.querySelector('[data-ef="noteUntil"]');
+      if(until) until.disabled = e.target.checked;
+      return;
+    }
     if(e.target.id!=='resetHour') return;
     const h = Number(e.target.value);
     state.resetHour = h; showResetHour();          // optymistycznie: etykiety od razu
@@ -825,6 +1484,9 @@
   });
 
   viewEl.addEventListener('click',e=>{
+    // podczas zaznaczania grupy stuknięcie w kafelek tylko go zaznacza — żadnych
+    // rezerwacji ani spacerów „przy okazji", także z puszczenia przytrzymanego palca
+    if(state.select){ try{ togglePick(e); }catch(err){ cancelSelect(); } return; }
     try{ handleAction(e); }
     catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!isSending() && !queue.length) refresh(); }
   });
@@ -842,7 +1504,10 @@
       lastWho = val;
       doReserve(id, val);
     }
-    if(act==='walk') doWalk(id);
+    if(act==='walk'){
+      const dog=dogAt(id, state.date);
+      if(dog && dog.group) doGroupWalk(dog.group); else doWalk(id);
+    }
     if(act==='free') doFree(id);
     if(act==='undoFirst') doUndoFirst(id);
 
@@ -854,10 +1519,11 @@
     if(act==='editCancel'){ state.editId=null; render(); }
     if(act==='editSave'){
       const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),
-                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,noteUntil:ef('noteUntil')};
+                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,
+                    noteUntil: efChecked('noteForever') ? NOTE_FOREVER : ef('noteUntil')};
       if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
-      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // data bez notatki nic nie znaczy
-      if(fields.noteUntil && state.today && fields.noteUntil < state.today){
+      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // termin bez notatki nic nie znaczy
+      if(fields.noteUntil && fields.noteUntil!==NOTE_FOREVER && state.today && fields.noteUntil < state.today){
         toast('Data notatki nie może być z przeszłości'); return;
       }
       const dog=findDog(id);
@@ -884,8 +1550,14 @@
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }
+      const dateEl=document.getElementById('newTaskDate');
+      const date=(dateEl && dateEl.value) || state.bizDate;
+      if(state.bizDate && date < state.bizDate){ toast('Zadanie nie może być na dzień, który już minął'); return; }
       el.value='';
-      enqueue('addTask',[text,state.pin],{reconcile:applyFull_});
+      enqueue('addTask',[text,state.pin,date],{reconcile:res=>{
+        applyFull_(res);
+        if(isFuture(date)) toast('Zaplanowane ' + taskPlanned({date}));
+      }});
     }
     if(act==='allWalks'){
       const w = Number(btn.dataset.walks)===2 ? 2 : 1;
@@ -910,15 +1582,33 @@
     // przycisk mógł zniknąć między renderami — brak guzika nie może wywalić handlera
     const hit = sel => { const b = viewEl.querySelector(sel); if(b) b.click(); };
     if(e.target.matches('[data-input]')) hit(`[data-act="confirm"][data-id="${e.target.dataset.input}"]`);
-    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox') hit('[data-act="add"]');
-    if(e.target.id==='newTask') hit('[data-act="taskAdd"]');
+    // Enter z klawiatury telefonu zostawia fokus w polu, a fokus w polu to dla busyEditing()
+    // „ktoś pisze" — dodany pies czy zadanie nie pojawiały się, dopóki ktoś nie stuknął obok
+    // (dalszy ciąg buga nr 10). Wysłane pole oddaje fokus, jak po stuknięciu w przycisk.
+    if(e.target.id==='newName'||e.target.id==='newIdent'||e.target.id==='newBox'){ e.target.blur(); hit('[data-act="add"]'); }
+    if(e.target.id==='newTask'){ e.target.blur(); hit('[data-act="taskAdd"]'); }
   });
 
   /* =========================================================
      START + AUTO-ODŚWIEŻANIE + SAMOLECZENIE
      ========================================================= */
+  /**
+   * Stan wpisany w stronę przez serwer (bootJson_ w WebApp.gs) — lista rysuje się
+   * od razu, bez drugiego przelotu do serwera po załadowaniu strony. Brak, pusto
+   * albo coś nieczytelnego = zwykłe getData, jak dawniej.
+   */
+  function bootData(){
+    try{
+      const el = document.getElementById('boot');
+      const d = el ? JSON.parse(el.textContent) : null;
+      return d && Array.isArray(d.dogs) ? d : null;
+    } catch(e){ return null; }
+  }
+
   document.getElementById('today').textContent=todayStr();
-  refresh();
+  const boot = bootData();
+  if(boot){ applyData(boot); render(); }
+  else refresh();
   // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
   setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
   // strażnik zawieszonych zapisów: cyklicznie...

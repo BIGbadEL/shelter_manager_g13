@@ -25,22 +25,46 @@
 /** Nazwy zakładek arkusza. */
 const SHEETS = {
   DOGS:  'Psy',
+  WALKS: 'Spacery',
   HIST:  'Historia',
   TASKS: 'Zadania',
 };
 
-/** Zakładka Psy — numery kolumn (1 = A). */
+/**
+ * Zakładka Psy — KATALOG, czyli kim jest pies. Numery kolumn (1 = A).
+ *
+ * Kolumny STATUS, WHO, TIME, WHO1, TIME1 to pozostałość po modelu, w którym
+ * arkusz znał tylko jeden dzień i trzymał go wprost w wierszu psa. Od
+ * wprowadzenia dat stan dnia żyje w zakładce Spacery, a te kolumny czytamy
+ * wyłącznie RAZ — przy jednorazowym przeniesieniu stanu (importDayState_).
+ * Zostają w arkuszu, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
+ */
 const DOG = {
-  ID: 1, NAME: 2, IDENT: 3, BOX: 4, DIF: 5, STATUS: 6, WHO: 7, TIME: 8, LAST_WALK: 9,
+  ID: 1, NAME: 2, IDENT: 3, BOX: 4, DIF: 5,
+  STATUS: 6, WHO: 7, TIME: 8,   // stary model — patrz wyżej
+  LAST_WALK: 9,                 // data ostatniego spaceru (dopisuje ją nocne czyszczenie)
   NOTE: 10,       // notatka przy psie
   WALKS: 11,      // ile spacerów dziennie wymaga pies: 1 lub 2
-  WHO1: 12,       // kto odbył PIERWSZY z dwóch spacerów
-  TIME1: 13,      // o której odbył się pierwszy z dwóch spacerów
+  WHO1: 12,       // stary model — patrz wyżej
+  TIME1: 13,      // stary model — patrz wyżej
   NOTE_UNTIL: 14, // do kiedy notatka ma przeżyć czyszczenie ('' = do najbliższego)
 };
 const DOG_HEADERS = ['id', 'imie', 'identyfikator', 'boks', 'trudnosc', 'status', 'kto', 'godzina',
   'ostatni_spacer', 'notatka', 'spacery', 'kto1', 'godzina1', 'notatka_do'];
 const DOG_WIDTH = DOG_HEADERS.length;
+
+/**
+ * Zakładka Spacery — co się dzieje z psem KONKRETNEGO DNIA.
+ * Jeden wiersz na parę (data, pies); brak wiersza = pies tego dnia wolny.
+ * Trzyma wyłącznie dni otwarte (bieżący i przyszłe) — nocne czyszczenie
+ * przenosi dni zamknięte do Historii, więc zakładka zostaje mała.
+ */
+const WALK = {
+  DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7,
+  GROUP: 8,   // numer grupy (spaceru grupowego) tego dnia; puste = pies idzie sam
+};
+const WALK_HEADERS = ['data', 'pies_id', 'status', 'kto', 'godzina', 'kto1', 'godzina1', 'grupa'];
+const WALK_WIDTH = WALK_HEADERS.length;
 
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
@@ -56,6 +80,13 @@ const HIST_WIDTH = HIST_HEADERS.length;
 const STATUS = { FREE: 'free', RESERVED: 'reserved', WALKED: 'walked' };
 const DIFFICULTIES = ['easy', 'med', 'hard'];
 
+/**
+ * Termin notatki „nigdy" — notatka nie znika przy żadnym czyszczeniu, dopóki
+ * ktoś jej ręcznie nie skasuje. Trzymamy go w kolumnie notatka_do jako słowo,
+ * żeby w arkuszu czytało się to bez tłumaczenia. Interfejs zna tę samą wartość.
+ */
+const NOTE_FOREVER = 'nigdy';
+
 /** Limity długości pól (obrona przed wklejeniem elaboratu). */
 const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
 
@@ -63,12 +94,20 @@ const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
 const TIMEZONE = 'Europe/Warsaw';
 
 /**
- * Ile ostatnich dni Historii dostaje przeglądarka.
+ * Ile ostatnich dni Historii dostaje przeglądarka na raz.
  * Arkusz trzyma komplet i nic z niego nie znika — to tylko granica tego,
- * co ma sens ładować na telefon. Bez niej po roku szłoby tam kilkanaście
- * tysięcy wierszy przy każdym wejściu w zakładkę.
+ * co ma sens ładować na telefon. Minione dni przeglądane strzałką przychodzą
+ * blokami tej samej długości (getHistoryDays), a getHistory zostaje dla kart
+ * otwartych jeszcze przed wprowadzeniem dat.
  */
 const HISTORY_DAYS = 14;
+
+/**
+ * Jak daleko do przodu wolno rezerwować i planować grupy. Bez granicy dałoby się
+ * zapisać rok 9999 — taki wiersz jechałby do każdego telefonu w getData i nigdy by
+ * się nie domknął. Rok z zapasem wystarcza na każde planowanie w schronisku.
+ */
+const MAX_DAYS_AHEAD = 365;
 
 /**
  * Domyślna godzina nocnego czyszczenia listy (0–23).
