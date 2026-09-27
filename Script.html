@@ -201,7 +201,7 @@
       if(tapCount >= 5){
         tapCount = 0;
         state.view = (state.view==='diag') ? 'today' : 'diag';
-        render('self');
+        render('nav');
         if(state.view==='diag'){ toast('Panel diagnostyczny'); fetchDiag(); }
       }
     };
@@ -610,6 +610,9 @@
          przed przyłożeniem — z komunikatem,
        - ten kafelek zmienił się w tym samym oknie — cudzą ręką z komunikatem, własnym
          poprzednim stuknięciem po cichu (to podwójne stuknięcie: OK → „Zwolnij" pod palcem).
+     Zmiany z własnej nawigacji ('nav': strzałka dnia, zaznaczanie, zatwierdzenie grupy) nie
+     blokują — człowiek sam zmienił listę i na nią patrzy. Wcześniej szły jako 'self' i osłona
+     zjadała po cichu stuknięcie zaraz po strzałce (review PR #2, S98).
      Dotyczy tylko prawdziwych stuknięć (e.detail > 0) — Enter z klawiatury idzie zawsze. */
   let layoutSig = '', layoutVersion = 0, layoutMoved = {at:0, cause:'self'};
   const tileSeen = {};                         // id kafelka -> {html, at, cause}
@@ -634,13 +637,13 @@
   function tapRefused(e, btn){
     if(!(e.detail > 0) || !fingerDown || Date.now() - fingerDown.at > 1500) return false;
     if(!GUARDED.has(btn.dataset.act)) return false;
-    if(layoutMoved.cause !== 'self'
+    if(layoutMoved.cause !== 'self' && layoutMoved.cause !== 'nav'
        && (layoutVersion !== fingerDown.version || fingerDown.at - layoutMoved.at < T.tapGuard)){
       toast('Lista się przesunęła — sprawdź i stuknij jeszcze raz');
       return true;
     }
     const li = btn.closest('[data-tile]'), seen = li && tileSeen[li.dataset.tile];
-    if(seen && seen.at && seen.at > fingerDown.at - T.tapGuard){
+    if(seen && seen.at && seen.cause !== 'nav' && seen.at > fingerDown.at - T.tapGuard){
       if(seen.cause !== 'self') toast('Ten spacer właśnie się zmienił — sprawdź i stuknij jeszcze raz');
       return true;
     }
@@ -662,9 +665,10 @@
   let rescueAt = 0;
 
   /**
-   * `cause` — skąd zmiana: 'self' (własne działanie na tym telefonie: klik, strzałka,
-   * zatwierdzenie grupy) albo 'data' (odpowiedź serwera, odświeżenie). Przestawienie listy
-   * z zegara to 'reorder'. Od tego zależy osłona stuknięć (tapRefused).
+   * `cause` — skąd zmiana: 'self' (własne stuknięcie w akcję na kafelku), 'nav' (własna
+   * nawigacja: strzałka dnia, zakładki, zaznaczanie i zatwierdzenie grupy) albo 'data'
+   * (odpowiedź serwera, odświeżenie). Przestawienie listy z zegara to 'reorder'. Od tego
+   * zależy osłona stuknięć (tapRefused).
    */
   function render(cause){
     cause = cause || 'data';
@@ -1481,7 +1485,7 @@
       if(s.status === 'walked') return;
       state.select = {date:state.date, anchor:ref, gid:0, ids:[ref], seen:[]};
     }
-    render('self');
+    render('nav');
     keepAboveBar(ref);
   }
 
@@ -1495,15 +1499,15 @@
     if(!ref || ref === sel.anchor || !canPick(ref)) return;
     const id = parseRef(ref).id;
     const i = sel.ids.indexOf(ref);
-    if(i >= 0){ sel.ids.splice(i, 1); render('self'); return; }
+    if(i >= 0){ sel.ids.splice(i, 1); render('nav'); return; }
     const other = sel.ids.filter(x => parseRef(x).id === id)[0];
     if(other === sel.anchor) return;                  // przytrzymanego nie przenosimy
     if(other) sel.ids.splice(sel.ids.indexOf(other), 1);
     sel.ids.push(ref);
-    render('self');
+    render('nav');
   }
 
-  function cancelSelect(){ state.select = null; render('self'); }
+  function cancelSelect(){ state.select = null; render('nav'); }
 
   /**
    * Lokalne zmiany grup psów z numerem kolejnym. Odpowiedź setGroup liczona na serwerze
@@ -1576,7 +1580,7 @@
 
     state.select = null;
     orderDate = null;
-    render('self');
+    render('nav');
     enqueue('setGroup', [date, ids.length >= 2 ? ids : [], sel.gid || 0, seen], {key:'group@'+date, reconcile:res=>{
       applyGroups(date, res, since);
       if(date === state.date) safeRender();
@@ -1732,7 +1736,7 @@
      ========================================================= */
   document.querySelector('.tabs').addEventListener('click',e=>{
     const t=e.target.closest('.tab'); if(!t) return;
-    state.view=t.dataset.tab; state.select=null; render('self');
+    state.view=t.dataset.tab; state.select=null; render('nav');
     if(state.view==='diag') fetchDiag();
   });
 
@@ -1748,7 +1752,7 @@
     state.view = 'today';
     state.editId = null;
     state.select = null;
-    render('self');
+    render('nav');
     if(isPast(iso)) fetchPast(iso);
   }
   document.getElementById('prevDay').addEventListener('click',()=>{ if(state.date) goDate(addDays(state.date,-1)); });
@@ -1756,11 +1760,11 @@
   document.getElementById('dayLabel').addEventListener('click',()=>{ if(state.bizDate) goDate(state.bizDate); });
 
   gear.addEventListener('click',()=>{
-    if(state.select){ state.select=null; render('self'); }
+    if(state.select){ state.select=null; render('nav'); }
     if(state.admin){
       state.admin=false; state.editId=null; state.diag=null;
       if(state.view==='diag') state.view='today';   // zakładka znika razem z trybem edycji
-      render('self'); return;
+      render('nav'); return;
     }
     document.getElementById('pinrow').classList.toggle('hidden');
     document.getElementById('pinErr').classList.add('hidden');
@@ -1773,7 +1777,7 @@
     google.script.run.withSuccessHandler(ok=>{
       if(ok){ state.admin=true; state.pin=pin;
         document.getElementById('pinrow').classList.add('hidden');
-        document.getElementById('pinErr').classList.add('hidden'); render('self');
+        document.getElementById('pinErr').classList.add('hidden'); render('nav');
         if(state.view==='diag') fetchDiag();
       } else { document.getElementById('pinErr').classList.remove('hidden'); }
     }).checkPin(pin);

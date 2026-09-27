@@ -222,8 +222,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   gdy lista przesunęła się albo kafelek zmienił pod palcem (w oknie `T.tapGuard` przed
   przyłożeniem palca albo między przyłożeniem a kliknięciem) — z komunikatem, a przy własnym
   podwójnym stuknięciu po cichu. Tylko prawdziwe stuknięcia (`e.detail > 0`). Zmiany kafelków
-  i układu notują `noteTile`/`noteLayout` z przyczyną (`'self'`/`'data'`/`'reorder'`) —
-  dlatego `render(cause)` i `patchDog(id, cause)` dostają przyczynę (`'self'` = własne działanie).
+  i układu notują `noteTile`/`noteLayout` z przyczyną — dlatego `render(cause)` i
+  `patchDog(id, cause)` ją dostają: `'self'` = własne stuknięcie w akcję na kafelku (cisza
+  tylko dla tego kafelka), `'nav'` = własna nawigacja (strzałka, zakładki, zaznaczanie,
+  „Grupa", „Anuluj" — osłona pomija), `'data'`/`'reorder'` = z zewnątrz i z zegara (komunikat).
+  **Nowe `render` z własnej nawigacji → `'nav'`, nie `'self'`** — jako `'self'` osłona zjadała
+  po cichu stuknięcie zaraz po strzałce (review PR #2, S98). Tabela: SORTING.md §8.
 - **`pendingKeys`** liczy zapisy w drodze per byt. Odpowiedź serwera stosujemy tylko
   wtedy, gdy dotyczy **ostatniej** operacji dla tego bytu — inaczej szybkie sekwencje
   (rezerwuj → zwolnij) cofałyby się same.

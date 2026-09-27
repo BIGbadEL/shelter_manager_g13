@@ -285,8 +285,43 @@ async function S97(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S98(){
+  console.log('S98: stuknięcie zaraz po własnej strzałce, „Grupa" albo „Anuluj" działa — nic nie ginie po cichu');
+  const T2 = '2026-09-25';
+  const open = (a, id) => !!doc(a).querySelector(`[data-entry="${id}"]:not(.hidden)`);
+  // sonda z review: strzałka na następny dzień, potem „Zarezerwuj" — 0 ms i chwilę później
+  for(const gap of [0, TIMING.tapGuard - 50]){
+    const a = buildApp({timing:TIMING});
+    a.seed(base({dogs:[d1(1,'Azor'), d1(2,'Bari'), d1(3,'Cezar')],
+      slots:[sl(1,1,{status:'reserved', who:'Ola'}), Object.assign(sl(2,1,{status:'reserved', who:'Iza'}), {date:T2})]}));
+    doc(a).getElementById('nextDay').click();
+    if(gap) await sleep(gap);
+    tap(a, doc(a).querySelector('li[data-tile="m1"] [data-act="reserve"]'));   // Azor: 24.09 zajęty, 25.09 wolny
+    check(`strzałka, po ${gap} ms „Zarezerwuj": pole imienia otwarte`, S(a).date===T2 && open(a, 1) && toastTxt(a)==='',
+      S(a).date + ' | ' + toastTxt(a));
+    check('bez błędów', a.errors.length===0, a.errors.join('; '));
+  }
+
+  // zatwierdzenie grupy: kafelki tracą kółka zaznaczania, lista układa się od nowa
+  const g = buildApp({timing:TIMING});
+  g.seed(base({dogs:[d1(1,'Azor'), d1(2,'Bari'), d1(3,'Cezar')]}));
+  await press(g, tile(g, 'm1'));
+  tapEl(g, tile(g, 'm2'));
+  doc(g).getElementById('selGroup').click();
+  tap(g, doc(g).querySelector('li[data-tile="m3"] [data-act="reserve"]'));
+  check('„Grupa", zaraz potem „Zarezerwuj" obok: pole otwarte', !S(g).select && open(g, 3) && toastTxt(g)==='', toastTxt(g));
+
+  const c = buildApp({timing:TIMING});
+  c.seed(base({dogs:[d1(1,'Azor'), d1(2,'Bari')]}));
+  await press(c, tile(c, 'm1'));
+  doc(c).getElementById('selCancel').click();
+  tap(c, doc(c).querySelector('li[data-tile="m2"] [data-act="reserve"]'));
+  check('„Anuluj" zaznaczania, zaraz potem „Zarezerwuj": pole otwarte', !S(c).select && open(c, 2) && toastTxt(c)==='', toastTxt(c));
+  check('bez błędów', g.errors.length===0 && c.errors.length===0, g.errors.concat(c.errors).join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

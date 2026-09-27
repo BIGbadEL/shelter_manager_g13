@@ -176,7 +176,18 @@ ruchu (p. 7) przeglądarka **odrzuca stuknięcie** w akcję na spacerze (`tapRef
   własnym poprzednim stuknięciem — po cichu (to podwójne stuknięcie: „OK" → „Zwolnij").
 
 Dotyczy tylko prawdziwych stuknięć (`e.detail > 0`); Enter z klawiatury idzie zawsze.
-Zmiany wywołane własnym działaniem (strzałka dnia, zatwierdzenie grupy) nie blokują.
+
+Każda zmiana listy i kafelka jest notowana z przyczyną (`noteLayout`, `noteTile`):
+
+| przyczyna | skąd | osłona |
+|---|---|---|
+| `'data'`, `'reorder'` | odpowiedź serwera, odświeżenie, przestawienie z zegara | odrzuca z komunikatem |
+| `'self'` | własne stuknięcie w akcję na kafelku | ruch listy — nie; ten kafelek — po cichu (podwójne stuknięcie) |
+| `'nav'` | strzałka dnia, zakładki, zaznaczanie, „Grupa", „Anuluj" | nie blokuje |
+
+`'nav'` jest osobno, bo jako `'self'` osłona zjadała **po cichu** stuknięcie zaraz po
+strzałce (review PR #2: po 0 i 300 ms „Zarezerwuj" nie robiło nic, bez słowa — S98).
+Kto sam zmienił listę, patrzy na nową.
 
 ## 9. Przykłady
 
