@@ -807,21 +807,25 @@ function validWalks_(walks) {
  * liczbę, który ktoś zarezerwował albo odbył, zostaje (i dalej jest widoczny):
  * cudzej rezerwacji nie kasujemy po cichu, a odbyty spacer ma trafić do Historii.
  * Tylko dni otwarte. Pod blokadą.
+ *
+ * Najpierw jeden odczyt zakładki i wybór dni, w których jest co zmienić; dopiero te dni
+ * czytamy do zmiany (walkDay_). Dawniej każdy otwarty dzień osobno — przy każdym zapisie
+ * psa w katalogu i pod blokadą, a rezerwacje sięgają roku naprzód (review PR #2).
  */
 function trimSlots_(onlyId) {
   const dogs = {};
   readDogCatalog_().forEach(x => { dogs[x.id] = x; });
   const sh = walksSheetLocked_();
   const current = businessDate_();
+  const extra = s => {
+    const dog = dogs[s.dogId];
+    return dog && (!onlyId || s.dogId === onlyId) && s.slot > dog.walks && s.status === STATUS.FREE && s.group;
+  };
   const dates = {};
-  readSlots_(sh).forEach(s => { if (s.date >= current) dates[s.date] = true; });
+  readSlots_(sh).forEach(s => { if (s.date >= current && extra(s)) dates[s.date] = true; });
   Object.keys(dates).forEach(date => {
     const d = walkDay_(sh, date);
-    d.all().forEach(s => {
-      const dog = dogs[s.dogId];
-      if (!dog || (onlyId && s.dogId !== onlyId)) return;
-      if (s.slot > dog.walks && s.status === STATUS.FREE && s.group) leaveGroup_(d, d.slot(s.dogId, s.slot));
-    });
+    d.all().forEach(s => { if (extra(s)) leaveGroup_(d, d.slot(s.dogId, s.slot)); });
     d.save();
   });
 }

@@ -385,8 +385,46 @@ async function S100(){
     app.errors.concat(g.errors, z.errors).join('; '));
 }
 
+async function S101(){
+  console.log('S101: rysowanie nie zwalnia z rezerwacjami naprzód — i rysuje to samo co liczenie wprost');
+  const addDays = (iso, n) => { const p = iso.split('-').map(Number); return new Date(Date.UTC(p[0], p[1]-1, p[2]+n)).toISOString().slice(0,10); };
+  // indeks na czas rysowania = to samo, co liczone wprost: spacer ponad liczbę (po przestawieniu
+  // 2 -> 1), wolny spacer w grupie, ostatni spacer z niedomkniętego dnia (odznaka „bez spaceru")
+  const e = buildApp();
+  e.seed(base({dogs:[Object.assign(d1(1,'Azor'), {lastWalk:'2026-09-15'}), d1(2,'Bari'), d2(3,'Cezar'), d1(4,'Dino')],
+    slots:[Object.assign(sl(1,1,{status:'walked', who:'Ala'}), {date:'2026-09-21'}), sl(2,2,{status:'reserved', who:'Ola'}),
+           sl(3,2,{group:1}), sl(4,1,{status:'reserved', who:'Iza', group:1}), sl(4,2),   // 4:2 — wpis bez stanu
+           Object.assign(sl(2,1,{status:'reserved', who:'Ewa'}), {date:addDays(D, 40)})]}));
+  const direct = e.window.eval("renderDay('data')");
+  const memo   = e.window.eval("withSlotMemo(() => renderDay('data'))");
+  check('ten sam HTML z indeksem i bez', direct===memo && direct.length > 0);
+  check('(przygotowanie) są odznaka, spacer ponad liczbę i grupa', /bez spaceru od 2 dni/.test(direct)
+    && /data-slot="2"/.test(tile(e,'m2').outerHTML) && !!tile(e,'s3.2'), txt(tile(e,'m1')));
+
+  // czas pełnego rysowania: 30 psów, rezerwacje na 0 i na 365 dni naprzód
+  const timeFor = ahead => {
+    const dogs = [], slots = [];
+    for(let i = 1; i <= 30; i++){
+      dogs.push(i % 3 ? d2(i, 'Pies' + i) : d1(i, 'Pies' + i));
+      if(i % 5 === 0) slots.push(sl(i, 1, {status:'reserved', who:'Ola', group: i % 10 === 0 ? 1 : 2}));
+      for(let d = 1; d <= ahead; d++) if((i + d) % 3 === 0) slots.push(Object.assign(sl(i, 1, {status:'reserved', who:'Iza'}), {date:addDays(D, d)}));
+    }
+    const a = buildApp();
+    a.seed(base({dogs, slots}));
+    const run = () => a.window.eval("invalidateHtml(); render('data')");
+    for(let i = 0; i < 10; i++) run();
+    const times = [];
+    for(let k = 0; k < 7; k++){ const t0 = process.hrtime.bigint(); for(let i = 0; i < 10; i++) run(); times.push(Number(process.hrtime.bigint() - t0) / 1e7); }
+    return times.sort((x, y) => x - y)[3];
+  };
+  const t0 = timeFor(0), t365 = timeFor(365);
+  check('rok rezerwacji naprzód nie spowalnia rysowania dnia (mniej niż 3×)', t365 < 3 * t0,
+    `bez rezerwacji ${t0.toFixed(1)} ms, z rokiem rezerwacji ${t365.toFixed(1)} ms`);
+  check('bez błędów', e.errors.length===0, e.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

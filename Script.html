@@ -72,6 +72,7 @@
   /** Ile spacerów ma pies danego dnia — jak slotCount_ na serwerze (dalszy spacer ze stanem zostaje widoczny). */
   function slotCount(dog, date){
     let n = dog.walks===2 ? 2 : 1;
+    if(slotMemo) return Math.max(n, slotMemo.count.get(date+'|'+dog.id) || 0);
     const pre = date+'|'+dog.id+'|';
     for(const k in state.slots){
       if(k.indexOf(pre)!==0) continue;
@@ -82,9 +83,29 @@
   }
   /** Spacery psa danego dnia, od pierwszego: [{n, status, who, time, group}]. */
   function slotsOf(date, dog){
-    const out = [];
-    for(let n=1; n<=slotCount(dog, date); n++) out.push(Object.assign({n}, slotOf(date, dog.id, n)));
+    const out = [], count = slotCount(dog, date);
+    for(let n=1; n<=count; n++) out.push(Object.assign({n}, slotOf(date, dog.id, n)));
     return out;
+  }
+
+  /**
+   * Indeks spacerów na czas JEDNEGO rysowania (render, patchDog): ile spacerów ma pies danego
+   * dnia i kiedy ostatnio wyszedł. slotCount i lastWalkOf przeglądały przy każdym wywołaniu
+   * wszystkie spacery wszystkich dni — przy rezerwacjach na rok naprzód pełne rysowanie
+   * szło ze 20 do ponad 300 ms (review PR #2). W trakcie rysowania stan się nie zmienia,
+   * więc jeden przegląd wystarcza; poza rysowaniem liczymy jak dotąd, wprost ze stanu.
+   */
+  let slotMemo = null;
+  function withSlotMemo(fn){
+    if(slotMemo) return fn();
+    const count = new Map(), lastWalk = new Map();
+    for(const k in state.slots){
+      const p = k.split('|'), s = state.slots[k], key = p[0]+'|'+p[1], m = Number(p[2]);
+      if(hasState(s) && m > (count.get(key) || 0)) count.set(key, m);
+      if(s.status==='walked' && isPast(p[0]) && p[0] > (lastWalk.get(p[1]) || '')) lastWalk.set(p[1], p[0]);
+    }
+    slotMemo = {count, lastWalk};
+    try{ return fn(); } finally{ slotMemo = null; }
   }
   /** Odnośnik do spaceru w grupach i zaznaczaniu: 'pies:spacer' — ten sam, którego używa setGroup. */
   function sref(id, n){ return id+':'+n; }
@@ -690,7 +711,7 @@
 
       const html = state.view==='diag' ? renderDiagView()
                  : state.admin         ? renderCatalog()
-                 : renderDay(cause);
+                 : withSlotMemo(() => renderDay(cause));
       if(html !== lastHtml){ viewEl.innerHTML = html; lastHtml = html; }
       updateBusy();
     } catch(e){
@@ -717,7 +738,7 @@
    */
   function patchDog(id, cause){
     const typing = takeEntry();
-    patchTiles(id, cause || 'data');
+    withSlotMemo(() => patchTiles(id, cause || 'data'));
     putEntry(typing);
   }
 
@@ -819,6 +840,7 @@
    */
   function lastWalkOf(dog){
     let last = dog.lastWalk || '';
+    if(slotMemo){ const m = slotMemo.lastWalk.get(String(dog.id)) || ''; return m > last ? m : last; }
     for(const k in state.slots){
       const p = k.split('|');                      // data|pies|spacer
       if(Number(p[1])!==dog.id || !isPast(p[0])) continue;

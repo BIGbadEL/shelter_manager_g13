@@ -1323,5 +1323,25 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('nowy klient dalej dostaje `slots`', Array.isArray(r.slots) && r.slots.some(s => s.dogId===2 && s.slot===2 && s.group===r.group));
 })();
 
+/* ---------- B48: trimSlots_ czyta zakładkę raz, a nie raz na każdy otwarty dzień ---------- */
+(()=>{
+  console.log('B48: przycinanie spacerów po zmianie psa — jeden odczyt Spacery, zmiany tylko tam, gdzie trzeba');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna',walks:2},{id:3,name:'Rex'}]);
+  for(let i = 1; i <= 10; i++) env.api.reserve(1, 'Ala', env.api.addDays_(D, i), 1);   // rezerwacje na 10 dni
+  const sh = () => env.sheets['Spacery'];
+  const reads = fn => { const before = sh()._reads; env.api.withLock_(fn); return sh()._reads - before; };
+  check('nic do przycięcia: jeden odczyt zakładki', reads(() => env.ctx.__api.trimSlots_(1))===1,
+    String(reads(() => env.ctx.__api.trimSlots_(1))));
+  const T = env.api.addDays_(D, 5);
+  env.api.setGroup(T, ['2:2', '3:1'], 0);                                          // Luna po południu z Rexem
+  env.sheets['Psy']._data[2][env.conf.DOG.WALKS - 1] = 1;                          // Luna wraca do jednego spaceru
+  const n = reads(() => env.ctx.__api.trimSlots_(2));
+  check('jest co przyciąć: odczyt całości + ten jeden dzień', n===2, String(n));
+  check('wolny 2/2 Luny wyszedł z grupy, a Rex sam grupą nie jest', slotAt(env, 2, T, 2).group===0 && slotAt(env, 3, T, 1).group===0,
+    JSON.stringify([slotAt(env, 2, T, 2), slotAt(env, 3, T, 1)]));
+  check('rezerwacje na inne dni nietknięte', slotAt(env, 1, env.api.addDays_(D, 10), 1).who==='Ala');
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

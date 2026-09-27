@@ -107,7 +107,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `seen` = skład widziany przy otwarciu zaznaczania: zdejmujemy tylko spośród niego, a gdy pod
   `gid` stoi już inna grupa (numery wracają do obiegu), zmiana idzie jako nowa grupa (B36).
   Spacer przeniesiony z innej grupy znika z tamtej; grupa z jednym spacerem przestaje istnieć
-  (także po `removeDog` i po zmniejszeniu liczby spacerów — `trimSlots_`); spacer odbyty nie
+  (także po `removeDog` i po zmniejszeniu liczby spacerów — `trimSlots_`, jeden odczyt zakładki,
+  B48); spacer odbyty nie
   dołącza do nowej. **Nie jest w `RETRIABLE`** — nowa grupa bierze kolejny numer. Wspólny spacer
   to NIE osobny endpoint: klient woła zwykłe `markWalked` dla każdego zarezerwowanego spaceru.
   **Grupa to JEDEN wspólny spacer.** U psa dwuspacerowego 1/2 może iść rano z jedną grupą,
@@ -262,6 +263,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   pisze (konflikt rezerwacji), a przy dwóch polach na psa i kafelkach towarzyszy z grupy
   przerysowany kafelek to często nie ten, o który chodziło w odpowiedzi (review PR #2, S100).
   Pole wraca tylko, gdy jego spacer wciąż jest wolny.
+  **`withSlotMemo`**: na czas jednego rysowania (`render`, `patchDog`) liczba spacerów psa
+  danego dnia i jego ostatni spacer są liczone jednym przeglądem `state.slots`. Wcześniej
+  `slotCount`/`lastWalkOf` przeglądały wszystkie spacery wszystkich dni przy każdym wywołaniu:
+  z rezerwacjami na rok naprzód pełne rysowanie rosło w jsdom z ~22 do ~366 ms (S101 pilnuje
+  i czasu, i tego, że HTML z indeksem = HTML liczony wprost). Poza rysowaniem — liczenie wprost,
+  bo akcje zmieniają stan. **Nie zmieniaj `state.slots` w trakcie rysowania.**
 
 ## Testy — obowiązkowe przy każdej zmianie
 
