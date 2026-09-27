@@ -6,38 +6,57 @@ function check(name, cond, extra){
 }
 function drained(app){ const s=app.state(); return s.sending===false && s.queueLen===0 && s.pending.length===0; }
 const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
+/** Odpowiedź serwera na akcję na spacerze (nowy kształt: {slot}). */
+const slotRes = (n, o)=>({slot: Object.assign({slot:n, status:'free', who:'', time:'', group:0}, o)});
+const field = (app, n) => app.window.document.querySelector(`.slot[data-slot="${n}"]`);
+const txt = el => el ? el.textContent.replace(/\s+/g,' ').trim() : '(brak)';
 
 /* ---------- S15: pełny cykl psa 2-spacerowego ---------- */
 (()=>{
-  console.log('S15: dwa spacery — pełny cykl');
+  console.log('S15: dwa spacery — dwa osobne pola, każde z własnym przyciskiem');
   const app = buildApp();
   app.seed({dogs:[dog2()], tasks:[], today:'2026-07-08'});
-  check('pokazuje 0/2', /spacery 0\/2/.test(app.html()), app.html().slice(0,300));
+  check('dwa pola: 1/2 i 2/2, oba do rezerwacji', /1\/2/.test(txt(field(app,1))) && /2\/2/.test(txt(field(app,2)))
+    && !!field(app,1).querySelector('[data-act="reserve"]') && !!field(app,2).querySelector('[data-act="reserve"]'),
+    app.html().slice(0,500));
+  check('jeden kafelek psa, bez postępu „spacery 0/2"', app.window.document.querySelectorAll('li.dog').length===1
+    && !/spacery \d\/2/.test(app.html()));
 
-  // pierwszy spacer
-  app.click('[data-act="reserve"]'); app.type('[data-input="1"]','Ania'); app.click('[data-act="confirm"]');
-  app.respondNext({dog: dog2({status:'reserved',who:'Ania'})});
-  app.click('[data-act="walk"]');
-  check('po 1. spacerze pies znów WOLNY', /Zarezerwuj/.test(app.html()) && /spacery 1\/2/.test(app.html()));
-  check('widać kto odbył 1. spacer', /1\. spacer: Ania/.test(app.html()));
-  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});
+  // popołudnie zarezerwowane, zanim ktokolwiek wyszedł rano
+  app.click('[data-act="reserve"][data-slot="2"]'); app.type('[data-input="1"][data-slot="2"]','Bartek');
+  app.click('[data-act="confirm"][data-slot="2"]');
+  const r2 = app.pending[app.pending.length-1];
+  check('rezerwacja 2/2 niesie numer spaceru', r2.fn==='reserve' && r2.args[1]==='Bartek' && r2.args[3]===2, JSON.stringify(r2.args));
+  check('1/2 dalej wolny', !!field(app,1).querySelector('[data-act="reserve"]') && /Bartek/.test(txt(field(app,2))));
+  app.respondNext(slotRes(2, {status:'reserved', who:'Bartek'}));
 
-  // drugi spacer — inna osoba
-  app.click('[data-act="reserve"]'); app.type('[data-input="1"]','Bartek'); app.click('[data-act="confirm"]');
-  app.respondNext({dog: dog2({status:'reserved',who:'Bartek',who1:'Ania',time1:'10:15'})});
-  app.click('[data-act="walk"]');
-  check('po 2. spacerze status walked + 2/2', /spacery 2\/2/.test(app.html()) && /✓ Bartek/.test(app.html()));
-  app.respondNext({dog: dog2({status:'walked',who:'Bartek',time:'15:40',who1:'Ania',time1:'10:15'})});
+  app.click('[data-act="reserve"][data-slot="1"]'); app.type('[data-input="1"][data-slot="1"]','Ania');
+  app.click('[data-act="confirm"][data-slot="1"]');
+  app.respondNext(slotRes(1, {status:'reserved', who:'Ania'}));
+  check('dwie osoby przy jednym psie', /Ania/.test(txt(field(app,1))) && /Bartek/.test(txt(field(app,2))));
 
-  // Cofnij drugi spacer -> wraca do 1/2, pierwszy zachowany
-  app.click('[data-act="free"]');
-  check('Cofnij: znów wolny z 1/2', /spacery 1\/2/.test(app.html()) && /1\. spacer: Ania/.test(app.html()));
-  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});
+  app.click('[data-act="walk"][data-slot="1"]');
+  check('markWalked spaceru 1', app.pending[0].fn==='markWalked' && app.pending[0].args[2]===1, JSON.stringify(app.pending[0].args));
+  check('1/2 odbyty, 2/2 dalej zarezerwowany', /✓ Ania/.test(txt(field(app,1))) && /Bartek/.test(txt(field(app,2)))
+    && !!field(app,2).querySelector('[data-act="walk"]'));
+  app.respondNext(slotRes(1, {status:'walked', who:'Ania', time:'10:15'}));
 
-  // Cofnij 1. spacer (pomyłka) -> 0/2
-  app.click('[data-act="undoFirst"]');
-  check('Cofnij 1. spacer: 0/2', /spacery 0\/2/.test(app.html()) && !/1\. spacer/.test(app.html()));
-  app.respondNext({dog: dog2()});
+  app.click('[data-act="walk"][data-slot="2"]');
+  check('po 2. spacerze cały kafelek odbyty', /✓ Bartek/.test(txt(field(app,2)))
+    && app.window.document.querySelector('li.dog').classList.contains('walked'));
+  app.respondNext(slotRes(2, {status:'walked', who:'Bartek', time:'15:40'}));
+
+  app.click('[data-act="free"][data-slot="2"]');     // „Cofnij" drugiego
+  const f = app.pending[0];
+  check('Cofnij 2/2 — setFree z numerem i widzianym stanem', f.fn==='setFree' && f.args[3]===2
+    && JSON.stringify(f.args[2])==='{"status":"walked","who":"Bartek"}', JSON.stringify(f.args));
+  check('2/2 znów wolny, 1/2 zachowany', !!field(app,2).querySelector('[data-act="reserve"]') && /✓ Ania/.test(txt(field(app,1))));
+  app.respondNext(slotRes(2, {}));
+
+  app.click('[data-act="free"][data-slot="1"]');     // „Cofnij" pierwszego (pomyłka)
+  check('Cofnij 1/2 — oba wolne', !!field(app,1).querySelector('[data-act="reserve"]') && !!field(app,2).querySelector('[data-act="reserve"]'));
+  check('nie ma już osobnego „Cofnij 1. spacer"', !/undoFirst/.test(app.html()));
+  app.respondNext(slotRes(1, {}));
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
@@ -62,8 +81,8 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   app.respondNext({dogs:[dogFree({note:'Wyjazd na AW',walks:2})],tasks:[],today:'2026-07-08'});
   check('po serwerze bez zmian wizualnych', /📌 Wyjazd na AW/.test(app.html()) && /2 spacery dziennie/.test(app.html()));
   app.window.document.getElementById('gear').dispatchEvent(new app.window.Event('click',{bubbles:true}));
-  check('po wyjściu z edycji lista dnia pokazuje postęp 0/2',
-    /spacery 0\/2/.test(app.html()) && /📌 Wyjazd na AW/.test(app.html()), app.html().slice(0,400));
+  check('po wyjściu z edycji lista dnia pokazuje pola 1/2 i 2/2',
+    !!field(app,1) && !!field(app,2) && /📌 Wyjazd na AW/.test(app.html()), app.html().slice(0,400));
   check('kolejka pusta', drained(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
@@ -78,8 +97,8 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   app.window.document.dispatchEvent(new app.window.Event('pointerdown'));
   check('retry markWalked', app.shipped.filter(f=>f==='markWalked').length===2, app.shipped.join(','));
   app.pending.shift();
-  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});
-  check('1/2 po ratunku', /spacery 1\/2/.test(app.html()));
+  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});     // serwer sprzed spacerów: {dog} w starym kształcie
+  check('1/2 odbyty po ratunku, 2/2 wolny', /✓ Ania/.test(txt(field(app,1))) && !!field(app,2).querySelector('[data-act="reserve"]'));
   check('kolejka pusta', drained(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
@@ -116,23 +135,24 @@ const dog2 = (o)=>dogFree(Object.assign({walks:2},o));
   check('ponowienie z tym samym slotem',
     retry.fn==='markWalked' && retry.args[2]===1, JSON.stringify(retry.args));
   app.pending.shift();                                  // pierwsza odpowiedź już nie wróci
-  app.respondNext({dog: dog2({who1:'Ania',time1:'10:15'})});
+  app.respondNext(slotRes(1, {status:'walked', who:'Ania', time:'10:15'}));
 
   // drugi spacer — inna osoba
-  app.click('[data-act="reserve"]'); app.type('[data-input="1"]','Bartek'); app.click('[data-act="confirm"]');
-  app.respondNext({dog: dog2({status:'reserved',who:'Bartek',who1:'Ania',time1:'10:15'})});
-  app.click('[data-act="walk"]');
+  app.click('[data-act="reserve"][data-slot="2"]'); app.type('[data-input="1"][data-slot="2"]','Bartek');
+  app.click('[data-act="confirm"][data-slot="2"]');
+  app.respondNext(slotRes(2, {status:'reserved', who:'Bartek'}));
+  app.click('[data-act="walk"][data-slot="2"]');
   check('slot 2 przy drugim spacerze',
     app.pending[0].fn==='markWalked' && app.pending[0].args[2]===2, JSON.stringify(app.pending[0].args));
-  app.respondNext({dog: dog2({status:'walked',who:'Bartek',time:'15:40',who1:'Ania',time1:'10:15'})});
+  app.respondNext(slotRes(2, {status:'walked', who:'Bartek', time:'15:40'}));
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 
-  // pies 1-spacerowy zawsze odhacza ostatni spacer
+  // pies 1-spacerowy: jego jedyny spacer to spacer 1 (serwer przyjmuje też stare „2")
   const solo = buildApp();
   solo.seed({dogs:[dogReserved('Ala')], tasks:[], today:'2026-07-08'});
   solo.click('[data-act="walk"]');
-  check('pies 1-spacerowy: slot 2', solo.pending[0].args[2]===2, JSON.stringify(solo.pending[0].args));
+  check('pies 1-spacerowy: slot 1', solo.pending[0].args[2]===1, JSON.stringify(solo.pending[0].args));
   solo.respondNext({dog: dogWalked('Ala','14:00')});
   check('1-spacerowy bez błędów', solo.errors.length===0, solo.errors.join('; '));
 })();

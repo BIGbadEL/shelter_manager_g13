@@ -130,9 +130,14 @@ const tap = app => app.window.document.dispatchEvent(new app.window.Event('point
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-/* ---------- S47: przy dwóch spacerach liczy się dorobek, nie sam status ---------- */
+/* ---------- S47: lista z terenu — psy dwuspacerowe (reguły: SORTING.md) ---------- */
+// Wszystkie psy mają tu dwa spacery, więc o kolejności decyduje: czy któryś spacer czeka
+// na chętnego (Bibi i Ever mają wolne 2/2 — są w tej grupie, choć 1/2 zarezerwowany), potem
+// liczba odbytych spacerów (Finito 1/2 pod psami bez spaceru), a na dole to, co obsadzone
+// (Witkacy: 1/2 odbyty, 2/2 zarezerwowany) i odbyte (Siena). Ta sama kolejność co przed
+// przebudową — lista zgłoszona z terenu ma się układać tak samo.
 (()=>{
-  console.log('S47: pies po pierwszym spacerze schodzi pod psy bez spaceru');
+  console.log('S47: pies po pierwszym spacerze pod psami bez spaceru, obsadzony pod czekającymi');
   const app = buildApp();
   const d2 = o => dogFree(Object.assign({walks:2}, o));
 
@@ -158,8 +163,8 @@ const tap = app => app.window.document.dispatchEvent(new app.window.Event('point
   check('Finito (1/2) pod Everem (0/2)',    at(3) > at(8), ord(app));
   check('Witkacy (1/2) pod Bibi (0/2)',     at(6) > at(7), ord(app));
   check('Witkacy (1/2) pod Everem (0/2)',   at(6) > at(8), ord(app));
-  check('wolny przed zarezerwowanym w tym samym dorobku', at(5) < at(7), ord(app));
-  check('Finito (1/2) nad Witkacym (1/2, zajęty)', at(3) < at(6), ord(app));
+  check('Bibi (1/2 zarezerwowany, 2/2 wolny) wśród czekających — po Marvelu tylko przez kolejność z arkusza', at(5) < at(7), ord(app));
+  check('Finito (2/2 czeka) nad Witkacym (wszystko obsadzone)', at(3) < at(6), ord(app));
   check('komplet 2/2 na samym dole', at(9)===o.length-1, ord(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();

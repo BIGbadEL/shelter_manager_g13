@@ -12,7 +12,29 @@ const PROP_RESET_HOUR = 'resetHour';
 const PROP_PIN = 'pin';
 const PROP_ENV = 'env';
 const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesienia stanu dnia z Psy do Spacery
-const PROP_WALK_COLS = 'walkCols';             // szerokość zakładki Spacery, którą już sprawdziliśmy
+const PROP_WALKS_LAYOUT = 'walksLayout';       // układ zakładki Spacery, który już sprawdziliśmy ('2' = spacery)
+const PROP_VOL_PREFIX = 'vol:';                // 'vol:2026-09-27' -> kolory wolontariuszy tego dnia (JSON)
+
+/**
+ * Wszystkie właściwości skryptu — czytane RAZ na wykonanie. Każde getProperty to
+ * osobne wywołanie usługi z dziennym limitem, a getData leci co 15 s z każdego
+ * telefonu i pyta o kilka z nich. Zmienne globalne żyją jedno wykonanie, więc
+ * pamięć niczego nie przetrzymuje między żądaniami.
+ */
+let propsMemo_ = null;
+function props_() {
+  if (!propsMemo_) propsMemo_ = PropertiesService.getScriptProperties().getProperties() || {};
+  return propsMemo_;
+}
+function prop_(k) { const v = props_()[k]; return v === undefined ? null : v; }
+function setProp_(k, v) {
+  PropertiesService.getScriptProperties().setProperty(k, String(v));
+  if (propsMemo_) propsMemo_[k] = String(v);
+}
+function delProp_(k) {
+  PropertiesService.getScriptProperties().deleteProperty(k);
+  if (propsMemo_) delete propsMemo_[k];
+}
 
 /**
  * Które to środowisko. Liczy się dokładnie jedna wartość: `prod`.
@@ -26,7 +48,7 @@ const PROP_WALK_COLS = 'walkCols';             // szerokość zakładki Spacery,
  * daje pasek ostrzegawczy na produkcji: widać od razu i nikomu to nie szkodzi.
  */
 function env_() {
-  return String(PropertiesService.getScriptProperties().getProperty(PROP_ENV) || '');
+  return String(prop_(PROP_ENV) || '');
 }
 
 /**
@@ -35,12 +57,12 @@ function env_() {
  * od pierwszego commita (patrz komentarz w Config.gs).
  */
 function pin_() {
-  return String(PropertiesService.getScriptProperties().getProperty(PROP_PIN) || '');
+  return String(prop_(PROP_PIN) || '');
 }
 
 /** Godzina nocnego resetu (0–23). Brak ustawienia = wartość domyślna z Config.gs. */
 function resetHour_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(PROP_RESET_HOUR);
+  const raw = prop_(PROP_RESET_HOUR);
   const h = Number(raw);
   return (raw !== null && Number.isInteger(h) && h >= 0 && h <= 23) ? h : DEFAULT_RESET_HOUR;
 }
@@ -91,13 +113,12 @@ function validHour_(hour) {
 function setResetHour(hour, pin) {
   requirePin_(pin);
   const h = validHour_(hour);
-  const props = PropertiesService.getScriptProperties();
   return withLock_(() => {
     const before = businessDate_();
-    const old = props.getProperty(PROP_RESET_HOUR);
-    props.setProperty(PROP_RESET_HOUR, String(h));
+    const old = prop_(PROP_RESET_HOUR);
+    setProp_(PROP_RESET_HOUR, h);
     if (businessDate_() < before) {
-      if (old === null) props.deleteProperty(PROP_RESET_HOUR); else props.setProperty(PROP_RESET_HOUR, old);
+      if (old === null) delProp_(PROP_RESET_HOUR); else setProp_(PROP_RESET_HOUR, old);
       throw new Error('Teraz ta zmiana cofnęłaby listę na dzień już zamknięty — ustaw ją po '
                       + String(h).padStart(2, '0') + ':00');
     }

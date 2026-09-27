@@ -18,7 +18,6 @@
     <div class="meta">
       <span id="today">…</span>
       <span class="reset-note" id="resetNote">↺ czyści się o 22:00</span>
-      <span class="sync" id="sync"></span>
     </div>
     <div class="pinrow hidden" id="pinrow">
       <input type="password" inputmode="numeric" id="pinInput" placeholder="PIN">
@@ -46,6 +45,9 @@
   <div id="view"><div class="empty">Ładowanie…</div></div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- dymek „Zapisuję…" / „Aktualizuję…" — stuknięcie przyjęte, trwa zapis albo przestawienie listy -->
+  <div class="busy hidden" id="busy" role="status" aria-live="polite"><span id="busyTxt">Zapisuję</span><span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></div>
 
   <!-- tryb zaznaczania psów do spaceru grupowego (przytrzymanie kafelka) -->
   <div class="selectbar hidden" id="selectBar">

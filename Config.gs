@@ -54,17 +54,34 @@ const DOG_HEADERS = ['id', 'imie', 'identyfikator', 'boks', 'trudnosc', 'status'
 const DOG_WIDTH = DOG_HEADERS.length;
 
 /**
- * Zakładka Spacery — co się dzieje z psem KONKRETNEGO DNIA.
- * Jeden wiersz na parę (data, pies); brak wiersza = pies tego dnia wolny.
+ * Zakładka Spacery — co się dzieje z KONKRETNYM SPACEREM psa danego dnia.
+ * Jeden wiersz na trójkę (data, pies, numer spaceru); brak wiersza = ten spacer
+ * wolny i bez grupy. Pies na dwa spacery ma spacery 1 i 2 — każdy z własną
+ * rezerwacją, własnym „wyprowadzony" i własną grupą (patrz SORTING.md).
  * Trzyma wyłącznie dni otwarte (bieżący i przyszłe) — nocne czyszczenie
  * przenosi dni zamknięte do Historii, więc zakładka zostaje mała.
  */
 const WALK = {
-  DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7,
-  GROUP: 8,   // numer grupy (spaceru grupowego) tego dnia; puste = pies idzie sam
+  DATE: 1, DOG: 2,
+  SLOT: 3,    // który to spacer psa tego dnia: 1, 2, … (dziś najwyżej tyle, ile `spacery` w Psy)
+  STATUS: 4, WHO: 5, TIME: 6,
+  GROUP: 7,   // numer grupy (spaceru grupowego) tego dnia; puste = spacer bez grupy
 };
-const WALK_HEADERS = ['data', 'pies_id', 'status', 'kto', 'godzina', 'kto1', 'godzina1', 'grupa'];
+const WALK_HEADERS = ['data', 'pies_id', 'spacer', 'status', 'kto', 'godzina', 'grupa'];
 const WALK_WIDTH = WALK_HEADERS.length;
+
+/**
+ * Poprzedni układ zakładki Spacery (wiersz na psa, drugi spacer w kto1/godzina1).
+ * Czytany wyłącznie przy jednorazowym przepisaniu na układ ze spacerami
+ * (ensureWalksLayout_ w Dogs.gs). Bez kolumny grupa — jeszcze starszy wariant.
+ */
+const WALK_V1 = { DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7, GROUP: 8 };
+
+/**
+ * Ile kolorów mają wolontariusze. Dzień przydziela je po kolei (bez powtórek, dopóki
+ * starczy), a interfejs ma paletę dokładnie tej długości — pilnuje tego test.
+ */
+const VOLUNTEER_COLORS = 10;
 
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };

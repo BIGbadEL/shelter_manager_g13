@@ -18,6 +18,8 @@ function makeSheet(name, rows){
 
   const sheet = {
     _name: name, _data: data,
+    _formats: {},          // kolumna -> format ('@' = tekst) — bug z datą 1899 jest do sprawdzenia
+
     getName(){ return name; },
     getLastRow(){
       for(let i=data.length; i>0; i--){
@@ -52,7 +54,7 @@ function makeSheet(name, rows){
         },
         getValue(){ return cell(row, col)[col-1]; },
         setValue(v){ cell(row, col)[col-1] = v; },
-        setNumberFormat(){ return this; },
+        setNumberFormat(f){ for(let j=0;j<cols;j++) sheet._formats[col+j] = f; return this; },
       };
     },
   };
@@ -65,6 +67,7 @@ function makeContext(opts){
   // o godzinie resetu i testy muszą umieć przejść przez tę granicę w jednym scenariuszu
   let nowMs = opts.now ? Date.parse(opts.now) : Date.parse('2026-08-04T22:10:00+02:00');
   const props = Object.assign({}, opts.props);
+  let propReads = 0;
   const sheets = {};
   (opts.sheets||[]).forEach(s=>{ sheets[s.name] = makeSheet(s.name, s.rows); });
   const triggers = [];
@@ -100,7 +103,8 @@ function makeContext(opts){
     LockService: { getScriptLock: ()=>({ waitLock(){}, releaseLock(){} }) },
     PropertiesService: { getScriptProperties: ()=>({
       getProperty: k => (k in props ? props[k] : null),
-      setProperty: (k,v) => { props[k] = v; },
+      getProperties: () => { propReads++; return Object.assign({}, props); },
+      setProperty: (k,v) => { props[k] = String(v); },
       deleteProperty: k => { delete props[k]; },
     })},
     ScriptApp: {
@@ -131,14 +135,21 @@ function makeContext(opts){
                           checkPin, requirePin_, pin_, env_,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
-                          isDate_, posInt_ };
-    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD };
+                          isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_ };
+    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
+                           VOLUNTEER_COLORS, WALK };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
-    ;globalThis.__newExecution = () => { walkColsOk_ = false; lockDepth_ = 0; };
+    ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0; };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
   const setNow = iso => { nowMs = Date.parse(iso); };
-  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution };
+  // Każde wywołanie z testu = osobne wykonanie Apps Script, jak google.script.run z telefonu.
+  // Bez tego pamięć jednego wykonania (właściwości, sprawdzony układ zakładki) ciągnęłaby się
+  // przez cały scenariusz i testy nie widziałyby tego, co widzi prawdziwy serwer.
+  const api = {};
+  Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
+  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution,
+           propReads: () => propReads };
 }
 
 module.exports = { makeContext, makeSheet };

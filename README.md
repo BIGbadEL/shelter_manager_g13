@@ -18,12 +18,13 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios12`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios14`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
-- **Spacery** — stan psa konkretnego dnia: `data | pies_id | status | kto | godzina | kto1 | godzina1 | grupa`. Wiersz na parę (dzień, pies); brak wiersza = pies tego dnia wolny. Trzyma tylko dni otwarte. Kolumnę `grupa` aplikacja dokłada sama do zakładki założonej wcześniej.
+- **Spacery** — stan pojedynczego spaceru: `data | pies_id | spacer | status | kto | godzina | grupa`. Wiersz na (dzień, pies, numer spaceru); brak wiersza = ten spacer jest wolny. Pies na dwa spacery ma dwa niezależne spacery 1/2 i 2/2 — każdy z własną rezerwacją, osobą i grupą. Trzyma tylko dni otwarte. Zakładkę w starym układzie (wiersz na psa, drugi spacer w `kto1`/`godzina1`) aplikacja przepisuje sama przy pierwszym dostępie.
 - **Historia** — zamknięte dni: `data | pies | kto | godzina`
 - **Zadania** — `id | tresc | data | status`
 
@@ -198,7 +199,11 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, a zapis
 
 **Samoleczenie (odporność na zaginione odpowiedzi):** `google.script.run` na telefonie potrafi nigdy nie oddzwonić (uśpiona karta, mrugnięcie sieci). Warstwa niezawodności: watchdog **12 s** na każdy zapis; nieudany/zaginiony zapis idempotentny (rezerwacja, spacer, zwolnienie, odhaczenie, edycja, usunięcie) jest **raz automatycznie ponawiany**; wykrywanie zawieszenia działa nie tylko z timera (co 3 s), ale też przy **każdym dotknięciu ekranu** i powrocie do karty — bo przeglądarki mobilne usypiają timery w tle. Po definitywnej porażce stan jest przywracany ratunkowym `getData`. Dodatkowo: `render()` i obsługa kliknięć są opakowane w try/catch z samonaprawą (zamrożony interfejs jest niemożliwy), a wyjątek w reconcile nie może zablokować kolejki (tor jest zwalniany przed jakąkolwiek logiką odpowiedzi). Całość pokryta testami jsdom: 38 scenariuszy (w tym dokładnie „wyprowadzony → Cofnij → Zarezerwuj” z gubioną odpowiedzią) + fuzz 20 przebiegów losowych akcji z losowo gubionymi/opóźnianymi odpowiedziami.
 
-**Wygaszanie starych odpowiedzi**: każdy pies/zadanie ma licznik zapisów w drodze (`pendingKeys`). Odpowiedź serwera jest stosowana tylko wtedy, gdy dotyczy **ostatniej** operacji dla danego bytu — starsza odpowiedź (np. na „zarezerwuj”, gdy lokalnie już kliknięto „zwolnij”) jest ignorowana. Dzięki temu przy szybkich sekwencjach widok nigdy nie „przeskakuje” wstecz. Dopóki byt ma zapis w drodze, przy jego nazwie kręci się dyskretny wskaźnik „zapisuję…”; pełny stan z akcji prowadzącej również czeka z nadpisaniem, aż kolejka się opróżni.
+**Wygaszanie starych odpowiedzi**: każdy pies/zadanie ma licznik zapisów w drodze (`pendingKeys`). Odpowiedź serwera jest stosowana tylko wtedy, gdy dotyczy **ostatniej** operacji dla danego bytu — starsza odpowiedź (np. na „zarezerwuj”, gdy lokalnie już kliknięto „zwolnij”) jest ignorowana. Dzięki temu przy szybkich sekwencjach widok nigdy nie „przeskakuje” wstecz. Dopóki byt ma zapis w drodze, przy jego nazwie kręci się dyskretny wskaźnik; pełny stan z akcji prowadzącej również czeka z nadpisaniem, aż kolejka się opróżni.
+
+**Dymek „Zapisuję…" / „Aktualizuję…"** — pływający u góry ekranu, z animowanymi kropkami. „Zapisuję…" świeci, dopóki jakikolwiek zapis jest w drodze (dawny szary napis „zapisuje…" w nagłówku był w słońcu niewidoczny). „Aktualizuję…" zapowiada, że lista zaraz się przestawi — pojawia się na chwilę PRZED ruchem, a każde dotknięcie ekranu ruch odwołuje. Dymek trzyma się co najmniej 0,6 s, żeby nie mrugał.
+
+**Osłona stuknięć** — zgłoszenie z terenu: „kliknąłem w jednego psa, a zapisało się na innym". Przyczyna nie była w wolnym zapisie, tylko w liście, która przestawiała się z zegara (4 s ciszy, odświeżenie co 15 s) akurat wtedy, gdy palec już leciał, oraz w podwójnym stuknięciu trafiającym w przycisk, który właśnie pojawił się w tym samym miejscu. Teraz stuknięcie w rezerwację / „OK" / spacer / zwolnienie nie liczy się, jeśli lista przestawiła się pod palcem (w trakcie stuknięcia albo do 0,5 s przed nim) albo w tym czasie zmienił się stuknięty kafelek (ktoś inny, z innego telefonu) — wtedy wolontariusz dostaje komunikat i stuka jeszcze raz. Własne podwójne stuknięcie jest ignorowane po cichu. Szczegóły: `SORTING.md`, rozdział 8.
 
 ## PIN trybu edycji
 
@@ -256,8 +261,15 @@ trafiło pod złą datę.
 ## Jak to leży w arkuszu
 
 Zakładka **Psy** to katalog — kim jest pies. Stan konkretnego dnia żyje w zakładce
-**Spacery**: jeden wiersz na parę (dzień, pies). Rezerwacja na sobotę to po prostu wiersz
-z sobotnią datą.
+**Spacery**: jeden wiersz na spacer (dzień, pies, numer spaceru). Rezerwacja na sobotę to po
+prostu wiersz z sobotnią datą; rezerwacja popołudniowego spaceru psa dwuspacerowego — wiersz
+ze `spacer = 2`.
+
+**Przepisanie starego układu Spacery dzieje się samo** (wersja z wierszem na psa i drugim
+spacerem w `kto1`/`godzina1`): przy pierwszym dostępie wiersz z odbytym pierwszym spacerem
+rozpada się na spacer 1/2 (odbyty, z tą samą osobą i godziną) i 2/2 (stan bieżący), a grupa
+zostaje przy spacerze, który trwa. Kolumny dostają format tekstowy przed zapisem. Pilnuje tego
+właściwość skryptu `walksLayout` — sprawdzenie arkusza odbywa się raz, a nie przy każdym żądaniu.
 
 **Nocne czyszczenie niczego nie zeruje** — kolejny dzień ma własne, puste wiersze, a zmiana
 dnia na liście dzieje się punktualnie sama. Czyszczenie tylko **domyka** dni sprzed bieżącego:
@@ -285,7 +297,9 @@ przełomie dnia. Dlatego:
   czyszczeniem nie ma wtedy jednej dobrej daty.
 
 Karty otwarte jeszcze przed wdrożeniem działają dalej: akcja bez daty trafia na bieżący dzień,
-a `getData` wciąż wpisuje stan bieżącego dnia w samych psów.
+akcja bez numeru spaceru — w spacer, który właśnie trwa (rezerwacja: pierwszy wolny; spacer:
+pierwszy nieodbyty; zwolnienie: ostatni obsadzony), a `getData` i odpowiedzi akcji wciąż niosą
+stan psa w starym kształcie (`status`/`kto`/`kto1`).
 
 ## Godzina czyszczenia listy
 
@@ -314,16 +328,21 @@ kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pi
   na czyją rezerwację grupa czeka. Reguła brzmi „nikt nie jest wolny", a nie „wszyscy
   zarezerwowani": w grupie bywa pies już wyprowadzony (np. dołożony do składu po spacerze),
   a dosłowna reguła zablokowałaby wtedy resztę bez wyjścia.
-- **Grupa to jeden wspólny spacer.** „Zwolnij" zostawia psa w grupie — grupa znów czeka na jego
-  rezerwację. „Cofnij" po spacerze wyprowadza psa z grupy (tylko jego — reszta zostaje
-  wyprowadzona). Grupa, w której został jeden pies, przestaje być grupą.
-- **Pies na dwa spacery po pierwszym z nich wychodzi z grupy** — drugi spacer to osobny spacer
-  i planuje się go osobno, z kim trzeba. Dzięki temu nowy towarzysz drugiego spaceru nie trafia
-  do porannej grupy. Para psów, które na oba spacery chodzą razem, potrzebuje więc drugiego
-  „Grupa" przed drugim spacerem.
-- **Przytrzymanie psa, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć psy,
-  albo nacisnąć „Rozwiąż". Pies przeniesiony do nowej grupy znika ze starej; grupa, w której został
-  jeden pies, przestaje być grupą. Pies po spacerze nie dołącza do nowej grupy.
+- **Grupa to jeden wspólny spacer — i składa się ze spacerów, nie z psów.** „Zwolnij" zostawia
+  spacer w grupie — grupa znów czeka na jego rezerwację. „Cofnij" po spacerze wyprowadza ten
+  spacer z grupy (tylko jego — reszta zostaje wyprowadzona). Grupa, w której został jeden spacer,
+  przestaje być grupą.
+- **Pies na dwa spacery: 1/2 i 2/2 grupują się osobno.** Poranny spacer z psem A i popołudniowy
+  z psem C to dwie różne grupy — nic nie sugeruje, że A szedł z C. Jeden pies jest w grupie
+  najwyżej raz. Gdy tylko jeden spacer psa jest w grupie, pies pojawia się **w dwóch miejscach**:
+  mały kafelek „Burek 1/2" stoi przy swojej grupie, a główny kafelek z wolnym 2/2 zostaje wysoko
+  na liście, bo ten spacer wciąż czeka na chętnego (rysunek: `SORTING.md`, rozdział 6).
+- **Który spacer trafia do grupy?** Ten, który przytrzymasz: na kafelku psa dwuspacerowego pola
+  1/2 i 2/2 są osobne i każde ma własne kółko zaznaczenia. Przytrzymanie w innym miejscu kafelka
+  (nazwa, notatka) bierze pierwszy nieodbyty spacer z tego kafelka.
+- **Przytrzymanie spaceru, który już jest w grupie**, otwiera jej skład: można dołożyć lub zdjąć
+  spacery, albo nacisnąć „Rozwiąż". Spacer przeniesiony do nowej grupy znika ze starej. Spacer
+  odbyty nie dołącza do nowej grupy.
 - Grupę można zaplanować też na przyszły dzień. Na minionym dniu i w trybie edycji przytrzymanie
   nic nie robi. W trakcie zaznaczania lista stoi w miejscu — także gdy w tle minie godzina resetu.
 
@@ -349,15 +368,18 @@ Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wted
 
 ## Kolejność psów na liście
 
-Najpierw liczy się, **ile spacerów pies ma już odbytych** — góra listy to zawsze to, co
-dziś jeszcze nie zrobione. Dopiero wewnątrz tego samego dorobku idzie status: wolne,
-zarezerwowane, wyprowadzone; a na końcu kolejność z arkusza.
+Pełny opis z przykładami: **`SORTING.md`**. W skrócie kafelki porównuje się po kolei:
 
-Sam status nie wystarcza, bo przy dwóch spacerach „wolny" znaczy dwie różne rzeczy: pies,
-który nie wyszedł ani razu, i pies po pierwszym spacerze, czekający na drugi. Ten drugi
-schodzi pod psy bez żadnego spaceru — także pod **zarezerwowane**, bo tam spacer jest
-wciąż przed nami, a nie za nami. Dla psów jednospacerowych wychodzi z tego dokładnie
-to samo, co przy sortowaniu po samym statusie.
+1. **wszystko odbyte** — na sam dół;
+2. **czy jakiś spacer czeka na chętnego** (jest wolny) — nad obsadzonymi, bo to jest praca
+   do rozdania;
+3. **psy dwuspacerowe wyżej** — mają przed sobą więcej i muszą zacząć wcześniej;
+4. **liczba spacerów odbytych dziś** — mniej = wyżej (pies po 1/2 pod psami bez spaceru);
+5. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
+
+Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Dla psów
+jednospacerowych wychodzi z tego dokładnie to samo co dawniej: wolne, zarezerwowane,
+wyprowadzone. Nową regułę dopisuje się w jednym miejscu (`tileKey` w `Script.html`).
 
 Cała trudność jest w tym, **kiedy** przestawiać. Gdyby lista układała się w chwili kliknięcia,
 pies uciekałby spod palca w środku akcji, a wolontariusz stoi wtedy z psem na smyczy i nie ma
@@ -365,7 +387,9 @@ jak dojść, co się właśnie stało. Dlatego kolejność jest zamrożona, dop�
 trwa zapis, otwarte jest pole z imieniem albo ekran był dotykany w ciągu ostatnich 4 sekund.
 Kliknięty kafelek zmienia się **w miejscu**, a lista układa się dopiero wtedy, gdy ręce
 znieruchomieją. Seria pięciu rezerwacji pod rząd idzie więc bez ani jednego skoku — łącznie
-z odświeżeniem w tle, które trafi akurat w środek serii.
+z odświeżeniem w tle, które trafi akurat w środek serii. Kiedy lista wreszcie się przestawia,
+najpierw na chwilę (0,8 s) pojawia się dymek „Aktualizuję…" — dotknięcie ekranu w tym czasie
+odwołuje ruch i odlicza ciszę od nowa.
 
 ## Dwa spacery dla wszystkich jednym kliknięciem
 
@@ -373,30 +397,42 @@ Przy upałach schronisko dopuszcza drugi spacer, a decyzja bywa z godziny na god
 przeklikiwanie trzydziestu psów z osobna odpada. W **Panelu** (tryb edycji) są dwa przyciski:
 *Wszystkie po 2 spacery* i *Wszystkie po 1 spacerze*.
 
-Przełącznik nie ogranicza się do przestawienia kolumny, bo w środku dnia część psów ma już
-coś odbyte:
+Przy spacerach zapisanych osobno przełącznik zmienia tylko liczbę w katalogu — stan dnia
+dopasowuje się sam:
 
-- **włączamy dwa spacery** — pies dziś wyprowadzony staje się psem po *pierwszym z dwóch*:
-  wraca na listę wolnych, a odbyty spacer ląduje w `kto1`/`godzina1`, dokładnie tak, jak
-  zapisałoby to zwykłe odhaczenie;
-- **wracamy do jednego** — pies wolny po pierwszym z dwóch ma swoje z głowy, więc staje się
-  wyprowadzony tym właśnie spacerem.
+- **włączamy dwa spacery** — spacer odbyty rano to 1/2, a pies dostaje wolne pole 2/2;
+- **wracamy do jednego** — pies z odbytym 1/2 ma swoje z głowy i jest wyprowadzony.
 
-Nietykalne zostają dwie grupy: psy właśnie prowadzone (zmiana statusu pod ręką wolontariusza
-byłaby wrogim gestem) oraz psy z obydwoma spacerami odbytymi — skasowanie `kto1` zabrałoby
-Historii jeden ze spacerów. Wywołanie dwa razy z tą samą wartością nie zmienia niczego drugi
-raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
+Spacer ponad nową liczbę, który ktoś już zarezerwował albo odbył, zostaje na kafelku — cudzej
+rezerwacji nie kasujemy po cichu, a odbyty spacer ma trafić do Historii. Wolny spacer ponad
+liczbę wychodzi tylko ze swojej grupy. Wywołanie dwa razy z tą samą wartością nie zmienia
+niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej odpowiedzi.
 
 ## Notatki i dwa spacery
 
 - **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy czyszczeniu kończącym dzień, na którym ją zapisano — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
 - **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
-- **Dwa spacery dziennie** (`spacery` = 1/2): pierwszy odbyty spacer zapisuje się w `kto1`/`godzina1`, a pies wraca na „wolny” z odznaką `spacery 1/2` i informacją, kto odbył pierwszy; dopiero drugi spacer daje pełne „wyprowadzony” (`2/2`). Oba spacery trafiają osobno do Historii przy nocnym resecie. Pomyłkę cofa przycisk „Cofnij 1. spacer”. Liczba odbytych spacerów jest wyliczana z danych (kto1 + status), nie przechowywana — brak ryzyka rozjazdu.
+- **Dwa spacery dziennie** (`spacery` = 1/2): kafelek psa ma dwa osobne pola, **1/2** i **2/2**, każde z własnym „Zarezerwuj", „Wyprowadzony ✓", „Zwolnij"/„Cofnij" i osobą. Można zarezerwować popołudniowy 2/2, zanim ktokolwiek weźmie poranny 1/2. Odbyte pole pokazuje „✓ imię" (bez godziny). Oba spacery trafiają osobno do Historii przy nocnym resecie. Model zna dowolną liczbę spacerów, ale interfejs i serwer pozwalają na 1 albo 2.
+- **Kolor wolontariusza**: przy imieniu jest kolorowa obwódka z kropką — ta sama osoba ma tego samego dnia ten sam kolor na każdym psie, więc od razu widać, kto ile ma na głowie. Imię zostaje w całości, kolor go nie zastępuje. Kolory przydziela serwer na dzień (10 barw, żadna nie jest kolorem grupy ani trudności; barwa wynika z imienia, a gdy jest już zajęta — następna wolna), telefon przewiduje ten sam przydział od razu po rezerwacji. Przy więcej niż 10 osobach kolory zaczynają się powtarzać — imię dalej rozstrzyga.
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN). Opisu na dole strony
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+**Spacery zamiast psów, nowe sortowanie, osłona stuknięć:**
+- **„Kliknąłem w jednego psa, a zapisało się na innym"** — lista przestawiała się z zegara
+  w chwili, gdy palec już leciał, a podwójne stuknięcie trafiało w przycisk, który właśnie
+  pojawił się w tym samym miejscu. Ruch listy jest teraz zapowiadany („Aktualizuję…"),
+  a stuknięcie w listę albo kafelek zmieniony pod palcem się nie liczy.
+- „Zapisuje…" w nagłówku było w słońcu niewidoczne — zastąpił je pływający dymek.
+- Pies na dwa spacery miał jeden stan na cały dzień, więc nie dało się zarezerwować spaceru
+  popołudniowego przed porannym, a pies z porannej grupy „ciągnął" ją na drugi spacer. Teraz
+  1/2 i 2/2 to osobne spacery (osobne wiersze w Spacery), każdy z własną rezerwacją i grupą;
+  pies bywa w dwóch miejscach listy naraz.
+- Sortowanie przepisane na reguły z jednego miejsca (`SORTING.md`); psy dwuspacerowe wyżej.
+- Kolor wolontariusza przy imieniu.
+- `getData` czyta właściwości skryptu raz, a nie kilka razy na żądanie.
 
 **Po review PR #1:**
 - Przejście ze starego modelu mogło zgubić dzisiejsze spacery, gdy pierwszym dostępem po

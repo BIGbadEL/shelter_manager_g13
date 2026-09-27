@@ -95,7 +95,7 @@ function applyTextFormats_() {
   const s = ss_();
   const textCols = [
     [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],
-    [SHEETS.WALKS, [WALK.DATE, WALK.TIME, WALK.TIME1]],
+    [SHEETS.WALKS, [WALK.DATE, WALK.TIME]],
     [SHEETS.HIST,  [HIST.DATE, HIST.TIME]],
     [SHEETS.TASKS, [TASK.DATE]],
   ];

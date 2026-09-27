@@ -31,7 +31,6 @@
   .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;}
   .reset-note{display:inline-flex;align-items:center;gap:5px;background:#e2ebe3;color:var(--forest);
     font-weight:600;padding:3px 9px;border-radius:20px;font-size:12px;}
-  .sync{font-size:11.5px;color:var(--muted);margin-left:auto;}
 
   .pinrow{display:flex;gap:7px;margin:12px 0 0;}
   .pinrow input{flex:1;font-family:inherit;font-size:15px;padding:9px 12px;border:1.5px solid var(--forest);
@@ -134,6 +133,52 @@
   .dog.picked{box-shadow:0 0 0 2px var(--ink);}
   .dog.picked .pickbox{background:var(--ink);}
   .dog.nopick{opacity:.4;cursor:default;}
+  /* kafelek główny psa na dwa spacery: kółko przy każdym polu 1/2, 2/2 — zaznacza TEN spacer */
+  .slot.pick{cursor:pointer;}
+  .slot.pick .status,.slot.pick .grpwait{opacity:.35;pointer-events:none;}
+  .slot.picked{box-shadow:0 0 0 2px var(--ink);}
+  .slot.picked .pickbox{background:var(--ink);}
+  .slot.nopick{opacity:.4;cursor:default;}
+
+  /* ---------- spacery psa na dwa spacery ----------
+     Pola 1/2 i 2/2 są w jednym kafelku, ale każde osobno — z numerem i własnymi
+     przyciskami. Spacer odłączony (w grupie gdzie indziej) ma numer przy imieniu,
+     a kafelek główny linijkę „w grupie", gdzie ten spacer jest. */
+  .slot{position:relative;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
+    padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);}
+  .slot .status{margin-top:0;flex:1;min-width:0;gap:6px;}
+  .slot .walk{padding:7px 10px;}
+  .slot .ghost{padding:6px 5px;margin-left:auto;}   /* zawinięte „Zwolnij" pod „Wyprowadzony", z prawej */
+  .slot .entry{flex-basis:100%;margin-top:4px;}
+  .slot .grpwait{flex-basis:100%;margin-top:0;}
+  .slot.walked{opacity:.6;}
+  .slotno{font-size:11px;font-weight:800;color:var(--forest);background:#e2ebe3;padding:2px 7px;border-radius:6px;flex:none;}
+  .away{margin-top:7px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+
+  /* ---------- wolontariusz: kolor dnia ----------
+     Nasycony kontur i kropka przy imieniu — celowo inna rodzina niż grupy (blade tło
+     całego kafelka). Imię zostaje zwykłym ciemnym tekstem. */
+  .vol{display:inline-flex;align-items:center;gap:6px;padding:1px 10px 1px 4px;border:2px solid var(--vc,#4b5563);
+    border-radius:999px;background:#fff;color:var(--ink);font-weight:700;line-height:1.35;}
+  .vol .vdot{width:10px;height:10px;border-radius:50%;background:var(--vc,#4b5563);flex:none;}
+
+  /* ---------- dymek „Zapisuję…" / „Aktualizuję…" ----------
+     U góry ekranu, ciemny i duży — ma być widać, że stuknięcie zostało przyjęte.
+     Kropki: „." → „.." → „..." i od nowa (druga i trzecia pojawiają się po kolei). */
+  .busy{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);z-index:70;
+    display:inline-flex;align-items:baseline;padding:8px 16px;border-radius:999px;
+    background:var(--ink);color:#fff;font-size:14px;font-weight:700;letter-spacing:.01em;
+    box-shadow:0 4px 16px rgba(0,0,0,.22);pointer-events:none;white-space:nowrap;}
+  .busy.hidden{display:none;}
+  .busy[data-kind="sort"]{background:var(--forest);}
+  .busy .dots{display:inline-block;width:1.1em;text-align:left;}
+  .busy .dots i{font-style:normal;}
+  .busy .dots i:nth-child(2){animation:busyDot2 1.2s steps(1,end) infinite;}
+  .busy .dots i:nth-child(3){animation:busyDot3 1.2s steps(1,end) infinite;}
+  @keyframes busyDot2{0%{visibility:hidden}33.33%{visibility:visible}}
+  @keyframes busyDot3{0%{visibility:hidden}66.66%{visibility:visible}}
+  @media (prefers-reduced-motion: reduce){ .busy .dots i{animation:none;} }
+
   .selectbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;
     padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card);
     border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08);}

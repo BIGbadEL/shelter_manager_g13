@@ -83,11 +83,9 @@ function readHistoryDays_(from, to) {
 
   const labels = {};
   readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); });
-  readWalks_(walksSheet_()).forEach(w => {
-    if (w.date < from || w.date > to) return;
-    const name = labels[w.dogId] || ('Pies ' + w.dogId);
-    if (w.who1) out.push({ date: w.date, name: name, who: w.who1, time: w.time1 });
-    if (w.status === STATUS.WALKED) out.push({ date: w.date, name: name, who: w.who, time: w.time });
+  readSlots_(walksSheet_()).forEach(s => {
+    if (s.date < from || s.date > to || s.status !== STATUS.WALKED) return;
+    out.push({ date: s.date, name: labels[s.dogId] || ('Pies ' + s.dogId), who: s.who, time: s.time });
   });
   return out;
 }
@@ -105,7 +103,8 @@ function readHistoryDays_(from, to) {
  *   1. ich odbyte spacery -> Historia (pod datą z wiersza) + data w ostatni_spacer,
  *      wiersze znikają ze Spacery; rezerwacje, z których nic nie wyszło, przepadają,
  *   2. notatki bez terminu znikają, z terminem — po swoim dniu,
- *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień.
+ *   3. Zadania: usuwa TYLKO odhaczone; nieodhaczone zostają na kolejny dzień,
+ *   4. kolory wolontariuszy dni zamkniętych przestają być potrzebne.
  *
  * Bezpieczne do uruchomienia w dowolnej chwili i dowolną liczbę razy: dzień,
  * który trwa, zostaje nietknięty, a zaległe dni (wyzwalacz nie zadziałał)
@@ -114,16 +113,17 @@ function readHistoryDays_(from, to) {
 function endOfDay() {
   withLock_(() => {
     const current = businessDate_();
-    const lastWalk = closeWalks_(w => w.date < current);
+    const lastWalk = closeWalks_(s => s.date < current);
     closeDogs_(current, lastWalk);
     clearDoneTasks_();
+    forgetVolunteers_(current);
   });
 }
 
 /**
- * Zamyka wiersze zakładki Spacery spełniające `match`: odbyte spacery trafiają
- * do Historii pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania,
- * który dzień właśnie się skończył. Same wiersze znikają. Zwraca mapę
+ * Zamyka spacery zakładki Spacery spełniające `match`: odbyte trafiają do Historii
+ * pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania, który dzień właśnie
+ * się skończył. Pies na dwa spacery daje dwa wpisy. Same wiersze znikają. Zwraca mapę
  * pies -> data jego ostatniego zamkniętego spaceru. Tylko pod blokadą.
  */
 function closeWalks_(match) {
@@ -136,22 +136,21 @@ function closeWalks_(match) {
 
   const keep = [], toHist = [], lastWalk = {};
   rows.forEach(r => {
-    const w = mapWalkRow_(r);
-    if (!isDate_(w.date) || !(w.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
-    if (!match(w)) { keep.push(r); return; }
-    const label = labels[w.dogId] || ('Pies ' + w.dogId);
-    const before = toHist.length;
-    if (w.who1) toHist.push([w.date, label, w.who1, w.time1]);                    // pierwszy z dwóch
-    if (w.status === STATUS.WALKED) toHist.push([w.date, label, w.who, w.time]);  // jedyny albo drugi
-    if (toHist.length > before && !(lastWalk[w.dogId] >= w.date)) lastWalk[w.dogId] = w.date;
+    const s = mapSlotRow_(r);
+    if (!isDate_(s.date) || !(s.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
+    if (!match(s)) { keep.push(r); return; }
+    if (s.status !== STATUS.WALKED) return;            // rezerwacja, z której nic nie wyszło — przepada
+    toHist.push([s.date, labels[s.dogId] || ('Pies ' + s.dogId), s.who, s.time, s.slot]);
+    if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
   });
   if (keep.length === rows.length) return lastWalk;
 
   if (toHist.length) {
-    // chronologicznie: domykając kilka zaległych dni naraz, Historia zostaje po kolei
-    toHist.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    // chronologicznie: domykając kilka zaległych dni naraz, Historia zostaje po kolei;
+    // w obrębie dnia spacer 1/2 przed 2/2 (sort stabilny, numer spaceru tylko do porządku)
+    toHist.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[4] - b[4]));
     const hist = ss_().getSheetByName(SHEETS.HIST);
-    hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist);
+    hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist.map(r => r.slice(0, HIST_WIDTH)));
   }
   // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste
   const blanks = rows.slice(keep.length).map(() => Array(WALK_WIDTH).fill(''));

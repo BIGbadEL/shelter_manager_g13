@@ -40,7 +40,7 @@ async function S83(){
   app.seed(base({walks:[{date:D, dogId:1, status:'reserved', who:'Ala', group:1.5},
                         {date:D, dogId:2, status:'reserved', who:'Ola', group:1.5}]}));
   check('lista narysowana', !!li(app, 1) && !/Coś poszło nie tak/.test(app.html()), app.html().slice(0, 200));
-  check('1.5 to brak grupy', S(app).walks[D+'|1'].group===0 && !bgOf(app, 1));
+  check('1.5 to brak grupy', S(app).slots[D+'|1|1'].group===0 && !bgOf(app, 1));
   check('żadnego ratunkowego getData', calls(app, 'getData').length===0, app.pending.map(p=>p.fn).join(','));
 
   // błąd, który powtarza się przy każdym rysowaniu
@@ -99,46 +99,48 @@ async function S86(){
   app.seed(base({dogs: DOGS().concat([dogFree({id:4, name:'Cyra'})]),
                  walks:[{date:D, dogId:1, status:'free', group:1}, {date:D, dogId:2, status:'free', group:1}]}));
   await press(app, 1);
-  check('zaznaczanie z widzianym składem', JSON.stringify(S(app).select.seen)==='[1,2]', JSON.stringify(S(app).select));
+  check('zaznaczanie z widzianym składem', JSON.stringify(S(app).select.seen)==='["1:1","2:1"]', JSON.stringify(S(app).select));
   // w tym czasie ktoś inny dołożył Rexa — tego składu na ekranie nie było
-  S(app).walks[D+'|3'] = {status:'free', who:'', time:'', who1:'', time1:'', group:1};
+  S(app).slots[D+'|3|1'] = {status:'free', who:'', time:'', group:1};
   tapEl(app, li(app, 4));                              // dokładamy Cyrę
   tapEl(app, doc(app).getElementById('selGroup'));
   const job = app.pending[app.pending.length-1];
-  check('setGroup(dzień, skład, 1, widziany skład)', job.fn==='setGroup' && JSON.stringify(job.args[1])==='[1,2,4]'
-    && job.args[2]===1 && JSON.stringify(job.args[3])==='[1,2]', JSON.stringify(job.args));
-  check('Rex, dołożony przez kogoś innego, zostaje w grupie', S(app).walks[D+'|3'].group===1,
-    JSON.stringify(S(app).walks[D+'|3']));
-  check('Cyra doszła', S(app).walks[D+'|4'].group===1 && S(app).walks[D+'|1'].group===1);
+  check('setGroup(dzień, skład, 1, widziany skład)', job.fn==='setGroup' && JSON.stringify(job.args[1])==='["1:1","2:1","4:1"]'
+    && job.args[2]===1 && JSON.stringify(job.args[3])==='["1:1","2:1"]', JSON.stringify(job.args));
+  check('Rex, dołożony przez kogoś innego, zostaje w grupie', S(app).slots[D+'|3|1'].group===1,
+    JSON.stringify(S(app).slots[D+'|3|1']));
+  check('Cyra doszła', S(app).slots[D+'|4|1'].group===1 && S(app).slots[D+'|1|1'].group===1);
   app.respondNext({group:1, walks:[1,2,3,4].map(id => ({date:D, dogId:id, group:1}))});
 
   await press(app, 1);                                 // teraz widać już wszystkich czterech
   tapEl(app, li(app, 2));                              // odznaczamy Lunę
   tapEl(app, doc(app).getElementById('selGroup'));
-  check('widziany i odznaczony pies wypada', S(app).walks[D+'|2'].group===0 && S(app).walks[D+'|3'].group===1);
+  check('widziany i odznaczony pies wypada', S(app).slots[D+'|2|1'].group===0 && S(app).slots[D+'|3|1'].group===1);
   app.respondNext({group:1, walks:[{date:D, dogId:2, group:0}].concat([1,3,4].map(id => ({date:D, dogId:id, group:1})))});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
 async function S87(){
-  console.log('S87: spóźniona odpowiedź setGroup nie przywraca grupy rozwiązanej spacerem');
+  console.log('S87: spóźniona odpowiedź setGroup nie przywraca grupy rozwiązanej cofnięciem');
   const app = buildApp();
   app.seed(base({
-    dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna', walks:2}), dogFree({id:3, name:'Rex'})],
+    dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna'}), dogFree({id:3, name:'Rex'})],
     walks: [{date:D, dogId:1, status:'reserved', who:'Ala'}, {date:D, dogId:2, status:'reserved', who:'Ola'}],
   }));
   await press(app, 1);
   tapEl(app, li(app, 2));
   tapEl(app, doc(app).getElementById('selGroup'));
-  app.click('[data-act="walk"][data-id="1"]');         // od razu wspólny spacer — Luna po pierwszym wychodzi
-  check('lokalnie grupy już nie ma', S(app).walks[D+'|1'].group===0 && S(app).walks[D+'|2'].group===0);
-  // serwer przerobił setGroup przed spacerami, ale jego odpowiedź dochodzi ostatnia
-  respondTo(app, p => p.fn==='markWalked' && p.args[0]===1, {dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', time:'10:00'})});
-  respondTo(app, p => p.fn==='markWalked' && p.args[0]===2, {dog: dogFree({id:2, name:'Luna', walks:2, who1:'Ola', time1:'10:00'})});
-  respondTo(app, p => p.fn==='setGroup', {group:1, walks:[{date:D, dogId:1, group:1}, {date:D, dogId:2, group:1}]});
-  check('grupa nie wraca', S(app).walks[D+'|1'].group===0 && S(app).walks[D+'|2'].group===0,
-    JSON.stringify([S(app).walks[D+'|1'], S(app).walks[D+'|2']]));
+  app.click('[data-act="walk"][data-id="1"]');         // od razu wspólny spacer…
+  app.click('[data-act="free"][data-id="1"]');         // …i „Cofnij" u Borysa: wychodzi z grupy, Luna zostaje sama
+  check('lokalnie grupy już nie ma', S(app).slots[D+'|1|1'].group===0 && S(app).slots[D+'|2|1'].group===0);
+  // serwer przerobił setGroup przed resztą, ale jego odpowiedź dochodzi ostatnia
+  respondTo(app, p => p.fn==='markWalked' && p.args[0]===2, {slot:{slot:1, status:'walked', who:'Ola', time:'10:00'}});
+  respondTo(app, p => p.fn==='markWalked' && p.args[0]===1, {slot:{slot:1, status:'walked', who:'Ala', time:'10:00'}});
+  respondTo(app, p => p.fn==='setFree' && p.args[0]===1, {slot:{slot:1, status:'free'}});
+  respondTo(app, p => p.fn==='setGroup', {group:1, slots:[{date:D, dogId:1, slot:1, group:1}, {date:D, dogId:2, slot:1, group:1}]});
+  check('grupa nie wraca', S(app).slots[D+'|1|1'].group===0 && S(app).slots[D+'|2|1'].group===0,
+    JSON.stringify([S(app).slots[D+'|1|1'], S(app).slots[D+'|2|1']]));
   check('...także na ekranie', !bgOf(app, 1) && !bgOf(app, 2));
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
