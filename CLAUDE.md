@@ -79,6 +79,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 - **`getData()`**: `dogs` (katalog + stan bieżącego dnia w starym kształcie `status/kto/kto1` —
   dla starych kart), `slots` (spacery dni otwartych), `volunteers` (kolory dnia). Starego pola
   `walks` już nie ma — karta z wersji z datami, ale sprzed spacerów, wraca wtedy do `dogs`.
+  **`setGroup` niesie `walks` nadal** (`legacyWalks_`): applyGroups tamtej karty czyta tylko je
+  i bez niego zerował u siebie grupy dnia do najbliższego odświeżenia (review PR #2, B47).
 - Akcje edycyjne wymagają PIN-u przez `requirePin_(pin)`.
 - **PIN nie istnieje w kodzie.** Siedzi we właściwości skryptu `pin` (`pin_()` w `Settings.gs`),
   bez wartości domyślnej: nieustawiony = tryb edycji zamknięty. Nigdy nie wpisuj PIN-u

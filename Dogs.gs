@@ -137,6 +137,22 @@ function legacyView_(dog, slots) {
   });
 }
 
+/**
+ * Dzień w STARYM kształcie zakładki Spacery (wiersz na psa) — dla kart otwartych na wersji
+ * z datami, ale sprzed spacerów. Ich applyGroups czyta z odpowiedzi setGroup wyłącznie
+ * `walks`; bez niego zerowały u siebie wszystkie grupy dnia do najbliższego odświeżenia
+ * (review PR #2). Grupa psa = grupa jego „bieżącego" spaceru, jak w legacyView_.
+ */
+function legacyWalks_(dogs, slots, date) {
+  const byDog = {};
+  slots.forEach(s => (byDog[s.dogId] = byDog[s.dogId] || []).push(s));
+  return Object.keys(byDog).filter(id => dogs[id]).map(id => {
+    const v = legacyView_(dogs[id], byDog[id]);
+    return { date: date, dogId: Number(id), status: v.status, who: v.who, time: v.time,
+             who1: v.who1, time1: v.time1, group: v.group };
+  });
+}
+
 /** Czy układ zakładki Spacery sprawdzony w tym wykonaniu. */
 let walksLayoutOk_ = false;
 
@@ -648,8 +664,9 @@ function setFree(id, date, seen, slot) {
  * NIE jest na liście RETRIABLE: nowa grupa bierze kolejny numer, więc powtórka po
  * zaginionej odpowiedzi przepisałaby tę samą grupę pod nowy numer (i nowy kolor).
  *
- * Zwraca {slots, group}: spacery tego dnia (także te z wyczyszczoną grupą) i numer
- * grupy, która powstała albo została (0 = rozwiązana).
+ * Zwraca {slots, walks, group}: spacery tego dnia (także te z wyczyszczoną grupą), ten sam
+ * dzień w starym kształcie dla kart sprzed spacerów (legacyWalks_) i numer grupy, która
+ * powstała albo została (0 = rozwiązana).
  */
 function setGroup(date, ids, gid, seen) {
   const a = actionDate_(date);
@@ -709,7 +726,8 @@ function setGroup(date, ids, gid, seen) {
     });
 
     d.save();
-    return { slots: d.all(), group: target };
+    const all = d.all();
+    return { slots: all, walks: legacyWalks_(dogs, all, a.date), group: target };
   });
 }
 

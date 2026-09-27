@@ -1303,5 +1303,25 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('rezerwacje na dalsze dni i tak zapisane', slotAt(env, 1, env.api.addDays_(D, DAYS + 3)).who==='Ala');
 })();
 
+/* ---------- B47: setGroup dla kart sprzed spacerów (wersja z datami, PR #1) ---------- */
+(()=>{
+  console.log('B47: odpowiedź setGroup niesie też stary `walks` — stara karta nie gubi grup');
+  const D = '2026-08-04';
+  const env = build([{id:1,name:'Borys'},{id:2,name:'Luna',walks:2},{id:3,name:'Rex',walks:2},{id:4,name:'Fado'}]);
+  env.api.reserve(2, 'Iza', D, 1); env.api.markWalked(2, '', 1, D);     // Luna: 1/2 odbyty
+  env.api.setGroup(D, ['3:1', '4:1'], 0);                              // Rex rano z Fado
+  const r = env.api.setGroup(D, ['1:1', '2:2'], 0);                    // Borys z popołudniem Luny
+  // dokładnie to, co robi applyGroups karty z PR #1: grupa psa z `walks`, reszta = 0
+  const got = {};
+  (r.walks || []).forEach(w => { if(w.date === D) got[w.dogId] = Number(w.group) || 0; });
+  check('odpowiedź ma `walks` w starym kształcie', Array.isArray(r.walks) && r.walks.every(w => 'who1' in w && 'dogId' in w && !('slot' in w)),
+    JSON.stringify(r.walks));
+  check('stara karta widzi obie grupy dnia', got[1]===r.group && got[2]===r.group && got[3]>0 && got[3]===got[4] && got[3]!==r.group,
+    JSON.stringify(got));
+  const luna = (r.walks || []).filter(w => w.dogId===2)[0];
+  check('Luna po 1/2 w starym kształcie: kto1 = Iza, bieżący 2/2 w grupie', luna && luna.who1==='Iza' && luna.status==='free');
+  check('nowy klient dalej dostaje `slots`', Array.isArray(r.slots) && r.slots.some(s => s.dogId===2 && s.slot===2 && s.group===r.group));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
