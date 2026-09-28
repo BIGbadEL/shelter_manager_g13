@@ -53,6 +53,13 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
   function findDog(id){ return state.dogs.find(x=>x.id===id); }
+  /**
+   * Napis na przycisku „spacer odbyty" — jedno miejsce dla kafelka, pól 1/2 i 2/2 i grupy.
+   * Krótki, bo wiersz spaceru (opiekun + ten przycisk + „Zwolnij") ma się mieścić w jednej
+   * linijce na zwykłym telefonie: „Wyprowadzony ✓" to 129 px i przy 360–393 px każdy spacer
+   * psa dwuspacerowego zajmował dwie linijki; „Wrócił ✓" to 73 px (feedback z testów).
+   */
+  const WALK_LABEL = 'Wrócił ✓';
   function localHM(){ const d=new Date(); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
 
   /* ---------- spacery psa ----------
@@ -186,6 +193,7 @@
     if(k){
       clearTimeout(busyHideTimer); busyHideTimer = null;
       if(el.classList.contains('hidden')){ busyShownAt = Date.now(); el.classList.remove('hidden'); }
+      document.body.classList.add('busy-on');       // toast staje wtedy nad dymkiem (oba są na dole)
       el.dataset.kind = k;
       document.getElementById('busyTxt').textContent = k==='save' ? 'Zapisuję' : 'Aktualizuję';
       return;
@@ -193,7 +201,8 @@
     if(el.classList.contains('hidden') || busyHideTimer) return;
     busyHideTimer = setTimeout(()=>{
       busyHideTimer = null;
-      if(busyKind()) updateBusy(); else el.classList.add('hidden');
+      if(busyKind()) updateBusy();
+      else { el.classList.add('hidden'); document.body.classList.remove('busy-on'); }
     }, Math.max(0, busyShownAt + T.busyMin - Date.now()));
   }
 
@@ -867,16 +876,16 @@
   }
 
   /**
-   * Linijka pod imieniem: znacznik grupy (kafelek w grupie), odznaka „bez spaceru"
-   * (tylko kafelek z pełną informacją — nie powtarzamy jej przy każdym spacerze),
-   * numer i boks. Postęp „spacery 1/2" zniknął: pola 1/2 i 2/2 mówią to same.
+   * Linijka pod imieniem: odznaka „bez spaceru" (tylko kafelek z pełną informacją — nie
+   * powtarzamy jej przy każdym spacerze), numer i boks. Postęp „spacery 1/2" zniknął: pola
+   * 1/2 i 2/2 mówią to same. Znacznika „👥 grupa" też już nie ma — grupę widać po kolorze
+   * kafelka i po tym, że stoi w bloku z towarzyszami (feedback z testów: zbędny wszędzie).
    */
   function dogMeta(dog, t){
     const bits=[];
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
     const pills=[];
-    if(t.gid) pills.push(groupPill(t.gid));
     const miss = t.full ? missBadge(dog) : '';
     if(miss) pills.push(miss);
     if(!bits.length && !pills.length) return '';
@@ -891,9 +900,13 @@
    */
   const NOTE_FOREVER = 'nigdy';
 
-  /** Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08" / "na stałe". */
+  /**
+   * Krótka etykieta terminu notatki: "do dziś" / "do jutra" / "do niedzieli" / "do 12.08".
+   * Notatka „nigdy nie znika" nie ma żadnej — po prostu jest (feedback z testów: „na stałe"
+   * tylko dokładało tekstu do kafelka).
+   */
   function untilLabel(iso){
-    if(iso === NOTE_FOREVER) return 'na stałe';
+    if(iso === NOTE_FOREVER) return '';
     const d = new Date(iso+'T12:00:00');
     if(isNaN(d.getTime())) return '';
     const ago = daysAgo(iso);
@@ -1046,9 +1059,11 @@
    *  - pies na jeden spacer — wygląda jak zawsze: jeden wiersz przycisków,
    *  - kafelek główny psa na dwa spacery — każdy spacer to osobne pole z numerem 1/2, 2/2
    *    i własnymi przyciskami; popołudnie da się zarezerwować, zanim ktoś wyjdzie rano,
-   *  - spacer w grupie (kafelek odłączony) — numer spaceru przy imieniu, żeby było jasne,
-   *    którego wyjścia dotyczy; kafelek główny mówi linijką „w grupie", gdzie są spacery
-   *    psa, których w nim nie ma.
+   *  - spacer w grupie (kafelek odłączony) — sama esencja w jednym wierszu: imię psa z numerem
+   *    spaceru, opiekun i przyciski. Trudność, numer, boks i notatka są na kafelku głównym,
+   *    tuż obok na liście. Za wąsko na jeden wiersz — przyciski schodzą razem pod spód.
+   * Kafelek główny nie mówi, gdzie są spacery psa w grupach (dawna linijka „1/2 👥 grupa Ola")
+   * — kafelek odłączony stoi przy swojej grupie i to wystarcza (feedback z testów).
    */
   function renderTile(t){
     const dog = t.dog, dm = DIF[dog.dif]||DIF.easy, count = t.all.length;
@@ -1060,14 +1075,17 @@
     const resv = one && count === 1 && one.status==='reserved' ? `\n          <span class="resv-pill">zarezerwowany</span>` : '';
     const pk = pickBits(t);
     const cls = 'dog' + (allDone ? ' walked' : '') + (t.full ? '' : ' detached') + pk.cls;
+    const open = `<li class="${cls}" data-dog="${dog.id}" data-tile="${t.id}" data-slots="${t.slots.map(s=>s.n).join(',')}" style="${tileStyle(t, dm)}">`;
+    if(!t.full && one){
+      const p = slotParts(dog, one);
+      return `${open}
+        <div class="status"><span class="name${allDone?' done':''}">${label}</span>${badge}${p.line}</div>${p.after}${pk.box}</li>`;
+    }
     const fields = one ? slotRow(dog, one) : t.slots.map(s => slotBox(dog, s, count)).join('');
-    const away = t.full ? t.all.filter(s => s.group && t.slots.indexOf(s) < 0)
-      .map(s => `<div class="away"><span class="slotno">${s.n}/${count}</span> ${groupPill(s.group)} ${
-        s.who ? volChip(s.who, s.status==='walked' ? '✓ ' : '') : 'nikt jeszcze'}</div>`).join('') : '';
-    return `<li class="${cls}" data-dog="${dog.id}" data-tile="${t.id}" data-slots="${t.slots.map(s=>s.n).join(',')}" style="${tileStyle(t, dm)}">
+    return `${open}
         <div class="row"><span class="name${allDone?' done':''}">${label}</span>${badge}${resv}<span class="flex"></span>${difChipHtml(dm)}</div>
         ${dogMeta(dog, t)}${dogNote(dog)}
-        ${fields}${away}${pk.box}</li>`;
+        ${fields}${pk.box}</li>`;
   }
 
   /** Imię wolontariusza w kapsułce jego koloru dnia (patrz volColor). Samo imię zostaje tekstem. */
@@ -1077,17 +1095,20 @@
   }
 
   /**
-   * Wiersz przycisków jednego spaceru. Każdy przycisk niesie psa (data-id) i numer
-   * spaceru (data-slot) — akcja zawsze wie, KTÓRY spacer zmienia.
+   * Jeden spacer: to, co stoi w wierszu (opiekun i przyciski), i to, co pod nim (pole
+   * „Twoje imię", „Grupa czeka na…"). Każdy przycisk niesie psa (data-id) i numer spaceru
+   * (data-slot) — akcja zawsze wie, KTÓRY spacer zmienia. Przyciski zarezerwowanego spaceru
+   * stoją razem (.acts, do prawej): gdy wiersz jest za wąski, schodzą pod spód razem —
+   * dawniej samo „Zwolnij" spadało do drugiej linijki i każdy spacer zajmował dwie.
    */
-  function slotRow(dog, s){
+  function slotParts(dog, s){
     const at = `data-id="${dog.id}" data-slot="${s.n}"`;
     if(s.status==='free'){
-      return `<div class="status"><button class="btn reserve" data-act="reserve" ${at}>Zarezerwuj</button></div>
-        <div class="entry hidden" data-entry="${dog.id}" data-slot="${s.n}">
+      return {line: `<button class="btn reserve" data-act="reserve" ${at}>Zarezerwuj</button>`,
+        after: `<div class="entry hidden" data-entry="${dog.id}" data-slot="${s.n}">
           <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}" data-slot="${s.n}">
           <button class="btn reserve" data-act="confirm" ${at}>OK</button>
-        </div>`;
+        </div>`};
     }
     if(s.status==='reserved'){
       // w przyszłości nie ma czego odhaczać — rezerwację można tylko zwolnić
@@ -1096,19 +1117,19 @@
         // spacer grupowy rusza dopiero, gdy nikt z grupy nie jest wolny — każdy spacer ma opiekuna
         const waiting = s.group ? groupWaiting(state.date, s.group) : [];
         walkBtn = waiting.length
-          ? `<button class="btn walk" disabled>Wyprowadzony ✓</button>`
-          : `<button class="btn walk" data-act="walk" ${at}>Wyprowadzony ✓</button>`;
+          ? `<button class="btn walk" disabled>${WALK_LABEL}</button>`
+          : `<button class="btn walk" data-act="walk" ${at}>${WALK_LABEL}</button>`;
         if(waiting.length) wait = `<div class="grpwait">Grupa czeka na rezerwację: ${waiting.map(slotLabel).join(', ')}</div>`;
       }
-      return `<div class="status">
-          <span class="who">${volChip(s.who)}</span><span class="spacer"></span>
-          ${walkBtn}
-          <button class="btn ghost" data-act="free" ${at}>Zwolnij</button>
-        </div>${wait}`;
+      return {line: `<span class="who">${volChip(s.who)}</span>
+          <span class="acts">${walkBtn}<button class="btn ghost" data-act="free" ${at}>Zwolnij</button></span>`, after: wait};
     }
-    return `<div class="status"><span class="who">${volChip(s.who, '✓ ') || '✓'}</span>
-        <button class="btn ghost spacer" data-act="free" ${at}>Cofnij</button>
-      </div>`;
+    return {line: `<span class="who">${volChip(s.who, '✓ ') || '✓'}</span>
+        <button class="btn ghost spacer" data-act="free" ${at}>Cofnij</button>`, after: ''};
+  }
+  function slotRow(dog, s){
+    const p = slotParts(dog, s);
+    return `<div class="status">${p.line}</div>${p.after}`;
   }
 
   /** Pole jednego spaceru w kafelku głównym psa na kilka spacerów: numer + jego własne przyciski. */
@@ -1437,14 +1458,6 @@
     let max = 0;
     for(const k in state.slots){ if(k.indexOf(date+'|')===0 && state.slots[k].group > max) max = state.slots[k].group; }
     return max + 1;
-  }
-  /**
-   * Znacznik obok delikatnego tła: w pełnym słońcu samo zabarwienie potrafi zniknąć,
-   * a przynależność do grupy decyduje o tym, czy pies może wyjść.
-   */
-  function groupPill(gid){
-    const c = groupColor(gid);
-    return `<span class="grp" style="color:${c.ink};border-color:${c.ink}55">👥 grupa</span>`;
   }
   function tileStyle(t, dm){
     return `border-left-color:${dm.color}` + (t.gid ? `;background:${groupColor(t.gid).bg}` : '');

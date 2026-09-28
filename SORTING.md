@@ -67,11 +67,16 @@ Z spacerów powstają **kafelki** (`buildTiles`):
 | **w grupie** | dokładnie jeden spacer z grupą | `s<pies>.<nr>` |
 
 - Kafelek główny istnieje, gdy pies ma choć jeden spacer bez grupy.
-- **Pełny** kafelek (`full`) niesie wszystko o psie: odznakę „bez spaceru od…", notatkę,
-  linijki „w grupie" dla spacerów stojących gdzie indziej. Pełny jest kafelek główny,
-  a gdy go nie ma (wszystkie spacery w grupach) — grupowy z najniższym numerem spaceru.
-- Pozostałe kafelki grupowe są **odłączone** (`detached`): imię, numer spaceru („1/2")
-  przy imieniu, trudność, numer i boks, znacznik grupy, notatka, przyciski tego spaceru.
+- **Pełny** kafelek (`full`) niesie wszystko o psie: trudność, numer i boks, odznakę „bez
+  spaceru od…", notatkę. Pełny jest kafelek główny, a gdy go nie ma (wszystkie spacery
+  w grupach) — grupowy z najniższym numerem spaceru. Kafelek główny **nie** mówi, gdzie są
+  spacery psa w grupach (dawna linijka „1/2 👥 grupa Ola" — zbędna, feedback z testów).
+- Pozostałe kafelki grupowe są **odłączone** (`detached`): sama esencja w jednym wierszu —
+  imię psa, numer spaceru („1/2"), opiekun i przyciski tego spaceru. Reszta jest na kafelku
+  pełnym. Za wąsko na jeden wiersz (poniżej ~412 px przy typowych imionach) — przyciski
+  schodzą razem do drugiego.
+- Znacznika „👥 grupa" nie ma nigdzie: grupę niesie kolor tła i to, że jej kafelki stoją
+  razem jednym blokiem.
 
 ### Blok
 
@@ -108,7 +113,10 @@ do części „czeka na chętnego" — popołudnie wciąż jest do obsadzenia.
 ## 5. Psy dwuspacerowe
 
 - W kafelku głównym każdy spacer to **osobne pole** (`.slot`) z numerem `1/2`, `2/2`
-  i własnymi przyciskami: „Zarezerwuj", „Wyprowadzony ✓", „Zwolnij", „Cofnij".
+  i własnymi przyciskami: „Zarezerwuj", „Wrócił ✓", „Zwolnij", „Cofnij" — **w jednym
+  wierszu** na zwykłym telefonie (od 360 px przy typowych imionach). Stąd krótki napis
+  `WALK_LABEL` („Wyprowadzony ✓" to 129 px, „Wrócił ✓" 73 px) i przyciski trzymane razem
+  (`.acts`): za wąsko — schodzą pod spód razem, a nie samo „Zwolnij".
 - Każdy spacer rezerwuje się osobno — **popołudnie można zarezerwować, zanim ktoś wyjdzie
   z psem rano**. Spacer 2/2 można też odhaczyć przed 1/2 (dzień bywa różny).
 - Każda akcja jedzie do serwera z numerem spaceru (ostatni argument) — to też czyni
@@ -123,16 +131,14 @@ Gdy jeden spacer psa jest w grupie, a inny nie (albo spacery są w różnych gru
 **z modelu** wynikają dwa kafelki — nie ma na to osobnego wyjątku w interfejsie:
 
 ```
-┌ Bari            2/2 ─┐   ← kafelek główny: 2/2 czeka na chętnego → wysoko
-│ [Zarezerwuj]         │
-│ 1/2 👥 grupa (Ola)   │   ← linijka: gdzie jest drugi spacer tego psa
-└──────────────────────┘
+┌ Bari            2/2 ───────────┐   ← kafelek główny: 2/2 czeka na chętnego → wysoko
+│ [Zarezerwuj]                   │
+└────────────────────────────────┘
       …
-┌ Bari 1/2  (grupa) ───┐   ← odłączony kafelek 1/2 w bloku grupy, obok towarzyszy
-│ ● Ola  [Wyprowadzony]│
-└──────────────────────┘
-┌ Azor      (grupa) ───┐
-└──────────────────────┘
+┌ Bari 1/2  ● Ola  [Wrócił ✓] Zwolnij ┐  ← odłączony 1/2 w bloku grupy (tło w kolorze grupy)
+└─────────────────────────────────────┘
+┌ Azor  …  (tło w kolorze grupy)      ┐
+└─────────────────────────────────────┘
 ```
 
 Zaznaczanie do grupy (przytrzymanie, potem stuknięcia) działa na **spacerach**:
@@ -218,7 +224,7 @@ Bez grupy: Bari, Cezar, Dino, Azor. Z grupą blok ma klucz Cezara (wolny), więc
 
 Azor R i Bari 1/2 R w grupie; Bari 2/2 wolny; Cezar W.
 Kafelki: `m2` (Bari 2/2 — czeka, dwuspacerowy), `m3` (Cezar), grupa `[s2.1, s1.1]`.
-Lista: **Bari 2/2, Cezar, [Bari 1/2, Azor]**. „Wyprowadzony ✓" w grupie odhacza Azora
+Lista: **Bari 2/2, Cezar, [Bari 1/2, Azor]**. „Wrócił ✓" w grupie odhacza Azora
 i Bariego 1/2 — 2/2 zostaje nietknięty. Rezerwacja 2/2 idzie z numerem spaceru 2.
 
 ### D. „Cofnij" w grupie przy zamrożonej liście (S91)

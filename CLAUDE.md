@@ -173,6 +173,13 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   Każdy przycisk niesie `data-id` i `data-slot`; pole imienia to `[data-entry=pies][data-slot=nr]`,
   a wyszukiwanie zawsze w obrębie klikniętego kafelka (ten sam pies bywa na liście dwa razy).
   **Całość — model, klucz sortowania, bloki grup, przykłady — opisuje `SORTING.md`.**
+  **Mało tekstu, spacer w jednym wierszu** (feedback z testów, S102): kafelek odłączony to jeden
+  wiersz — imię psa, `1/2`, opiekun, przyciski (bez trudności, numeru, boksu, notatki — są na
+  kafelku pełnym); kafelek główny nie ma linijki o spacerach w grupach; nie ma znacznika
+  „👥 grupa" ani dopisku „na stałe" przy notatce „nigdy". Wiersz spaceru (`slotParts`) trzyma
+  przyciski razem (`.acts`), a napis przycisku spaceru to `WALK_LABEL` = „Wrócił ✓" — krótki,
+  bo z „Wyprowadzony ✓" (129 px) pola 1/2, 2/2 zajmowały po dwie linijki na telefonach
+  360–393 px. **Dokładając cokolwiek do wiersza spaceru, sprawdź w przeglądarce 360 px.**
 - **Tryb edycji to katalog, nie dzień** (`renderCatalog`): bez paska dat, bez rezerwacji
   i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
   zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderTile`) nie ma przycisków
@@ -191,9 +198,11 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   przytrzymania i pies uciekał spod palca z ekranu (S78). Jeśli przytrzymany pies wypada pod
   pasek na dole, `keepAboveBar` przesuwa listę dokładnie o tyle (S81).
   Przytrzymanie spaceru z grupy otwiera jej skład do zmiany / „Rozwiąż". Kolor grupy wynika
-  z numeru (`GROUP_COLORS`), obok tła jest znacznik „👥 grupa" — w słońcu samo tło znika. Grupa
+  z numeru (`GROUP_COLORS`). Znacznik „👥 grupa" przy tle usunięty na prośbę właściciela
+  (zbędny) — był po to, że w pełnym słońcu blade tło potrafi zniknąć; zostaje tło i blok. Jeśli
+  z terenu wróci „nie widać, kto jest w grupie", to jest ten powód. Grupa
   trzyma się razem na liście jako blok (SORTING.md); po zatwierdzeniu lista układa się od razu
-  (to cel akcji). **„Wyprowadzony ✓" w grupie jest aktywny, gdy żaden spacer z grupy nie jest
+  (to cel akcji). **„Wrócił ✓" w grupie jest aktywny, gdy żaden spacer z grupy nie jest
   WOLNY** i odhacza wszystkie zarezerwowane. Nie „wszystkie zarezerwowane" — w grupie bywa
   spacer już odbyty (dołożony do składu po wyjściu, stan z innego telefonu), a „Zwolnij" z grupy
   nie wyprowadza: dosłowna reguła zablokowałaby resztę bez wyjścia (S82). Cofnięcie cofa jeden
@@ -218,7 +227,8 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   `task:3`, `_full`). Ten sam spacer obsługiwany po kolei, różne spacery i różne dni równolegle,
   sufit 4 naraz. Zapis, który utknął, blokuje wyłącznie swój tor. Akcja najpierw wkłada zapis
   do kolejki, potem przerysowuje kafelek — dzięki temu kafelek od razu ma kręciołek „zapisuję".
-- **Dymek „Zapisuję…" / „Aktualizuję…"** (`updateBusy`, `#busy`): ciemny, u góry ekranu,
+- **Dymek „Zapisuję…" / „Aktualizuję…"** (`updateBusy`, `#busy`): ciemny, na dole ekranu (tam,
+  gdzie toast; toast staje nad nim dzięki `body.busy-on`, przy zaznaczaniu oba nad paskiem),
   kropki animuje CSS. „Zapisuję…" dopóki coś leci na serwer, „Aktualizuję…" tylko w oknie
   zapowiedzi (`reorderDueAt` > 0), nie przez całą ciszę przed nią — przy ciągłej pracy świeciłby
   bez przerwy (review PR #2, S99); `markTap` go gasi. Znika najwcześniej po `T.busyMin`.
@@ -280,7 +290,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **969 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **982 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -337,7 +347,9 @@ wychodzący z grupy przy zamrożonej liście, S92 zaznaczanie konkretnego spacer
 stuknięć, S94 dymek i zapowiedź przestawienia, S95 kolory wolontariuszy, S96 szybkie stuknięcia
 w tego samego psa, S97 2/2 zarezerwowany przed 1/2, 1/2 w grupie, S98–S101 poprawki po review
 PR #2 (stuknięcie zaraz po własnej nawigacji, „Aktualizuję…" tylko w zapowiedzi, imię w 2/2
-przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód),
+przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedback z testów
+(kafelek odłączony w jednym wierszu, bez linijki „w grupie", „👥 grupa" i „na stałe", przyciski
+spaceru razem, krótki `WALK_LABEL`, dymek na dole),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,

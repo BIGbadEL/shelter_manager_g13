@@ -202,7 +202,7 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, a zapis
 
 **Wygaszanie starych odpowiedzi**: każdy pies/zadanie ma licznik zapisów w drodze (`pendingKeys`). Odpowiedź serwera jest stosowana tylko wtedy, gdy dotyczy **ostatniej** operacji dla danego bytu — starsza odpowiedź (np. na „zarezerwuj”, gdy lokalnie już kliknięto „zwolnij”) jest ignorowana. Dzięki temu przy szybkich sekwencjach widok nigdy nie „przeskakuje” wstecz. Dopóki byt ma zapis w drodze, przy jego nazwie kręci się dyskretny wskaźnik; pełny stan z akcji prowadzącej również czeka z nadpisaniem, aż kolejka się opróżni.
 
-**Dymek „Zapisuję…" / „Aktualizuję…"** — pływający u góry ekranu, z animowanymi kropkami. „Zapisuję…" świeci, dopóki jakikolwiek zapis jest w drodze (dawny szary napis „zapisuje…" w nagłówku był w słońcu niewidoczny). „Aktualizuję…" zapowiada, że lista zaraz się przestawi — pojawia się na chwilę (0,8 s) PRZED ruchem, a każde dotknięcie ekranu ruch odwołuje i gasi dymek — przy ciągłej pracy „Aktualizuję…" więc się nie pokazuje, dopiero gdy ręce znieruchomieją. Dymek trzyma się co najmniej 0,6 s, żeby nie mrugał.
+**Dymek „Zapisuję…" / „Aktualizuję…"** — pływający na dole ekranu (tam, gdzie komunikaty; komunikat, który przyjdzie w tym czasie, staje nad dymkiem), z animowanymi kropkami. „Zapisuję…" świeci, dopóki jakikolwiek zapis jest w drodze (dawny szary napis „zapisuje…" w nagłówku był w słońcu niewidoczny). „Aktualizuję…" zapowiada, że lista zaraz się przestawi — pojawia się na chwilę (0,8 s) PRZED ruchem, a każde dotknięcie ekranu ruch odwołuje i gasi dymek — przy ciągłej pracy „Aktualizuję…" więc się nie pokazuje, dopiero gdy ręce znieruchomieją. Dymek trzyma się co najmniej 0,6 s, żeby nie mrugał.
 
 **Osłona stuknięć** — zgłoszenie z terenu: „kliknąłem w jednego psa, a zapisało się na innym". Przyczyna nie była w wolnym zapisie, tylko w liście, która przestawiała się z zegara (4 s ciszy, odświeżenie co 15 s) akurat wtedy, gdy palec już leciał, oraz w podwójnym stuknięciu trafiającym w przycisk, który właśnie pojawił się w tym samym miejscu. Teraz stuknięcie w rezerwację / „OK" / spacer / zwolnienie nie liczy się, jeśli lista przestawiła się pod palcem (w trakcie stuknięcia albo do 0,5 s przed nim) albo w tym czasie zmienił się stuknięty kafelek (ktoś inny, z innego telefonu) — wtedy wolontariusz dostaje komunikat i stuka jeszcze raz. Własne podwójne stuknięcie jest ignorowane po cichu. Szczegóły: `SORTING.md`, rozdział 8.
 
@@ -345,11 +345,11 @@ Trzy rzeczy warto wiedzieć:
 **Przytrzymaj kafelek psa** (ok. pół sekundy) — włącza się zaznaczanie. Przytrzymany pies jest
 zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
 wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
-wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny), znacznik „👥 grupa" i stają
-na liście obok siebie. Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
+wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny) i stają na liście obok siebie
+(bez napisu „grupa" — kolor i blok wystarczą). Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
 kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pies zostaje pod palcem.
 
-- **„Wyprowadzony ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
+- **„Wrócił ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
   aktywny, gdy nikt z grupy nie jest wolny — każdy pies ma opiekuna; do tego czasu kafelek mówi,
   na czyją rezerwację grupa czeka. Reguła brzmi „nikt nie jest wolny", a nie „wszyscy
   zarezerwowani": w grupie bywa pies już wyprowadzony (np. dołożony do składu po spacerze),
@@ -438,13 +438,23 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 - **Notatka** (`notatka`): ustawiana w edycji psa, widoczna na kafelku (📌). Domyślnie znika przy czyszczeniu kończącym dzień, na którym ją zapisano — do jednorazowych zdarzeń typu „Zdjęcia o 12:00 w parku”.
 - **Termin notatki** (`notatka_do`, opcjonalny): pole daty pod notatką. Puste = zachowanie jak dotąd. Ustawione = notatka przeżywa czyszczenia i znika dopiero po tym dniu — do rzeczy zaplanowanych z wyprzedzeniem („w środę wpisuję spacer zapoznawczy w niedzielę”). Na kafelku pojawia się wtedy odznaka „do niedzieli” / „do 20.08”. Data z przeszłości i data bez notatki są odrzucane po obu stronach (interfejs pokazuje komunikat, serwer normalizuje do pustej).
-- **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`, na kafelku odznaka „na stałe”). Do rzeczy stałych, typu „tylko w kagańcu”.
-- **Dwa spacery dziennie** (`spacery` = 1/2): kafelek psa ma dwa osobne pola, **1/2** i **2/2**, każde z własnym „Zarezerwuj", „Wyprowadzony ✓", „Zwolnij"/„Cofnij" i osobą. Można zarezerwować popołudniowy 2/2, zanim ktokolwiek weźmie poranny 1/2. Odbyte pole pokazuje „✓ imię" (bez godziny). Oba spacery trafiają osobno do Historii przy nocnym resecie. Model zna dowolną liczbę spacerów, ale interfejs i serwer pozwalają na 1 albo 2.
+- **„Nigdy nie znika”** — pole obok terminu. Notatka zostaje, dopóki ktoś jej ręcznie nie skasuje (w arkuszu `notatka_do = nigdy`). Na kafelku nic nie dopisujemy — po prostu jest. Do rzeczy stałych, typu „tylko w kagańcu”.
+- **Dwa spacery dziennie** (`spacery` = 1/2): kafelek psa ma dwa osobne pola, **1/2** i **2/2**, każde z własnym „Zarezerwuj", „Wrócił ✓", „Zwolnij"/„Cofnij" i osobą — w jednym wierszu na zwykłym telefonie (dlatego przycisk mówi krótko „Wrócił ✓", a nie „Wyprowadzony ✓"). Można zarezerwować popołudniowy 2/2, zanim ktokolwiek weźmie poranny 1/2. Odbyte pole pokazuje „✓ imię" (bez godziny). Oba spacery trafiają osobno do Historii przy nocnym resecie. Model zna dowolną liczbę spacerów, ale interfejs i serwer pozwalają na 1 albo 2.
 - **Kolor wolontariusza**: przy imieniu jest kolorowa obwódka z kropką — ta sama osoba ma tego samego dnia ten sam kolor na każdym psie, więc od razu widać, kto ile ma na głowie. Imię zostaje w całości, kolor go nie zastępuje. Kolory przydziela serwer na dzień (10 barw, żadna nie jest kolorem grupy ani trudności; barwa wynika z imienia, a gdy jest już zajęta — następna wolna), telefon przewiduje ten sam przydział od razu po rezerwacji. Przy więcej niż 10 osobach kolory zaczynają się powtarzać — imię dalej rozstrzyga. Kolor jest dodatkiem: jeśli jego zapis się nie uda (limit właściwości skryptu, awaria usługi), rezerwacja i spacer i tak się zapisują. Przydział ma sufity — 60 osób na dzień i 31 dni naraz — bo właściwości skryptu mają limity rozmiaru; ponad sufit osoba dostaje kolor „z imienia".
 - Tryb edycji nazywa się po prostu trybem edycji (wejście przez ⚙️ + PIN). Opisu na dole strony
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+**Feedback z testów spacerów 1/2, 2/2:**
+- Spacer psa dwuspacerowego zajmował dwie linijki („Zwolnij" spadało pod spód). Przyciski trzymają
+  się razem, a przycisk spaceru mówi krótko „Wrócił ✓" (73 px zamiast 129 px) — od 360 px jeden
+  spacer to jedna linijka przy typowych imionach.
+- Spacer w grupie (kafelek odłączony) to teraz jeden wiersz: imię psa, 1/2, opiekun, przyciski.
+  Na węższych telefonach przyciski schodzą razem do drugiego — zamiast dawnych czterech linijek.
+- Kafelek główny nie powtarza, gdzie jest spacer psa w grupie („1/2 👥 grupa Grzesiek").
+- Bez napisu „👥 grupa" i bez dopisku „na stałe" przy notatce, która nigdy nie znika.
+- Dymek „Zapisuję…/Aktualizuję…" na dole ekranu, obok komunikatów.
 
 **Po review PR #2:**
 - Przepisanie zakładki Spacery na nowy układ nie miało drogi powrotu — poprzednia wersja kodu

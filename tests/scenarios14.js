@@ -110,8 +110,8 @@ async function S92(){
   tapEl(app, doc(app).getElementById('selGroup'));
   const job = app.pending[app.pending.length-1];
   check('setGroup z numerami spacerów', job.fn==='setGroup' && JSON.stringify(job.args[1])==='["2:1","1:2"]', JSON.stringify(job.args));
-  check('2/2 w grupie z Cezarem, 1/2 w kafelku głównym z linijką „w grupie"',
-    !!tile(app,'s1.2') && /2\/2\s*👥 grupa/.test(txt(tile(app,'m1'))) && !!tile(app,'m1').querySelector('[data-act="reserve"][data-slot="1"]'),
+  check('2/2 w grupie z Cezarem, 1/2 w kafelku głównym',
+    !!tile(app,'s1.2') && /2\/2/.test(txt(tile(app,'s1.2'))) && !!tile(app,'m1').querySelector('[data-act="reserve"][data-slot="1"]'),
     tiles(app));
   app.respondNext({group:1, slots:[sl(1,2,{group:1}), sl(2,1,{group:1})]});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
@@ -423,8 +423,65 @@ async function S101(){
   check('bez błędów', e.errors.length===0, e.errors.join('; '));
 }
 
+async function S102(){
+  console.log('S102: feedback z testów — mniej tekstu na kafelku, spacer w jednym wierszu, dymek na dole');
+  const app = buildApp({timing:TIMING});
+  app.seed(base({dogs:[d2(1,'Witkacy'), d1(2,'Draco'), d2(3,'Santi'),
+                       Object.assign(d1(4,'Freja'), {note:'Tylko w kagańcu', noteUntil:'nigdy'}), d2(5,'Lego')],
+    slots:[sl(1,1,{status:'reserved', who:'Grzesiek', group:1}), sl(2,1,{status:'reserved', who:'Grzesiek', group:1}),
+           sl(3,1,{status:'reserved', who:'Maciek'}), sl(3,2,{status:'reserved', who:'Jola'}),
+           sl(5,2,{group:2}), sl(4,1,{status:'reserved', who:'Ola', group:2})]}));
+  const html = doc(app).getElementById('view').innerHTML;
+
+  // notatka „nigdy nie znika" — po prostu jest
+  check('notatka „na zawsze" bez dopisku', /Tylko w kagańcu/.test(txt(tile(app,'m4') || tile(app,'s4.1')))
+    && !/na stałe/.test(html) && !doc(app).querySelector('.note .until'), txt(tile(app,'s4.1')));
+  // napisu „grupa" nie ma nigdzie (poza podpowiedzią, na kogo grupa czeka)
+  check('bez znacznika „👥 grupa"', !/👥/.test(html) && !doc(app).querySelector('.grp'));
+  // kafelek główny nie mówi, gdzie jest spacer w grupie
+  const m1 = tile(app,'m1');
+  check('Witkacy 2/2: bez linijki „1/2 grupa Grzesiek"', !!m1 && !/Grzesiek/.test(txt(m1)) && !m1.querySelector('.away')
+    && /Witkacy\s*2\/2/.test(txt(m1)), txt(m1));
+  // kafelek odłączony: jeden wiersz — imię psa, numer spaceru, opiekun, przyciski; nic więcej
+  const s1 = tile(app,'s1.1');
+  const row = s1 && s1.querySelector(':scope > .status');
+  check('odłączony Witkacy 1/2: wszystko w jednym wierszu', !!row && !!row.querySelector('.name') && /Witkacy/.test(row.querySelector('.name').textContent)
+    && /1\/2/.test(row.querySelector('.slotno').textContent) && /Grzesiek/.test(row.querySelector('.vol').textContent)
+    && !!row.querySelector('.acts [data-act="walk"]') && !!row.querySelector('.acts [data-act="free"]'), s1 ? s1.outerHTML.slice(0, 400) : '(brak)');
+  check('…bez trudności, numeru, boksu i notatki', !s1.querySelector('.dif, .dogmeta, .note, .row'), s1.outerHTML.slice(0, 300));
+  // przyciski spaceru trzymają się razem — schodzą pod spód razem, nie „Zwolnij" samo
+  const accts = [...doc(app).querySelectorAll('[data-act="walk"]')];
+  check('„Wrócił ✓" i „Zwolnij" zawsze w jednej grupie (.acts)', accts.length >= 4
+    && accts.every(b => b.parentElement.classList.contains('acts') && b.parentElement.querySelector('[data-act="free"]')));
+  const script = fs.readFileSync(path.join(__dirname, '..', 'Script.html'), 'utf8');
+  const label = (script.match(/const WALK_LABEL = '([^']+)'/) || [])[1] || '';
+  check('krótki napis na przycisku spaceru, ten sam wszędzie', label.length > 0 && label.length <= 10
+    && accts.every(b => b.textContent.trim()===label) && !/Wyprowadzony ✓/.test(html), label);
+
+  // odłączony wolny spacer: rezerwacja w tym samym kafelku
+  tapEl(app, doc(app).querySelector('li[data-tile="s5.2"] [data-act="reserve"]'));
+  check('odłączony wolny 2/2: pole imienia otwiera się w nim', !!doc(app).querySelector('li[data-tile="s5.2"] [data-entry="5"][data-slot="2"]:not(.hidden)'));
+  app.type('li[data-tile="s5.2"] [data-input="5"]', 'Iza');
+  app.click('li[data-tile="s5.2"] [data-act="confirm"]');
+  const r = app.pending[app.pending.length-1];
+  check('…i rezerwuje właśnie 2/2', r && r.fn==='reserve' && r.args[0]===5 && r.args[3]===2, r && JSON.stringify(r.args));
+
+  // dymek na dole; toast staje wtedy nad nim
+  const sty = fs.readFileSync(path.join(__dirname, '..', 'Styles.html'), 'utf8');
+  const busyRule = (sty.match(/\.busy\{[^}]*\}/) || [''])[0];
+  check('dymek na dole ekranu', /bottom:/.test(busyRule) && !/top:/.test(busyRule), busyRule);
+  check('podczas zapisu strona wie, że dymek świeci (toast staje nad nim)', doc(app).body.classList.contains('busy-on')
+    && /body\.busy-on \.toast\{bottom:/.test(sty));
+  app.respondNext({slot:{slot:2, status:'reserved', who:'Iza'}});
+  await sleep(TIMING.busyMin + 30);
+  app.window.document.body.dispatchEvent(ev(app, 'pointerdown'));   // bez zapowiedzi przestawienia
+  await sleep(TIMING.busyMin + 30);
+  check('po zapisie dymek i znacznik gasną', busy(app)==='' && !doc(app).body.classList.contains('busy-on'), busy(app) + ' ' + doc(app).body.className);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

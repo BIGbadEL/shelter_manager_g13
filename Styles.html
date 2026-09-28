@@ -119,9 +119,8 @@
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
 
   /* ---------- spacery grupowe ----------
-     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy),
-     a znacznik „👥 grupa" mówi to samo tekstem, gdy w słońcu tła nie widać. */
-  .grp{font-size:11px;font-weight:800;padding:1px 7px;border-radius:6px;background:#fff;border:1px solid;}
+     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy), a kafelki
+     grupy stoją na liście jednym blokiem. Znacznika „👥 grupa" już nie ma (zbędny wszędzie). */
   .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
   /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
      w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
@@ -142,18 +141,22 @@
 
   /* ---------- spacery psa na dwa spacery ----------
      Pola 1/2 i 2/2 są w jednym kafelku, ale każde osobno — z numerem i własnymi
-     przyciskami. Spacer odłączony (w grupie gdzie indziej) ma numer przy imieniu,
-     a kafelek główny linijkę „w grupie", gdzie ten spacer jest. */
+     przyciskami, w JEDNYM wierszu. Spacer odłączony (w grupie gdzie indziej) to kafelek
+     z samym wierszem: imię psa, numer spaceru, opiekun, przyciski. */
   .slot{position:relative;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
     padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);}
   .slot .status{margin-top:0;flex:1;min-width:0;gap:6px;}
   .slot .walk{padding:7px 10px;}
-  .slot .ghost{padding:6px 5px;margin-left:auto;}   /* zawinięte „Zwolnij" pod „Wyprowadzony", z prawej */
+  .slot .ghost{padding:6px 5px;}
   .slot .entry{flex-basis:100%;margin-top:4px;}
   .slot .grpwait{flex-basis:100%;margin-top:0;}
   .slot.walked{opacity:.6;}
   .slotno{font-size:11px;font-weight:800;color:var(--forest);background:#e2ebe3;padding:2px 7px;border-radius:6px;flex:none;}
-  .away{margin-top:7px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .dog.detached{padding-top:9px;padding-bottom:9px;}
+  .dog.detached > .status{margin-top:0;gap:6px;}
+  .dog.detached > .status > .reserve{margin-left:auto;}
+  .dog.detached .walk{padding:7px 10px;}
+  .dog.detached .ghost{padding:6px 5px;}
 
   /* ---------- wolontariusz: kolor dnia ----------
      Nasycony kontur i kropka przy imieniu — celowo inna rodzina niż grupy (blade tło
@@ -163,9 +166,12 @@
   .vol .vdot{width:10px;height:10px;border-radius:50%;background:var(--vc,#4b5563);flex:none;}
 
   /* ---------- dymek „Zapisuję…" / „Aktualizuję…" ----------
-     U góry ekranu, ciemny i duży — ma być widać, że stuknięcie zostało przyjęte.
+     Na dole ekranu, ciemny i duży — ma być widać, że stuknięcie zostało przyjęte. Na dole,
+     bo tam są już komunikaty (toast), blisko kciuka, i nie zasłania daty u góry. Toast,
+     który przyjdzie w tym czasie, staje nad dymkiem (body.busy-on), a przy zaznaczaniu
+     grupy oba stoją nad paskiem na dole.
      Kropki: „." → „.." → „..." i od nowa (druga i trzecia pojawiają się po kolei). */
-  .busy{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);z-index:70;
+  .busy{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;
     display:inline-flex;align-items:baseline;padding:8px 16px;border-radius:999px;
     background:var(--ink);color:#fff;font-size:14px;font-weight:700;letter-spacing:.01em;
     box-shadow:0 4px 16px rgba(0,0,0,.22);pointer-events:none;white-space:nowrap;}
@@ -186,6 +192,9 @@
   .selectbar .btn{padding:11px 14px;}
   body.selecting{padding-bottom:84px;}
   body.selecting .toast{bottom:84px;}
+  body.selecting .busy{bottom:84px;}
+  body.busy-on .toast{bottom:calc(74px + env(safe-area-inset-bottom));}
+  body.selecting.busy-on .toast{bottom:136px;}
 
   /* ---------- przyciski ---------- */
   .btn{border:none;font-family:inherit;font-weight:700;cursor:pointer;border-radius:10px;
@@ -202,6 +211,8 @@
   .who{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink);}
   .who .dot{background:currentColor;width:8px;height:8px;}
   .spacer{margin-left:auto;}
+  /* przyciski zarezerwowanego spaceru trzymają się razem: za wąsko — schodzą pod spód razem */
+  .acts{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;}
 
   .entry{margin-top:10px;display:flex;gap:8px;}
   .entry input{flex:1;font-family:inherit;font-size:15px;padding:10px 12px;
