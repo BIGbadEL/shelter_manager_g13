@@ -126,6 +126,10 @@
      w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
   .dog.pick{cursor:pointer;position:relative;}
   .dog.pick .status,.dog.pick .grpwait{opacity:.35;pointer-events:none;}
+  /* kafelek odłączony ma imię psa i „1/2" w tym samym wierszu co przyciski — bledną tylko
+     opiekun i przyciski, a nazwa zaznaczanego kafelka zostaje czytelna (review) */
+  .dog.pick.detached > .status{opacity:1;}
+  .dog.pick.detached > .status > :not(.name):not(.slotno){opacity:.35;}
   .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
     border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}

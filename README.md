@@ -307,25 +307,44 @@ stan psa w starym kształcie (`status`/`kto`/`kto1`).
 
 Przepisanie zakładki Spacery działa w jedną stronę. Poprzednia wersja kodu nowego układu nie
 przeczyta: statusy i godziny wypadają jej w innych kolumnach, rezerwacje znikają, a w polu „kto"
-pojawiają się liczby. Dlatego:
+pojawiają się liczby.
 
-1. **Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
-   od kopii, którą robi aplikacja.
-2. Żeby wrócić do poprzedniej wersji:
-   - wdroż poprzednią wersję kodu (w Apps Script: *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
-     albo `git checkout` poprzedniego commita i `npm run deploy:*`);
-   - w arkuszu zmień nazwę zakładki `Spacery` na np. `Spacery (nowy układ)`, a `Spacery (stary układ)`
-     na `Spacery`.
-   Co wolontariusze zapisali na nowej wersji, zostaje tylko w odłożonej zakładce — w razie potrzeby
-   trzeba to przepisać ręcznie.
-3. Ponowne wdrożenie nowej wersji przepisze przywróconą zakładkę od nowa, znów z kopią. Znacznik
-   `walksLayout` pamięta id zakładki (`2:<id>`), więc podmiana zakładki nie przejdzie niezauważona
-   i nowa wersja nie przeczyta starego układu jak nowego.
+**Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
+od kopii, którą robi aplikacja.
 
-Projekt, który nie miał jeszcze wersji z datami (nie ma zakładki Spacery), dostaje zakładkę od razu
-w nowym układzie — kopii nie ma czego robić. Poprzednia wersja czyta tam stare kolumny Psy, których
-nowa nie rusza: po cofnięciu lista wraca do stanu sprzed wdrożenia, a zmiany z czasu działania
-nowej wersji przepadają.
+Kroki cofnięcia rób **w podanej kolejności, jeden zaraz po drugim** i nie w godzinie czyszczenia.
+Wdrożenie poprzedniej wersji: w Apps Script *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
+albo `git checkout` poprzedniego commita i `npm run deploy:*`.
+
+**Projekt, który miał już wersję z datami** (aplikacja zrobiła kopię `Spacery (stary układ)`):
+
+1. **Najpierw wdroż poprzednią wersję kodu, dopiero potem ruszaj zakładki.** Odwrotnie nowa wersja
+   przy pierwszym odświeżeniu z dowolnego telefonu zobaczy pod nazwą `Spacery` zakładkę o innym id
+   i od razu przepisze ją z powrotem na nowy układ (z kolejną kopią) — cofnięcie anuluje się po
+   cichu. Między krokiem 1 a 2 stara wersja widzi nowy układ jako śmieci, dlatego krok 2 od razu.
+2. W arkuszu zmień nazwę zakładki `Spacery` na np. `Spacery (nowy układ)`, a `Spacery (stary układ)`
+   na `Spacery`.
+3. **Z przywróconej `Spacery` usuń wiersze z datą wcześniejszą niż bieżący dzień listy.** Kopia
+   powstała w dniu wdrożenia, a ten dzień (i kolejne) domknęła już nowa wersja — są w Historii.
+   Stara wersja domknęłaby je drugi raz i w Historii byłyby podwójne wpisy. Wiersze dnia bieżącego
+   i przyszłych zostają.
+
+Co wolontariusze zapisali na nowej wersji, zostaje tylko w odłożonej zakładce `Spacery (nowy
+układ)` — w razie potrzeby trzeba to przepisać ręcznie. Ponowne wdrożenie nowej wersji przepisze
+przywróconą zakładkę od nowa, znów z kopią: znacznik `walksLayout` pamięta id zakładki (`2:<id>`),
+więc podmiana zakładki nie przejdzie niezauważona i nowa wersja nie przeczyta starego układu jak nowego.
+
+**Projekt bez wersji z datami** (produkcja przed pierwszym wdrożeniem dat — nie ma zakładki Spacery):
+nowa wersja zakłada zakładkę od razu w nowym układzie, kopii nie ma czego robić. Poprzednia wersja
+czyta stan dnia ze starych kolumn Psy (`status`, `kto`, `godzina`, `kto1`, `godzina1`), których nowa
+nie rusza — zostaje w nich stan z chwili wdrożenia.
+
+1. Wdroż poprzednią wersję kodu.
+2. **Jeśli od wdrożenia minęła choć jedna noc, wyczyść w Psy te pięć kolumn.** Dzień wdrożenia
+   domknęła już nowa wersja i jest w Historii; stara pokazałaby te psy jako wyprowadzone, a przy
+   najbliższym czyszczeniu zapisałaby ich spacery do Historii drugi raz — pod datą tamtej nocy.
+   Cofając tego samego dnia, zostaw je: to wtedy wciąż stan bieżącego dnia (bez zmian zrobionych
+   na nowej wersji — te są tylko w zakładce Spacery, której stara wersja nie czyta).
 
 ## Godzina czyszczenia listy
 

@@ -56,7 +56,12 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   (review PR #2: rezerwacje znikały, godzina w polu „kto"). Dlatego przed przepisaniem powstaje
   kopia `Spacery (stary układ)` (`backupWalksSheet_`; nieudana kopia nie blokuje aplikacji),
   a znacznik `walksLayout` to `2:<id zakładki>`: przywrócona po cofnięciu kopia ma inne id i przy
-  ponownym wdrożeniu przepisze się od nowa (B45). Procedura cofnięcia: README.
+  ponownym wdrożeniu przepisze się od nowa (B45). Procedura cofnięcia: README — dwie rzeczy,
+  które łatwo pominąć (review): **najpierw wdrożenie starej wersji, potem nazwy zakładek**
+  (odwrotnie nowa wersja przy pierwszym odświeżeniu przepisze przywróconą kopię z powrotem),
+  i **z kopii trzeba usunąć dni sprzed bieżącego** — nowa wersja je domknęła, a stara zapisałaby
+  je do Historii drugi raz. Na produkcji bez zakładki Spacery to samo dotyczy starych kolumn
+  Psy: po nocy na nowej wersji trzeba je wyczyścić.
 - **Historia** — zamknięte dni: `data | pies | kto | godzina` (pies jako etykieta, nie id)
 - **Zadania** — `id | tresc | data | status`
 
@@ -290,7 +295,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **982 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **988 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -349,7 +354,8 @@ w tego samego psa, S97 2/2 zarezerwowany przed 1/2, 1/2 w grupie, S98–S101 pop
 PR #2 (stuknięcie zaraz po własnej nawigacji, „Aktualizuję…" tylko w zapowiedzi, imię w 2/2
 przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedback z testów
 (kafelek odłączony w jednym wierszu, bez linijki „w grupie", „👥 grupa" i „na stałe", przyciski
-spaceru razem, krótki `WALK_LABEL`, dymek na dole),
+spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie blednie imienia psa
+na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -504,6 +510,9 @@ autoryzacji** przy pierwszym uruchomieniu.
   w `Styles.html` (`--paper`, `--card`, `--muted`, kolory trudności). Świadomie odłożone,
   nie jest zapomniane. Przy tym temacie pamiętaj, że rozjaśnianie tła nie wystarczy —
   liczy się kontrast tekstu i to, żeby kolory trudności dało się rozróżnić w słońcu.
+- **Do sprawdzenia na iPhonie:** po konflikcie rezerwacji pole imienia wraca z wpisanym tekstem
+  (`putEntry`), ale fokus przychodzi z odpowiedzi serwera, nie ze stuknięcia — iOS raczej nie
+  otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
 - **Przed wdrożeniem na produkcję** tej wersji: kopia całego arkusza (*Plik → Utwórz kopię*).

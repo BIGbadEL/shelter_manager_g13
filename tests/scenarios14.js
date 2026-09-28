@@ -480,8 +480,34 @@ async function S102(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S103(){
+  console.log('S103: zaznaczanie — na kafelku odłączonym bledną przyciski, nie imię psa');
+  const app = buildApp();
+  app.seed(base({dogs:[d1(1,'Azor'), d2(2,'Bari')],
+    slots:[sl(1,1,{status:'reserved', who:'Ola', group:1}), sl(2,1,{status:'reserved', who:'Iza', group:1})]}));
+  // harness nie wczytuje Styles.html, a jsdom i tak nie liczy opacity z arkusza: style dokładamy
+  // sami, a widoczność liczymy po regułach (ostatnia pasująca wygrywa) razy przodkowie
+  const w = app.window;
+  const css = fs.readFileSync(path.join(__dirname, '..', 'Styles.html'), 'utf8').match(/<style>([\s\S]*)<\/style>/)[1];
+  const st = doc(app).createElement('style'); st.textContent = css; doc(app).head.appendChild(st);
+  const own = el => { let v = 1; for(const sh of doc(app).styleSheets) for(const r of sh.cssRules){
+    if(!r.style || r.style.opacity === '') continue; let m = false; try{ m = el.matches(r.selectorText); }catch(e){} if(m) v = parseFloat(r.style.opacity); } return v; };
+  const seen = el => { let o = 1; for(let e = el; e && e.nodeType === 1; e = e.parentElement) o *= own(e); return o; };
+  check('(przygotowanie) style wczytane', doc(app).styleSheets.length===1 && doc(app).styleSheets[0].cssRules.length > 50);
+  w.eval("startSelect('1:1')");
+  const s2 = tile(app, 's2.1'), m1 = tile(app, 's1.1');
+  check('tryb zaznaczania, Bari 1/2 to kafelek odłączony', !!S(app).select && s2.classList.contains('detached') && s2.classList.contains('pick'));
+  check('Bari 1/2: imię i numer spaceru czytelne', seen(s2.querySelector('.name'))===1 && seen(s2.querySelector('.slotno'))===1,
+    seen(s2.querySelector('.name')) + ' / ' + seen(s2.querySelector('.slotno')));
+  check('…a opiekun i przyciski bledną jak na innych kafelkach', seen(s2.querySelector('.who')) < 0.5 && seen(s2.querySelector('[data-act="walk"]')) < 0.5
+    && seen(s2.querySelector('[data-act="free"]')) < 0.5);
+  check('kafelek pełny (Azor) bez zmian: imię czytelne, przyciski blade', seen(m1.querySelector('.name'))===1
+    && seen(m1.querySelector('[data-act="walk"]')) < 0.5);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }
