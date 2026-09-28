@@ -515,10 +515,16 @@ autoryzacji** przy pierwszym uruchomieniu.
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Przed wdrożeniem na produkcję** tej wersji: kopia całego arkusza (*Plik → Utwórz kopię*).
-  Produkcja nie ma jeszcze zakładki Spacery, więc powstanie ona od razu w nowym układzie (import
-  ze starych kolumn Psy, `warmup`). Projekt testowy przepisał się już przy wdrożeniu @8 — jeszcze
-  bez kopii (kopia doszła po review PR #2), więc jego stary układ jest tylko w historii wersji arkusza.
+- **Produkcja: wersja z PR #2 (`ee58018`) od 2026-09-28, 20:41 — wdrożenie @17.** Poprzednia
+  to @16 = `0cc01e0` (sprzed dat) — do niej się cofa, według README („Projekt bez wersji z datami").
+  Zakładka Spacery powstała przy wdrożeniu (import ze starych kolumn Psy — po czyszczeniu o 19:00
+  pustych). Czyszczenie na produkcji jest o **19:00**, nie domyślnie o 22:00. Przed wdrożeniem
+  zrobiona próba generalna: kod @16 i nowy na jednym arkuszu (dzień, noc, cofnięcie, ponowne
+  wdrożenie) oraz stara karta @16 z nowym serwerem — wszystko zielone.
+- **Projekt testowy nie ma wyzwalacza `endOfDay`** (wyzwalacze nie kopiują się z projektem).
+  Dzień przełącza tam zegar, ale nic nie trafia do Historii i Spacery puchnie. Nocne czyszczenie
+  nowego kodu sprawdzone raz ręcznie z edytora 28.09. Stary układ Spacery testu przepisał się
+  przy @8 jeszcze bez kopii — jest tylko w historii wersji arkusza.
 
 ## Jak ze mną pracować
 
