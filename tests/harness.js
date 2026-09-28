@@ -55,9 +55,14 @@ function buildApp(opts){
   const script = extract('Script.html','script');
   const errors = [];
   window.addEventListener('error', e => errors.push(e.error && e.error.message || e.message));
-  const exposed = script + '\n;window.__dbg = () => ({sending: isSending(), queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: dogsAt(state.date).map(d=>d.status+":"+d.who), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { [...inflight.values()].forEach(s=>{ s.at = 0; }); };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render(); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__state = state;'
-    + '\n;window.__settle = () => { lastTapAt = 0; render(); };'          // udaje ciszę po dotknięciu ekranu
-    + '\n;window.__order = () => [...viewEl.querySelectorAll("li.dog")].map(li => Number(li.dataset.dog));';
+  // opts.timing — krótsze czasy listy (cisza, zapowiedź przestawienia, osłona stuknięć, dymek);
+  // aplikacja czyta je przy starcie, na telefonie obowiązują domyślne
+  if(opts.timing) window.__G13_TIMING = opts.timing;
+  // `dogs` w __dbg to spacer 1 każdego psa — tak czytają go testy psów jednospacerowych
+  const exposed = script + '\n;window.__dbg = () => ({sending: isSending(), queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>{ const s = slotOf(state.date, d.id, 1); return s.status+":"+s.who; }), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { [...inflight.values()].forEach(s=>{ s.at = 0; }); };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render("self"); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__keySlot = keySlot; window.__state = state;'
+    + '\n;window.__settle = () => { lastTapAt = 0; reorderDueAt = 1; render(); };'   // udaje ciszę po dotknięciu i minioną zapowiedź
+    + '\n;window.__order = () => [...viewEl.querySelectorAll("li.dog")].map(li => Number(li.dataset.dog));'
+    + '\n;window.__tiles = () => [...viewEl.querySelectorAll("li.dog")].map(li => li.dataset.tile);';
   try { window.eval(exposed); } catch(e){ errors.push('EVAL: '+e.message); }
 
   return {

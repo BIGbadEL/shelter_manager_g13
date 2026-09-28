@@ -155,7 +155,8 @@ const TASKS = [
   app.click('[data-act="editSave"][data-id="1"]');
   const job = app.pending[app.pending.length-1];
   check('zapis wysyła „nigdy"', job.fn==='updateDog' && job.args[1].noteUntil==='nigdy', JSON.stringify(job.args[1]));
-  check('w katalogu: „na stałe"', /Tylko w kagańcu[\s\S]{0,80}na stałe/.test(app.html()), app.html().slice(0,600));
+  check('w katalogu: sama notatka, bez dopisku (feedback z testów)', /Tylko w kagańcu/.test(app.html())
+    && !/na stałe/.test(app.html()) && !/class="until"/.test(app.html()), app.html().slice(0,600));
   app.respondNext(base({dogs:[dogFree({id:1, name:'Borys', note:'Tylko w kagańcu', noteUntil:'nigdy'}),
                               dogFree({id:2, name:'Luna', walks:2})]}));
 

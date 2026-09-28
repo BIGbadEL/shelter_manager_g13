@@ -40,7 +40,7 @@ const okReserve = (id, who)=>({dog: dogFree({id, name:'Pies'+id, status:'reserve
   app.respondNext(okReserve(2,'Ala'));
   app.respondNext(okReserve(1,'Ala'));
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
-  check('UI żywe', /Wyprowadzony/.test(app.html()));
+  check('UI żywe', /data-act="walk"/.test(app.html()));
   check('bez błędów', app.errors.length===0, app.errors.join(' | '));
 })();
 
@@ -84,7 +84,7 @@ const okReserve = (id, who)=>({dog: dogFree({id, name:'Pies'+id, status:'reserve
   app.respondNext(okReserve(2,'Ala'));
   app.respondNext(okReserve(3,'Ala'));
   check('psy 2 i 3 rozliczone', app.state().pending.length===1, JSON.stringify(app.state().pending));
-  check('UI żywe', /Wyprowadzony/.test(app.html()));
+  check('UI żywe', /data-act="walk"/.test(app.html()));
 
   // ratunek dla psa 1: tapnięcie w ekran po przekroczeniu watchdoga
   app.window.__force();
@@ -184,7 +184,7 @@ function answerNext(app){
       while(app.pending.length) answerNext(app);
     }
     const s = app.state();
-    const alive = /Zarezerwuj|Wyprowadzony|Cofnij|odświeżam/.test(app.html());
+    const alive = /Zarezerwuj|data-act="walk"|Cofnij|odświeżam/.test(app.html());
     if(!(s.sending===false && s.queueLen===0 && alive && app.errors.length===0)){
       bad++;
       if(bad===1) console.log('    przebieg', run, JSON.stringify(s), app.errors.slice(0,2));

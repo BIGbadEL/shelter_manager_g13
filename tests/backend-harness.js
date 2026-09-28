@@ -9,7 +9,8 @@ const ROOT = path.join(__dirname, '..');
 const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs'];
 
 /* ---------- atrapa arkusza ---------- */
-function makeSheet(name, rows){
+let sheetSeq = 0;
+function makeSheet(name, rows, onRename){
   const data = rows.map(r => r.slice());
   const widthOf = () => data.reduce((m,r)=>Math.max(m,r.length), 1);
   const pad = (r,w)=>{ while(r.length<w) r.push(''); return r; };
@@ -18,7 +19,13 @@ function makeSheet(name, rows){
 
   const sheet = {
     _name: name, _data: data,
-    getName(){ return name; },
+    _formats: {},          // kolumna -> format ('@' = tekst) — bug z datą 1899 jest do sprawdzenia
+    _reads: 0,             // ile razy czytano wartości — do testów kosztu (trimSlots_)
+    _id: ++sheetSeq,       // jak getSheetId(): kopia ma inne id niż oryginał
+
+    getName(){ return sheet._name; },
+    getSheetId(){ return sheet._id; },
+    setName(n){ const old = sheet._name; sheet._name = n; if(onRename) onRename(old, n, sheet); return sheet; },
     getLastRow(){
       for(let i=data.length; i>0; i--){
         if(data[i-1].some(v=>v!=='' && v!=null)) return i;
@@ -37,6 +44,7 @@ function makeSheet(name, rows){
       const cols = nc === undefined ? 1 : nc;
       return {
         getValues(){
+          sheet._reads++;
           const out = [];
           for(let i=0;i<rows;i++){
             const line = cell(row+i, col+cols-1);
@@ -52,7 +60,7 @@ function makeSheet(name, rows){
         },
         getValue(){ return cell(row, col)[col-1]; },
         setValue(v){ cell(row, col)[col-1] = v; },
-        setNumberFormat(){ return this; },
+        setNumberFormat(f){ for(let j=0;j<cols;j++) sheet._formats[col+j] = f; return this; },
       };
     },
   };
@@ -65,8 +73,13 @@ function makeContext(opts){
   // o godzinie resetu i testy muszą umieć przejść przez tę granicę w jednym scenariuszu
   let nowMs = opts.now ? Date.parse(opts.now) : Date.parse('2026-08-04T22:10:00+02:00');
   const props = Object.assign({}, opts.props);
+  let propReads = 0;
+  let propFail = null;             // (klucz, 'get'|'set') -> true = usługa właściwości rzuca (limit, awaria)
   const sheets = {};
-  (opts.sheets||[]).forEach(s=>{ sheets[s.name] = makeSheet(s.name, s.rows); });
+  // zmiana nazwy zakładki (przywrócenie kopii po cofnięciu wdrożenia) — pod nową nazwą w arkuszu
+  const rename = (old, n, sh) => { if(sheets[old] === sh) delete sheets[old]; sheets[n] = sh; };
+  const addSheet = (n, rows) => (sheets[n] = makeSheet(n, rows, rename));
+  (opts.sheets||[]).forEach(s=>{ addSheet(s.name, s.rows); });
   const triggers = [];
 
   class FrozenDate extends Date {
@@ -91,7 +104,12 @@ function makeContext(opts){
     SpreadsheetApp: {
       getActiveSpreadsheet: ()=>({
         getSheetByName: n => sheets[n] || null,
-        insertSheet: n => (sheets[n] = makeSheet(n, [])),
+        insertSheet: (n, o) => {
+          if(sheets[n]) throw new Error('Arkusz o nazwie „' + n + '" już istnieje');
+          const sh = addSheet(n, o && o.template ? o.template._data : []);
+          if(o && o.template) sh._formats = Object.assign({}, o.template._formats);
+          return sh;
+        },
       }),
       flush(){},
     },
@@ -99,8 +117,12 @@ function makeContext(opts){
     Session: { getScriptTimeZone: ()=>'Europe/Warsaw' },
     LockService: { getScriptLock: ()=>({ waitLock(){}, releaseLock(){} }) },
     PropertiesService: { getScriptProperties: ()=>({
-      getProperty: k => (k in props ? props[k] : null),
-      setProperty: (k,v) => { props[k] = v; },
+      getProperty: k => { if(propFail && propFail(k, 'get')) throw new Error('Usługa właściwości: awaria'); return k in props ? props[k] : null; },
+      getProperties: () => { propReads++; return Object.assign({}, props); },
+      setProperty: (k,v) => {
+        if(propFail && propFail(k, 'set')) throw new Error('Przekroczono limit rozmiaru właściwości');
+        props[k] = String(v);
+      },
       deleteProperty: k => { delete props[k]; },
     })},
     ScriptApp: {
@@ -131,14 +153,21 @@ function makeContext(opts){
                           checkPin, requirePin_, pin_, env_,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
-                          isDate_, posInt_ };
-    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD };
+                          isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_ };
+    ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
+                           VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
-    ;globalThis.__newExecution = () => { walkColsOk_ = false; lockDepth_ = 0; };
+    ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0; };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
   const setNow = iso => { nowMs = Date.parse(iso); };
-  return { ctx, api: ctx.__api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution };
+  // Każde wywołanie z testu = osobne wykonanie Apps Script, jak google.script.run z telefonu.
+  // Bez tego pamięć jednego wykonania (właściwości, sprawdzony układ zakładki) ciągnęłaby się
+  // przez cały scenariusz i testy nie widziałyby tego, co widzi prawdziwy serwer.
+  const api = {};
+  Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
+  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution,
+           propReads: () => propReads, failProps: f => { propFail = f || null; } };
 }
 
 module.exports = { makeContext, makeSheet };

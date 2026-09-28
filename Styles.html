@@ -31,7 +31,6 @@
   .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;}
   .reset-note{display:inline-flex;align-items:center;gap:5px;background:#e2ebe3;color:var(--forest);
     font-weight:600;padding:3px 9px;border-radius:20px;font-size:12px;}
-  .sync{font-size:11.5px;color:var(--muted);margin-left:auto;}
 
   .pinrow{display:flex;gap:7px;margin:12px 0 0;}
   .pinrow input{flex:1;font-family:inherit;font-size:15px;padding:9px 12px;border:1.5px solid var(--forest);
@@ -120,20 +119,76 @@
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
 
   /* ---------- spacery grupowe ----------
-     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy),
-     a znacznik „👥 grupa" mówi to samo tekstem, gdy w słońcu tła nie widać. */
-  .grp{font-size:11px;font-weight:800;padding:1px 7px;border-radius:6px;background:#fff;border:1px solid;}
+     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy), a kafelki
+     grupy stoją na liście jednym blokiem. Znacznika „👥 grupa" już nie ma (zbędny wszędzie). */
   .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
   /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
      w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
   .dog.pick{cursor:pointer;position:relative;}
   .dog.pick .status,.dog.pick .grpwait{opacity:.35;pointer-events:none;}
+  /* kafelek odłączony ma imię psa i „1/2" w tym samym wierszu co przyciski — bledną tylko
+     opiekun i przyciski, a nazwa zaznaczanego kafelka zostaje czytelna (review) */
+  .dog.pick.detached > .status{opacity:1;}
+  .dog.pick.detached > .status > :not(.name):not(.slotno){opacity:.35;}
   .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
     border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
   .dog.picked{box-shadow:0 0 0 2px var(--ink);}
   .dog.picked .pickbox{background:var(--ink);}
   .dog.nopick{opacity:.4;cursor:default;}
+  /* kafelek główny psa na dwa spacery: kółko przy każdym polu 1/2, 2/2 — zaznacza TEN spacer */
+  .slot.pick{cursor:pointer;}
+  .slot.pick .status,.slot.pick .grpwait{opacity:.35;pointer-events:none;}
+  .slot.picked{box-shadow:0 0 0 2px var(--ink);}
+  .slot.picked .pickbox{background:var(--ink);}
+  .slot.nopick{opacity:.4;cursor:default;}
+
+  /* ---------- spacery psa na dwa spacery ----------
+     Pola 1/2 i 2/2 są w jednym kafelku, ale każde osobno — z numerem i własnymi
+     przyciskami, w JEDNYM wierszu. Spacer odłączony (w grupie gdzie indziej) to kafelek
+     z samym wierszem: imię psa, numer spaceru, opiekun, przyciski. */
+  .slot{position:relative;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
+    padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--paper);}
+  .slot .status{margin-top:0;flex:1;min-width:0;gap:6px;}
+  .slot .walk{padding:7px 10px;}
+  .slot .ghost{padding:6px 5px;}
+  .slot .entry{flex-basis:100%;margin-top:4px;}
+  .slot .grpwait{flex-basis:100%;margin-top:0;}
+  .slot.walked{opacity:.6;}
+  .slotno{font-size:11px;font-weight:800;color:var(--forest);background:#e2ebe3;padding:2px 7px;border-radius:6px;flex:none;}
+  .dog.detached{padding-top:9px;padding-bottom:9px;}
+  .dog.detached > .status{margin-top:0;gap:6px;}
+  .dog.detached > .status > .reserve{margin-left:auto;}
+  .dog.detached .walk{padding:7px 10px;}
+  .dog.detached .ghost{padding:6px 5px;}
+
+  /* ---------- wolontariusz: kolor dnia ----------
+     Nasycony kontur i kropka przy imieniu — celowo inna rodzina niż grupy (blade tło
+     całego kafelka). Imię zostaje zwykłym ciemnym tekstem. */
+  .vol{display:inline-flex;align-items:center;gap:6px;padding:1px 10px 1px 4px;border:2px solid var(--vc,#4b5563);
+    border-radius:999px;background:#fff;color:var(--ink);font-weight:700;line-height:1.35;}
+  .vol .vdot{width:10px;height:10px;border-radius:50%;background:var(--vc,#4b5563);flex:none;}
+
+  /* ---------- dymek „Zapisuję…" / „Aktualizuję…" ----------
+     Na dole ekranu, ciemny i duży — ma być widać, że stuknięcie zostało przyjęte. Na dole,
+     bo tam są już komunikaty (toast), blisko kciuka, i nie zasłania daty u góry. Toast,
+     który przyjdzie w tym czasie, staje nad dymkiem (body.busy-on), a przy zaznaczaniu
+     grupy oba stoją nad paskiem na dole.
+     Kropki: „." → „.." → „..." i od nowa (druga i trzecia pojawiają się po kolei). */
+  .busy{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;
+    display:inline-flex;align-items:baseline;padding:8px 16px;border-radius:999px;
+    background:var(--ink);color:#fff;font-size:14px;font-weight:700;letter-spacing:.01em;
+    box-shadow:0 4px 16px rgba(0,0,0,.22);pointer-events:none;white-space:nowrap;}
+  .busy.hidden{display:none;}
+  .busy[data-kind="sort"]{background:var(--forest);}
+  .busy .dots{display:inline-block;width:1.1em;text-align:left;}
+  .busy .dots i{font-style:normal;}
+  .busy .dots i:nth-child(2){animation:busyDot2 1.2s steps(1,end) infinite;}
+  .busy .dots i:nth-child(3){animation:busyDot3 1.2s steps(1,end) infinite;}
+  @keyframes busyDot2{0%{visibility:hidden}33.33%{visibility:visible}}
+  @keyframes busyDot3{0%{visibility:hidden}66.66%{visibility:visible}}
+  @media (prefers-reduced-motion: reduce){ .busy .dots i{animation:none;} }
+
   .selectbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;
     padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card);
     border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08);}
@@ -141,6 +196,9 @@
   .selectbar .btn{padding:11px 14px;}
   body.selecting{padding-bottom:84px;}
   body.selecting .toast{bottom:84px;}
+  body.selecting .busy{bottom:84px;}
+  body.busy-on .toast{bottom:calc(74px + env(safe-area-inset-bottom));}
+  body.selecting.busy-on .toast{bottom:136px;}
 
   /* ---------- przyciski ---------- */
   .btn{border:none;font-family:inherit;font-weight:700;cursor:pointer;border-radius:10px;
@@ -157,6 +215,8 @@
   .who{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink);}
   .who .dot{background:currentColor;width:8px;height:8px;}
   .spacer{margin-left:auto;}
+  /* przyciski zarezerwowanego spaceru trzymają się razem: za wąsko — schodzą pod spód razem */
+  .acts{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;}
 
   .entry{margin-top:10px;display:flex;gap:8px;}
   .entry input{flex:1;font-family:inherit;font-size:15px;padding:10px 12px;

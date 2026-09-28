@@ -48,7 +48,7 @@ async function S71(){
   check('przewijanie listy nie włącza zaznaczania', !S(app).select);
 
   await press(app, 1);
-  check('przytrzymanie włącza zaznaczanie', !!S(app).select && S(app).select.anchor===1, JSON.stringify(S(app).select));
+  check('przytrzymanie włącza zaznaczanie', !!S(app).select && S(app).select.anchor==='1:1', JSON.stringify(S(app).select));
   check('pasek na dole widoczny', !bar(app).classList.contains('hidden'));
   check('przytrzymany pies zaznaczony', li(app, 1).classList.contains('picked'));
   check('„Grupa" wyszarzona, dopóki nie ma towarzysza', groupBtn(app).disabled===true);
@@ -56,7 +56,7 @@ async function S71(){
   tapEl(app, li(app, 3).querySelector('[data-act="reserve"]'));
   check('„Zarezerwuj" w tym trybie nie rezerwuje, tylko zaznacza',
     li(app, 3).classList.contains('picked') && !doc(app).querySelector('[data-entry]:not(.hidden)')
-    && S(app).walks[D+'|3'] === undefined, JSON.stringify(S(app).walks));
+    && S(app).slots[D+'|3|1'] === undefined, JSON.stringify(S(app).slots));
   tapEl(app, li(app, 3));
 
   tapEl(app, li(app, 2));
@@ -87,12 +87,12 @@ async function S72(){
   tapEl(app, groupBtn(app));
   const job = lastJob(app);
   check('setGroup(dzień, skład, 0 = nowa)', job.fn==='setGroup' && job.args[0]===D
-    && JSON.stringify(job.args[1])==='[1,3,5]' && job.args[2]===0, JSON.stringify(job.args));
+    && JSON.stringify(job.args[1])==='["1:1","3:1","5:1"]' && job.args[2]===0, JSON.stringify(job.args));
   check('tryb zaznaczania zamknięty', !S(app).select && bar(app).classList.contains('hidden'));
   const c1 = bgOf(app, 1) && bgOf(app, 1)[1];
   check('ten sam kolor dla całej grupy', !!c1 && bgOf(app, 3)[1]===c1 && bgOf(app, 5)[1]===c1, c1);
   check('psy spoza grupy bez koloru', !bgOf(app, 2) && !bgOf(app, 4));
-  check('znacznik „👥 grupa" (w słońcu tło może zniknąć)', (li(app, 3).textContent.match(/👥 grupa/g)||[]).length===1);
+  check('bez napisu „grupa" na kafelku — grupę niesie kolor i blok (feedback z testów)', !/grupa/.test(li(app, 3).textContent));
   check('grupa od razu razem, w miejscu najpilniejszego psa', ord(app)==='[1,3,5,2,4]', ord(app));
   app.respondNext({group:1, walks:[1,3,5].map(id=>({date:D, dogId:id, status:'free', group:1}))});
 
@@ -128,7 +128,8 @@ async function S73(){
   const walks = app.pending.filter(p => p.fn==='markWalked');
   check('jedno kliknięcie odhacza obu', walks.length===2
     && walks.map(w=>w.args[0]).sort().join()==='1,2', app.pending.map(p=>p.fn+JSON.stringify(p.args)).join(' '));
-  check('każdy ze swoim numerem spaceru i dniem', walks.every(w => w.args[2]===2 && w.args[3]===D));
+  check('każdy ze swoim numerem spaceru (psy na jeden spacer — spacer 1) i dniem',
+    walks.every(w => w.args[2]===1 && w.args[3]===D), JSON.stringify(walks.map(w => w.args)));
   check('obaj od razu wyprowadzeni', li(app, 1).classList.contains('walked') && li(app, 2).classList.contains('walked'));
   app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', group:1})});
   app.respondNext({dog: dogFree({id:2, name:'Luna', status:'walked', who:'Ola', group:1})});
@@ -143,10 +144,10 @@ async function S74(app){
   const frees = app.pending.filter(p => p.fn==='setFree');
   check('tylko Borys', frees.length===1 && frees[0].args[0]===1, app.pending.map(p=>p.fn).join(','));
   check('Luna dalej wyprowadzona', li(app, 2).classList.contains('walked'));
-  check('Borys bez opiekuna wypada z grupy', !/👥 grupa/.test(li(app, 1).textContent) && !bgOf(app, 1)
-    && S(app).walks[D+'|1'].group===0, JSON.stringify(S(app).walks[D+'|1']));
-  check('grupa z samą Luną przestaje być grupą — także na ekranie', !/👥 grupa/.test(li(app, 2).textContent)
-    && !bgOf(app, 2) && S(app).walks[D+'|2'].group===0, JSON.stringify(S(app).walks[D+'|2']));
+  check('Borys bez opiekuna wypada z grupy', !bgOf(app, 1)
+    && S(app).slots[D+'|1|1'].group===0, JSON.stringify(S(app).slots[D+'|1|1']));
+  check('grupa z samą Luną przestaje być grupą — także na ekranie',
+    !bgOf(app, 2) && S(app).slots[D+'|2|1'].group===0, JSON.stringify(S(app).slots[D+'|2|1']));
   app.respondNext({dog: dogFree({id:1, name:'Borys'})});
 
   app.click('[data-act="reserve"][data-id="1"]');
@@ -176,7 +177,7 @@ async function S75(){
   tapEl(app, li(app, 3));
   tapEl(app, groupBtn(app));
   const job = lastJob(app);
-  check('zmiana składu tej samej grupy', job.fn==='setGroup' && JSON.stringify(job.args[1])==='[1,2]' && job.args[2]===1,
+  check('zmiana składu tej samej grupy', job.fn==='setGroup' && JSON.stringify(job.args[1])==='["1:1","2:1"]' && job.args[2]===1,
     JSON.stringify(job.args));
   check('Rex bez koloru', !bgOf(app, 3) && !!bgOf(app, 1));
   app.respondNext({group:1, walks:[{date:D,dogId:1,group:1},{date:D,dogId:2,group:1},{date:D,dogId:3,group:0}]});
@@ -287,10 +288,9 @@ async function S79(){
   app.click('[data-act="free"][data-id="2"]');         // Ola rezygnuje z Luny
   const job = lastJob(app);
   check('setFree(pies, dzień)', job.fn==='setFree' && job.args[0]===2 && job.args[1]===D, JSON.stringify(job.args));
-  check('Luna dalej w grupie — kolor i znacznik', !!bgOf(app, 2) && bgOf(app, 2)[1]===c1
-    && /👥 grupa/.test(li(app, 2).textContent));
-  check('...także w stanie', S(app).walks[D+'|2'].group===1 && S(app).walks[D+'|2'].status==='free',
-    JSON.stringify(S(app).walks[D+'|2']));
+  check('Luna dalej w grupie — kolor grupy', !!bgOf(app, 2) && bgOf(app, 2)[1]===c1);
+  check('...także w stanie', S(app).slots[D+'|2|1'].group===1 && S(app).slots[D+'|2|1'].status==='free',
+    JSON.stringify(S(app).slots[D+'|2|1']));
   check('Borys czeka na nową rezerwację Luny (kafelek towarzysza przerysowany)',
     !/data-act="walk" data-id="1"/.test(li(app, 1).outerHTML) && /czeka na rezerwację: Luna/.test(li(app, 1).textContent),
     li(app, 1).textContent.replace(/\s+/g, ' '));
@@ -300,41 +300,54 @@ async function S79(){
 }
 
 async function S80(){
-  console.log('S80: grupa to jeden spacer — pies na dwa spacery po pierwszym wychodzi z grupy');
+  console.log('S80: pies w dwóch miejscach — 1/2 w porannej grupie, kafelek główny z 2/2 wysoko');
   // zgłoszenie z terenu: Borys + Luna (2 spacery) razem, potem Luna na drugi spacer z Rexem —
-  // wyglądało, jakby Borys szedł z Rexem
+  // wyglądało, jakby Borys szedł z Rexem. Grupa należy teraz do SPACERU, nie do psa.
   const app = buildApp();
   app.seed(base({
     dogs: [dogFree({id:1, name:'Borys'}), dogFree({id:2, name:'Luna', walks:2}), dogFree({id:3, name:'Rex'})],
-    walks: [{date:D, dogId:1, status:'reserved', who:'Ala', group:1}, {date:D, dogId:2, status:'reserved', who:'Ola', group:1}],
+    slots: [{date:D, dogId:1, slot:1, status:'reserved', who:'Ala', group:1},
+            {date:D, dogId:2, slot:1, status:'reserved', who:'Ola', group:1}],
   }));
-  app.click('[data-act="walk"][data-id="1"]');
-  const w1 = app.pending.filter(p => p.fn==='markWalked');
-  check('wspólny spacer odhacza oba — Lunę jako pierwszy z dwóch', w1.length===2
-    && w1.find(p => p.args[0]===2).args[2]===1, JSON.stringify(w1.map(p => p.args)));
-  const luna = S(app).walks[D+'|2'];
-  check('Luna po pierwszym spacerze: wolna i bez grupy', luna.status==='free' && luna.who1==='Ola' && luna.group===0,
-    JSON.stringify(luna));
-  check('z pary został sam Borys — to już nie grupa', S(app).walks[D+'|1'].group===0 && !bgOf(app, 1) && !bgOf(app, 2));
-  // odpowiedź dla Borysa policzona na serwerze, zanim przyszła kolej na Lunę — jeszcze z grupą
-  app.respondNext({dog: dogFree({id:1, name:'Borys', status:'walked', who:'Ala', time:'10:00', group:1})});
-  app.respondNext({dog: dogFree({id:2, name:'Luna', walks:2, who1:'Ola', time1:'10:00'})});
-  check('spóźniona odpowiedź nie przywraca rozwiązanej grupy', S(app).walks[D+'|1'].group===0 && !bgOf(app, 1),
-    JSON.stringify(S(app).walks[D+'|1']));
+  const tiles = () => JSON.stringify(app.window.__tiles());
+  const tile = id => doc(app).querySelector(`li[data-tile="${id}"]`);
+  const bg = id => ((tile(id) && tile(id).getAttribute('style')) || '').match(/background:(#[0-9a-f]+)/i);
+  check('Luna w dwóch miejscach: kafelek główny z 2/2 na górze, 1/2 w bloku grupy',
+    tiles()==='["m2","m3","s2.1","s1.1"]', tiles());
+  check('odłączony 1/2 mówi, którego spaceru dotyczy', tile('s2.1').classList.contains('detached')
+    && /Luna\s*1\/2/.test(tile('s2.1').textContent) && /Ola/.test(tile('s2.1').textContent));
+  check('kafelek główny: 2/2 do rezerwacji, bez linijki o 1/2 (ta stoi przy grupie)',
+    !!tile('m2').querySelector('[data-act="reserve"][data-slot="2"]') && !/1\/2|Ola/.test(tile('m2').textContent),
+    tile('m2').textContent.replace(/\s+/g,' '));
 
-  await press(app, 2);                                 // drugi spacer Luny — z Rexem
-  check('przytrzymanie Luny zaczyna NOWĄ grupę, nie otwiera porannej', !!S(app).select && S(app).select.gid===0
-    && JSON.stringify(S(app).select.ids)==='[2]', JSON.stringify(S(app).select));
+  app.click('[data-act="walk"][data-id="1"]');         // wspólny spacer porannej grupy
+  const w1 = app.pending.filter(p => p.fn==='markWalked');
+  check('odhacza Borysa i Lunę 1/2', w1.length===2 && w1.find(p => p.args[0]===2).args[2]===1, JSON.stringify(w1.map(p => p.args)));
+  check('Luna 1/2 odbyta i DALEJ w porannej grupie — ten spacer odbyli razem',
+    S(app).slots[D+'|2|1'].status==='walked' && S(app).slots[D+'|2|1'].group===1);
+  check('Luna 2/2 nietknięta: wolna, bez grupy', slotOfApp(app, 2, 2).status==='free' && slotOfApp(app, 2, 2).group===0);
+  app.respondNext({slot:{slot:1, status:'walked', who:'Ala', time:'10:00'}});
+  app.respondNext({slot:{slot:1, status:'walked', who:'Ola', time:'10:00'}});
+
+  await press(app, 2);                                 // drugi spacer Luny — z Rexem (przytrzymany kafelek główny)
+  check('przytrzymanie kafelka głównego zaznacza 2/2 — NOWA grupa, nie poranna', !!S(app).select && S(app).select.gid===0
+    && JSON.stringify(S(app).select.ids)==='["2:2"]', JSON.stringify(S(app).select));
   tapEl(app, li(app, 3));
   tapEl(app, groupBtn(app));
   const job = lastJob(app);
-  check('setGroup: Luna + Rex, nowa grupa', job.fn==='setGroup' && JSON.stringify(job.args[1])==='[2,3]' && job.args[2]===0,
+  check('setGroup: Luna 2/2 + Rex, nowa grupa', job.fn==='setGroup' && JSON.stringify(job.args[1])==='["2:2","3:1"]' && job.args[2]===0,
     JSON.stringify(job.args));
-  check('Borys nie wygląda, jakby szedł z Rexem', !bgOf(app, 1) && !!bgOf(app, 2) && bgOf(app, 2)[1]===bgOf(app, 3)[1]);
-  app.respondNext({group:1, walks:[{date:D, dogId:2, group:1}, {date:D, dogId:3, group:1}]});
+  check('Luna stoi w dwóch grupach, każdym spacerem w innej', !!bg('s2.1') && !!bg('s2.2') && bg('s2.1')[1]!==bg('s2.2')[1], tiles());
+  check('Borys (z Luną rano) i Rex (z Luną po południu) w różnych kolorach',
+    bg('s1.1')[1]===bg('s2.1')[1] && bg('s3.1')[1]===bg('s2.2')[1] && bg('s1.1')[1]!==bg('s3.1')[1]);
+  app.respondNext({group:2, slots:[{date:D, dogId:1, slot:1, group:1, status:'walked', who:'Ala'},
+    {date:D, dogId:2, slot:1, group:1, status:'walked', who:'Ola'},
+    {date:D, dogId:2, slot:2, group:2, status:'free'}, {date:D, dogId:3, slot:1, group:2, status:'free'}]});
+  check('odpowiedź serwera tego nie zmienia', bg('s2.2')[1]===bg('s3.1')[1] && bg('s2.1')[1]===bg('s1.1')[1]);
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
+const slotOfApp = (app, id, n) => app.window.__state.slots[D+'|'+id+'|'+n] || {status:'free', group:0};
 
 async function S82(){
   console.log('S82: grupa z psem już wyprowadzonym — nic się nie blokuje');
@@ -355,9 +368,9 @@ async function S82(){
 
   const c1 = bgOf(app, 1)[1];
   app.click('[data-act="free"][data-id="1"]');         // „Cofnij" u Borysa
-  check('cofnięty Borys wychodzi z grupy', !bgOf(app, 1) && S(app).walks[D+'|1'].group===0);
+  check('cofnięty Borys wychodzi z grupy', !bgOf(app, 1) && S(app).slots[D+'|1|1'].group===0);
   check('Luna i Rex zostają grupą (dwa psy to grupa)', bgOf(app, 2)[1]===c1 && bgOf(app, 3)[1]===c1
-    && S(app).walks[D+'|2'].group===1 && S(app).walks[D+'|3'].group===1);
+    && S(app).slots[D+'|2|1'].group===1 && S(app).slots[D+'|3|1'].group===1);
   app.respondNext({dog: dogFree({id:1, name:'Borys'})});
   check('kolejka pusta', drained(app), JSON.stringify(app.state()));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));

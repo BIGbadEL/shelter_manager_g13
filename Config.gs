@@ -54,17 +54,55 @@ const DOG_HEADERS = ['id', 'imie', 'identyfikator', 'boks', 'trudnosc', 'status'
 const DOG_WIDTH = DOG_HEADERS.length;
 
 /**
- * Zakładka Spacery — co się dzieje z psem KONKRETNEGO DNIA.
- * Jeden wiersz na parę (data, pies); brak wiersza = pies tego dnia wolny.
+ * Zakładka Spacery — co się dzieje z KONKRETNYM SPACEREM psa danego dnia.
+ * Jeden wiersz na trójkę (data, pies, numer spaceru); brak wiersza = ten spacer
+ * wolny i bez grupy. Pies na dwa spacery ma spacery 1 i 2 — każdy z własną
+ * rezerwacją, własnym „wyprowadzony" i własną grupą (patrz SORTING.md).
  * Trzyma wyłącznie dni otwarte (bieżący i przyszłe) — nocne czyszczenie
  * przenosi dni zamknięte do Historii, więc zakładka zostaje mała.
  */
 const WALK = {
-  DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7,
-  GROUP: 8,   // numer grupy (spaceru grupowego) tego dnia; puste = pies idzie sam
+  DATE: 1, DOG: 2,
+  SLOT: 3,    // który to spacer psa tego dnia: 1, 2, … (dziś najwyżej tyle, ile `spacery` w Psy)
+  STATUS: 4, WHO: 5, TIME: 6,
+  GROUP: 7,   // numer grupy (spaceru grupowego) tego dnia; puste = spacer bez grupy
 };
-const WALK_HEADERS = ['data', 'pies_id', 'status', 'kto', 'godzina', 'kto1', 'godzina1', 'grupa'];
+const WALK_HEADERS = ['data', 'pies_id', 'spacer', 'status', 'kto', 'godzina', 'grupa'];
 const WALK_WIDTH = WALK_HEADERS.length;
+
+/**
+ * Poprzedni układ zakładki Spacery (wiersz na psa, drugi spacer w kto1/godzina1).
+ * Czytany wyłącznie przy jednorazowym przepisaniu na układ ze spacerami
+ * (ensureWalksLayout_ w Dogs.gs). Bez kolumny grupa — jeszcze starszy wariant.
+ */
+const WALK_V1 = { DATE: 1, DOG: 2, STATUS: 3, WHO: 4, TIME: 5, WHO1: 6, TIME1: 7, GROUP: 8 };
+
+/**
+ * Nazwa kopii zakładki Spacery w starym układzie, robionej tuż przed jej przepisaniem.
+ * Poprzednia wersja kodu nie umie czytać nowego układu, więc bez kopii cofnięcie
+ * wdrożenia nie miałoby do czego wrócić (procedura w README, „Cofnięcie wdrożenia").
+ */
+const WALKS_BACKUP = 'Spacery (stary układ)';
+
+/**
+ * Ile kolorów mają wolontariusze. Dzień przydziela je po kolei (bez powtórek, dopóki
+ * starczy), a interfejs ma paletę dokładnie tej długości — pilnuje tego test.
+ */
+const VOLUNTEER_COLORS = 10;
+
+/**
+ * Sufity przydziału kolorów. Przydział dnia siedzi we właściwości skryptu, a właściwości
+ * mają limity: 9 KB na wartość i 500 KB na wszystkie razem. Imię raz wpisane zostaje
+ * w przydziale do końca dnia (także po zwolnieniu rezerwacji), a rezerwować można z
+ * publicznego API na rok naprzód — bez sufitów da się zapchać właściwości, a wtedy nie
+ * zapisze się nic, także znacznik układu Spacery. Ponad sufit: kolor „z imienia", bez zapisu.
+ *  - VOLUNTEER_MAX — osób w przydziale jednego dnia (60 imion to ok. 3 KB),
+ *  - VOLUNTEER_DAYS — dni z przydziałem naraz (nocne czyszczenie zapomina dni zamknięte,
+ *    więc w zwykłym użyciu to kilka dni).
+ * VOLUNTEER_MAX jest też w Script.html (VOL_MAX) — pilnuje tego test.
+ */
+const VOLUNTEER_MAX = 60;
+const VOLUNTEER_DAYS = 31;
 
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };

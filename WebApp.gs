@@ -40,24 +40,31 @@ function include(filename) {
 /**
  * Cały stan w jednym wywołaniu.
  *
- *  - `dogs`  — katalog psów ze stanem BIEŻĄCEGO dnia wpisanym w każdego psa:
- *              dokładnie ten kształt znają karty otwarte przed wprowadzeniem dat,
- *  - `walks` — wszystkie dni otwarte (bieżący i przyszłe), wiersz na parę (dzień, pies).
- *              Mała lista, a dzięki niej strzałka w przyszłość nie czeka na serwer,
+ *  - `dogs`  — katalog psów ze stanem BIEŻĄCEGO dnia wpisanym w każdego psa w starym
+ *              kształcie (status/kto/kto1): tak czytają go karty otwarte przed
+ *              wprowadzeniem dat i spacerów. Nowy interfejs bierze z niego tylko katalog,
+ *  - `slots` — wszystkie spacery dni otwartych (bieżący i przyszłe): wiersz na trójkę
+ *              (dzień, pies, numer spaceru), tylko te ze stanem. Mała lista, a dzięki
+ *              niej strzałka w przyszłość nie czeka na serwer,
+ *  - `volunteers` — kolory wolontariuszy dni otwartych: data -> {imię -> numer koloru},
  *  - `today` — data kalendarzowa (Europe/Warsaw) do odznak "od wczoraj" i terminów,
  *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy).
+ *
+ * Pole `walks` (wiersz na psa) zniknęło razem ze starym układem — karta z wersji
+ * z datami, ale sprzed spacerów, bez niego wraca do stanu bieżącego dnia z `dogs`.
  */
 function getData() {
   const date = businessDate_();
   const catalog = readDogCatalog_();
   const known = {};
   catalog.forEach(d => { known[d.id] = true; });
-  const walks = readWalks_(walksSheet_()).filter(w => known[w.dogId] && hasWalkState_(w));
-  const current = {};
-  walks.forEach(w => { if (w.date === date) current[w.dogId] = w; });
+  const slots = readSlots_(walksSheet_()).filter(s => known[s.dogId] && hasSlotState_(s));
+  const today = {};
+  slots.forEach(s => { if (s.date === date) (today[s.dogId] = today[s.dogId] || []).push(s); });
   return {
-    dogs: catalog.map(d => withWalk_(d, current[d.id])),
-    walks: walks,
+    dogs: catalog.map(d => legacyView_(d, today[d.id])),
+    slots: slots,
+    volunteers: volunteersOpen_(date),
     tasks: readTasks_(),
     today: today_(),
     businessDate: date,
