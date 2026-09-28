@@ -464,6 +464,23 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 `deployments:test`) — jedyna różnica to `-P .clasp.test.json`. **Kolejność zawsze ta sama:
 `npm run deploy:test` → sprawdzenie na telefonie → `npm run deploy:prod`.**
 
+**Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
+- `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
+  i nic nie trafia na `main` bez wdrożenia.
+- Nowe rzeczy zbiera **gałąź wydania** `release/<nazwa>`, odgałęziona od `main`. Zmiany trafiają
+  do niej (wprost albo z gałęzi `feature/…`); z niej idzie `npm run deploy:test` i sprawdzenie
+  na telefonie.
+- **Wydanie = PR `release/…` → `main`. Merge i od razu `npm run deploy:prod`** z aktualnego
+  `main` (`git checkout main && git pull`). Merge bez wdrożenia albo wdrożenie z innej gałęzi
+  rozjeżdża produkcję z `main`. Poza godziną czyszczenia (produkcja: 19:00).
+- Po wdrożeniu: wpis w „Stan i rzeczy otwarte" (numer @N, commit, poprzednia wersja do cofnięcia)
+  i nowa gałąź wydania od `main`.
+- Pilna poprawka produkcji: gałąź od `main` → PR do `main` → merge + `deploy:prod`, potem `main`
+  wmergowany do bieżącej gałęzi wydania.
+- Zmiana, która nie dotyka plików jadących do Apps Script (`npm run files`: README, CLAUDE.md,
+  testy, `scripts/`), niczego na produkcji nie zmienia — wdrożenie byłoby puste.
+- Push i wdrożenie nadal wyłącznie na wyraźne polecenie właściciela.
+
 Identyfikatory obu wdrożeń są wpisane na stałe w `package.json` (decyzja właściciela:
 nie ma argumentu do pomylenia, a produkcyjny i tak jest częścią publicznego linku).
 Celowo **nie ma** gołego `deploy` — każde wdrożenie nazywa swoje środowisko.

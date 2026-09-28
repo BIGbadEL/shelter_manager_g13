@@ -78,6 +78,11 @@ na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w re
 4. Sprawdź, czy wszystko się zgadza: `npm run deployments` musi pokazać wdrożenie
    z identyfikatorem wpisanym w `deploy:prod` w `package.json` (ten sam ciąg, co w linku do aplikacji).
 
+**Gałąź `main` = produkcja.** Nowe rzeczy zbiera gałąź wydania `release/<nazwa>` odgałęziona
+od `main`; z niej idzie wdrożenie na test. Wydanie to PR `release/…` → `main`, a **merge oznacza
+od razu wdrożenie na produkcję** z aktualnego `main` — tak, żeby na produkcji stało zawsze
+dokładnie to, co na `main`.
+
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
 ```bash
