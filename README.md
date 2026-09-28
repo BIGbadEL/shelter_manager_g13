@@ -345,6 +345,11 @@ nie rusza — zostaje w nich stan z chwili wdrożenia.
    najbliższym czyszczeniu zapisałaby ich spacery do Historii drugi raz — pod datą tamtej nocy.
    Cofając tego samego dnia, zostaw je: to wtedy wciąż stan bieżącego dnia (bez zmian zrobionych
    na nowej wersji — te są tylko w zakładce Spacery, której stara wersja nie czyta).
+3. **Ponowne wdrożenie nowej wersji po takim cofnięciu:** najpierw zmień nazwę zakładki `Spacery`
+   (np. na `Spacery (odłożona)`) i usuń właściwość skryptu `walksImported`. Nowa wersja założy
+   wtedy świeżą zakładkę i przejmie stan dnia ze starych kolumn Psy jak za pierwszym razem. Bez
+   tego zostanie przy swojej zakładce sprzed cofnięcia, a to, co wolontariusze zapisali na starej
+   wersji od cofnięcia, nie przejdzie. Też poza godziną czyszczenia.
 
 ## Godzina czyszczenia listy
 
