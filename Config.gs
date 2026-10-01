@@ -109,9 +109,14 @@ const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
 const TASK_HEADERS = ['id', 'tresc', 'data', 'status'];
 const TASK_WIDTH = TASK_HEADERS.length;
 
-/** Zakładka Historia. */
-const HIST = { DATE: 1, DOG: 2, WHO: 3, TIME: 4 };
-const HIST_HEADERS = ['data', 'pies', 'kto', 'godzina'];
+/**
+ * Zakładka Historia. `grupa` — numer spaceru grupowego tego dnia (puste = bez grupy).
+ * Kolumna doszła później: starsze wpisy jej nie mają, a starsza zakładka bywa węższa
+ * niż HIST_WIDTH — czytamy najwyżej tyle kolumn, ile ma (histWidth_), a nocne czyszczenie
+ * dokłada brakującą (histGroupColumn_).
+ */
+const HIST = { DATE: 1, DOG: 2, WHO: 3, TIME: 4, GROUP: 5 };
+const HIST_HEADERS = ['data', 'pies', 'kto', 'godzina', 'grupa'];
 const HIST_WIDTH = HIST_HEADERS.length;
 
 /** Dozwolone statusy i trudności. */

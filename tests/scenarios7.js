@@ -132,5 +132,58 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
+/* ---------- S107: grupy w minionym dniu ---------- */
+(()=>{
+  console.log('S107: miniony dzień — wpisy z grupy w kolorze grupy, pod listą „Spacery grupowe"');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  const Y = '2026-09-23';
+  app.respondNext({history:[
+    {date:Y, name:'Luna',     who:'Ola',      time:'17:10'},             // bez pola group (stary serwer / stary wpis)
+    {date:Y, name:'Draco',    who:'Grzesiek', time:'10:20', group:1},
+    {date:Y, name:'Kora',     who:'Ania',     time:'9:00',  group:2},
+    {date:Y, name:'Rex',      who:'Ela',      time:'12:00', group:3},    // reszta grupy nie wyszła — szedł sam
+    {date:Y, name:'Fado',     who:'Ola',      time:'10:20', group:1},
+    {date:Y, name:'Lego',     who:'grzesiek', time:'10:20', group:1},    // ta sama osoba, inaczej wpisana
+    {date:Y, name:'Witkacy',  who:'Zuza',     time:'9:00',  group:2},
+    {date:Y, name:'Bysiu',    who:'Grzesiek', time:'14:00', group:0},
+    {date:Y, name:'Nero <i>', who:'',         time:'9:00',  group:2},    // bez osoby; nazwa do ucieczki HTML
+    {date:'2026-09-22', name:'Borys', who:'Iza', time:'11:00'},
+  ]});
+  const w = app.window, doc = w.document;
+  const list = doc.querySelector('.hist-day');
+  const items = list ? [...list.querySelectorAll('.hist-item')] : [];
+  const name = el => el.querySelector('b').textContent;
+  check('kolejność listy bez zmian: wolontariusz, potem godzina (grupy jej nie ruszają)',
+    items.map(name).join() === 'Kora,Rex,Draco,Lego,Bysiu,Fado,Luna,Witkacy,Nero <i>', items.map(name).join());
+  const marked = items.filter(el => el.classList.contains('hg')).map(name);
+  check('w kolorze grupy wpisy z grup co najmniej dwóch spacerów', marked.join() === 'Kora,Draco,Lego,Fado,Witkacy,Nero <i>', marked.join());
+  check('…Rex (jedyny spacer swojej grupy) jak spacer bez grupy', !!items[1] && name(items[1]) === 'Rex'
+    && !items[1].classList.contains('hg') && !items[1].getAttribute('style'));
+  const gOf = { Kora:2, Draco:1, Lego:1, Fado:1, Witkacy:2, 'Nero <i>':2 };
+  const bad = items.filter(el => el.classList.contains('hg')).filter(el => { const c = w.eval(`groupColor(${gOf[name(el)]})`);
+    return el.style.getPropertyValue('--gc') !== c.ink || el.style.getPropertyValue('--gbg') !== c.bg; });
+  check('…tło i pasek z koloru tej grupy, jak na liście dnia', !bad.length, bad.map(el => el.outerHTML).join(' ; '));
+
+  const sec = [...doc.querySelectorAll('.hist-day')].filter(d => /Spacery grupowe/.test(d.querySelector('.hist-date').textContent))[0];
+  const sum = sec ? [...sec.querySelectorAll('.hist-gsum')] : [];
+  const txt = el => el.textContent.replace(/\s+/g, ' ').trim();
+  check('pod listą sekcja „Spacery grupowe", po jednej linijce na grupę', !!sec && sum.length === 2, sec ? sec.outerHTML : app.html());
+  check('…po kolei w ciągu dnia (grupa 2 o 9:00 przed grupą 1 o 10:20)', sum.length === 2 && /^9:00/.test(txt(sum[0])) && /^10:20/.test(txt(sum[1])),
+    sum.map(txt).join(' | '));
+  check('…kto z kim: psy jednej osoby razem, osoby jak na liście, bez osoby na końcu',
+    sum.length === 2 && txt(sum[1]) === '10:20 Draco, Lego (Grzesiek) · Fado (Ola)' && txt(sum[0]) === '9:00 Kora (Ania) · Witkacy (Zuza) · Nero <i>',
+    sum.map(txt).join(' | '));
+  check('…w kolorach swoich grup', sum.length === 2 && sum[0].style.getPropertyValue('--gc') === w.eval('groupColor(2).ink')
+    && sum[1].style.getPropertyValue('--gc') === w.eval('groupColor(1).ink'));
+  check('nazwy z arkusza nie są HTML-em', !doc.querySelector('#view i'), app.html().slice(0, 300));
+
+  back(app);                                                       // 22.09 — dzień bez grup
+  check('dzień bez grup: bez sekcji i bez kolorów', /Borys/.test(app.html()) && !/Spacery grupowe/.test(app.html()) && !doc.querySelector('.hist-item.hg'),
+    app.html());
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

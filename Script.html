@@ -1358,6 +1358,11 @@
    * Kolejność (decyzja właściciela, 1.1.1): najpierw wolontariusz — spacery jednej osoby
    * stoją razem, osoby alfabetycznie po volNorm („grzesiek" i „Grzesiek" to ta sama osoba),
    * wpis bez osoby na końcu; w obrębie osoby — godzina (S105).
+   * Grupy (decyzja właściciela: wersja A + podsumowanie z D, S107): wpis ze spaceru grupowego
+   * ma tło i pasek koloru swojej grupy, jak kafelek na liście dnia — kolejności to nie zmienia.
+   * Pod listą „Spacery grupowe": każda grupa w jednej linijce, po kolei w ciągu dnia — kto
+   * szedł z kim. Grupą jest tu numer z co najmniej dwoma odbytymi spacerami: gdy reszta grupy
+   * nie wyszła, pies szedł sam. Wpisy sprzed kolumny `grupa` w Historii są bez grupy.
    */
   function renderPastDay(date){
     const items = state.past[date];
@@ -1373,8 +1378,26 @@
       const x = volNorm(a.who), y = volNorm(b.who);
       return x===y ? minutesOf(a.time)-minutesOf(b.time) : !x ? 1 : !y ? -1 : x<y ? -1 : 1;
     });
+    const members = {};
+    sorted.forEach(e => { const g = posInt(e.group); if(g) (members[g] = members[g] || []).push(e); });
+    const gidOf = e => { const g = posInt(e.group); return g && members[g].length > 1 ? g : 0; };
+    const paint = g => { const c = groupColor(g); return ` style="--gbg:${c.bg};--gc:${c.ink}"`; };
     html += `<div class="hist-day"><div class="hist-date">${sorted.length} ${plural(sorted.length,'spacer','spacery','spacerów')}</div>`;
-    sorted.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    sorted.forEach(e=>{ const g = gidOf(e);
+      html+=`<div class="hist-item${g ? ' hg' : ''}"${g ? paint(g) : ''}><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    html += `</div>`;
+    const groups = Object.keys(members).map(Number).filter(g => members[g].length > 1)
+      .map(g => ({g, time: members[g].map(e => e.time).sort((a,b)=>minutesOf(a)-minutesOf(b))[0]}))
+      .sort((a,b) => minutesOf(a.time)-minutesOf(b.time) || a.g-b.g);
+    if(!groups.length) return html;
+    html += `<div class="hist-day"><div class="hist-date">Spacery grupowe</div>`;
+    groups.forEach(({g, time}) => {
+      const people = [];                   // osoby w kolejności listy, psy jednej osoby razem
+      members[g].forEach(e => { const k = volNorm(e.who); let p = people.find(x => x.k === k);
+        if(!p) people.push(p = {k, who: e.who, dogs: []}); p.dogs.push(e.name); });
+      html += `<div class="hist-item hg hist-gsum"${paint(g)}><b>${esc(time)}</b> <span>${people.map(p =>
+        esc(p.dogs.join(', ')) + (p.k ? ` <span class="gw">(${esc(p.who)})</span>` : '')).join(' · ')}</span></div>`;
+    });
     return html + `</div>`;
   }
 

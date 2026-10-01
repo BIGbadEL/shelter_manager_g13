@@ -25,7 +25,7 @@ Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
 - **Spacery** — stan pojedynczego spaceru: `data | pies_id | spacer | status | kto | godzina | grupa`. Wiersz na (dzień, pies, numer spaceru); brak wiersza = ten spacer jest wolny. Pies na dwa spacery ma dwa niezależne spacery 1/2 i 2/2 — każdy z własną rezerwacją, osobą i grupą. Trzyma tylko dni otwarte. Zakładkę w starym układzie (wiersz na psa, drugi spacer w `kto1`/`godzina1`) aplikacja przepisuje sama przy pierwszym dostępie.
-- **Historia** — zamknięte dni: `data | pies | kto | godzina`
+- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa` (`grupa` — numer spaceru grupowego tego dnia; kolumnę dokłada samo nocne czyszczenie, wpisy sprzed niej są bez grupy)
 - **Zadania** — `id | tresc | data | status`
 
 Konwencja: funkcje z sufiksem `_` są prywatne (niewywoływalne z przeglądarki); pozostałe to publiczne API dla `google.script.run`.
@@ -251,6 +251,9 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci. Kolejność —
   najpierw wolontariusz: spacery jednej osoby stoją razem, osoby alfabetycznie (wielkość
   liter i ogonki bez znaczenia), wpis bez osoby na końcu; u każdej osoby — po godzinie.
+  Spacer grupowy ma tło i pasek w kolorze swojej grupy (jak na liście dnia), a pod listą sekcja
+  „Spacery grupowe" mówi w jednej linijce na grupę, o której i kto szedł z kim. Grupa, z której
+  wyszedł tylko jeden pies, to spacer pojedynczy.
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -330,6 +333,9 @@ pojawiają się liczby.
 
 **Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
 od kopii, którą robi aplikacja.
+
+Kolumna `grupa` w Historii niczego tu nie zmienia: wersja bez niej czyta i pisze cztery kolumny,
+a piątą zostawia. Wpisy dopisane przez nią są po prostu bez grupy.
 
 Kroki cofnięcia rób **w podanej kolejności, jeden zaraz po drugim** i nie w godzinie czyszczenia.
 Wdrożenie poprzedniej wersji: w Apps Script *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
@@ -492,6 +498,14 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### Grupy w minionym dniu — gałąź `feature/history-groups`, wydanie do ustalenia
+
+- Historia nie pamiętała, kto szedł w grupie — nocne czyszczenie gubiło numer grupy. Teraz
+  Historia ma kolumnę `grupa` (dokłada ją samo czyszczenie albo `migrate()`; wąska, stara
+  zakładka czyta się bez błędu). Dni zamknięte wcześniej zostają bez grup.
+- Miniony dzień: wpis ze spaceru grupowego w kolorze grupy (tło i pasek, jak na liście dnia),
+  pod listą „Spacery grupowe" — o której i kto z kim. Kolejność listy bez zmian.
 
 ### 1.1.1 — w przygotowaniu
 

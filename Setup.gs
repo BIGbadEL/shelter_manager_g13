@@ -31,6 +31,8 @@ function setup() {
   if (hist.getLastRow() === 0) {
     hist.getRange(1, 1, 1, HIST_WIDTH).setValues([HIST_HEADERS]);
     hist.setFrozenRows(1);
+  } else {
+    histGroupColumn_(hist);   // Historia sprzed kolumny grupa (dokłada ją też samo nocne czyszczenie)
   }
 
   const tasks = s.getSheetByName(SHEETS.TASKS) || s.insertSheet(SHEETS.TASKS);

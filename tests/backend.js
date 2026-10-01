@@ -1343,5 +1343,57 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('rezerwacje na inne dni nietknięte', slotAt(env, 1, env.api.addDays_(D, 10), 1).who==='Ala');
 })();
 
+/* ---------- B49: Historia pamięta grupę spaceru ---------- */
+(()=>{
+  console.log('B49: grupa trafia do Historii i wraca w podglądzie minionego dnia — także z wąskiej, starej zakładki');
+  // Historia sprzed tej zmiany ma 4 kolumny, a Apps Script rzuca błędem na zakres poza szerokością
+  // zakładki (strictWidth). Stare wpisy są bez grupy i tak zostają.
+  const D = '2026-08-04';
+  const env = build([], {
+    now: D + 'T10:00:00+02:00',
+    sheets: [
+      { name:'Psy', rows:[DOG_HEADERS, ...[{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Azor'},{id:5,name:'Bari'}].map(dogRow)] },
+      { name:'Historia', strictWidth: true, rows:[HIST_HEADERS, ['2026-08-01','Luna','Ola','10:00']] },
+      { name:'Zadania',  rows:[TASK_HEADERS] },
+    ],
+  });
+  check('stara karta (getHistory) czyta wąską Historię bez błędu', !throws(() => env.api.getHistory()));
+  env.api.reserve(1, 'Ala', D, 1); env.api.reserve(2, 'Ola', D, 1); env.api.reserve(3, 'Ala', D, 1); env.api.reserve(4, 'Iza', D, 1);
+  env.api.reserve(5, 'Ela', D, 1);
+  env.api.setGroup(D, ['1:1', '2:1'], 0);                     // grupa 1: Borys i Luna
+  env.api.setGroup(D, ['3:1', '4:1'], 0);                     // grupa 2: Rex i Azor — Azor w końcu nie wyszedł
+  [1, 2, 3, 5].forEach(id => env.api.markWalked(id, '', 1, D));
+
+  env.setNow('2026-08-05T10:00:00+02:00');                    // dzień minął, czyszczenie jeszcze nie ruszyło
+  const open = env.api.getHistoryDays(D, D).history;
+  const g = (list, name, day) => (list.filter(e => e.name === name && e.date === (day || D))[0] || {}).group;
+  check('niezamknięty dzień: grupa ze Spacery', g(open, 'Borys') === 1 && g(open, 'Luna') === 1 && g(open, 'Rex') === 2 && g(open, 'Bari') === 0,
+    JSON.stringify(open));
+
+  check('nocne czyszczenie na wąskiej Historii bez błędu', !throws(() => env.api.endOfDay()));
+  const H = env.sheets['Historia'];
+  check('…dokłada kolumnę grupa z nagłówkiem', H._data[0][4] === 'grupa', JSON.stringify(H._data[0]));
+  const rows = hist(env).filter(r => r[0] === D);
+  const col = name => (rows.filter(r => r[1] === name)[0] || [])[4];
+  check('…i zapisuje numer grupy przy spacerze (pusty bez grupy)', rows.length === 4 && col('Borys') === 1 && col('Luna') === 1
+    && col('Rex') === 2 && col('Bari') === '', JSON.stringify(rows));
+  check('Azor (rezerwacja bez spaceru) do Historii nie trafia — grupa 2 ma tam jeden spacer', !rows.some(r => r[1] === 'Azor'));
+
+  const closed = env.api.getHistoryDays('2026-08-01', D).history;
+  check('zamknięty dzień: grupa z Historii, ta sama co przed czyszczeniem',
+    g(closed, 'Borys') === 1 && g(closed, 'Luna') === 1 && g(closed, 'Rex') === 2 && g(closed, 'Bari') === 0, JSON.stringify(closed));
+  check('stary wpis (sprzed kolumny grupa) — bez grupy', g(closed, 'Luna', '2026-08-01') === 0,
+    JSON.stringify(closed.filter(e => e.date === '2026-08-01')));
+  check('stara karta dalej czyta Historię', !throws(() => env.api.getHistory()) && env.api.getHistory().history.length === 5);
+
+  const m = build([{id:1, name:'Borys'}], {sheets: [
+    { name:'Psy', rows:[DOG_HEADERS, dogRow({id:1, name:'Borys'})] },
+    { name:'Historia', strictWidth: true, rows:[HIST_HEADERS, ['2026-08-01','Luna','Ola','10:00']] },
+    { name:'Zadania',  rows:[TASK_HEADERS] }]});
+  m.api.migrate();
+  check('migrate() też dokłada kolumnę grupa, danych nie rusza', m.sheets['Historia']._data[0][4] === 'grupa'
+    && m.sheets['Historia']._data[1].slice(0, 4).join() === '2026-08-01,Luna,Ola,10:00', JSON.stringify(m.sheets['Historia']._data));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
