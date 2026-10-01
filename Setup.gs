@@ -31,6 +31,8 @@ function setup() {
   if (hist.getLastRow() === 0) {
     hist.getRange(1, 1, 1, HIST_WIDTH).setValues([HIST_HEADERS]);
     hist.setFrozenRows(1);
+  } else {
+    histColumns_(hist);   // Historia sprzed kolumn grupa / identyfikator (dokłada je też samo nocne czyszczenie)
   }
 
   const tasks = s.getSheetByName(SHEETS.TASKS) || s.insertSheet(SHEETS.TASKS);
@@ -96,7 +98,7 @@ function applyTextFormats_() {
   const textCols = [
     [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],
     [SHEETS.WALKS, [WALK.DATE, WALK.TIME]],
-    [SHEETS.HIST,  [HIST.DATE, HIST.TIME]],
+    [SHEETS.HIST,  [HIST.DATE, HIST.TIME, HIST.IDENT]],
     [SHEETS.TASKS, [TASK.DATE]],
   ];
   textCols.forEach(([name, cols]) => {

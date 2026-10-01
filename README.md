@@ -25,7 +25,7 @@ Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
 - **Spacery** — stan pojedynczego spaceru: `data | pies_id | spacer | status | kto | godzina | grupa`. Wiersz na (dzień, pies, numer spaceru); brak wiersza = ten spacer jest wolny. Pies na dwa spacery ma dwa niezależne spacery 1/2 i 2/2 — każdy z własną rezerwacją, osobą i grupą. Trzyma tylko dni otwarte. Zakładkę w starym układzie (wiersz na psa, drugi spacer w `kto1`/`godzina1`) aplikacja przepisuje sama przy pierwszym dostępie.
-- **Historia** — zamknięte dni: `data | pies | kto | godzina`
+- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa | identyfikator` (`grupa` — numer spaceru grupowego tego dnia; `identyfikator` — numer psa z chwili spaceru, jako tekst; obie kolumny dokłada samo nocne czyszczenie, wpisy sprzed nich są bez grupy, a numer dostają z katalogu, jeśli imię jest jednoznaczne)
 - **Zadania** — `id | tresc | data | status`
 
 Konwencja: funkcje z sufiksem `_` są prywatne (niewywoływalne z przeglądarki); pozostałe to publiczne API dla `google.script.run`.
@@ -93,7 +93,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 |---|---|---|---|
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
-| 1.1.1 | w przygotowaniu | `release/1.1.1` | — |
+| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -248,7 +248,13 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   i zwolnienie; spacer odhacza się w dniu spaceru. Wszystkie dni otwarte przychodzą z serwera
   jednym pobraniem, więc strzałka w przód nie czeka na sieć.
 - **Dni minione** — tylko podgląd tego, co faktycznie się odbyło (zastępuje zakładkę Historia).
-  Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci.
+  Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci. Kolejność —
+  najpierw wolontariusz: spacery jednej osoby stoją razem, osoby alfabetycznie (wielkość
+  liter i ogonki bez znaczenia), wpis bez osoby na końcu; u każdej osoby — po godzinie.
+  Spacer grupowy ma tło i pasek w kolorze swojej grupy (jak na liście dnia), a pod listą sekcja
+  „Spacery grupowe" mówi w jednej linijce na grupę, o której i kto szedł z kim. Grupa, z której
+  wyszedł tylko jeden pies, to spacer pojedynczy. Przy każdym psie jest jego numer
+  („Draco nr 552/26 — Grzesiek") — zrzuty historii idą do władz schroniska.
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -329,6 +335,10 @@ pojawiają się liczby.
 **Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
 od kopii, którą robi aplikacja.
 
+Kolumny `grupa` i `identyfikator` w Historii niczego tu nie zmieniają: wersja bez nich czyta
+i pisze cztery kolumny, a dalsze zostawia. Wpisy dopisane przez nią są po prostu bez grupy
+i bez zapisanego numeru.
+
 Kroki cofnięcia rób **w podanej kolejności, jeden zaraz po drugim** i nie w godzinie czyszczenia.
 Wdrożenie poprzedniej wersji: w Apps Script *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
 albo `git checkout` poprzedniego commita i `npm run deploy:*`.
@@ -386,8 +396,9 @@ Trzy rzeczy warto wiedzieć:
 **Przytrzymaj kafelek psa** (ok. pół sekundy) — włącza się zaznaczanie. Przytrzymany pies jest
 zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
 wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
-wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny) i stają na liście obok siebie
-(bez napisu „grupa" — kolor i blok wystarczą). Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
+wspólny, delikatny kolor tła i pasek z prawej w mocnym odcieniu tego koloru, z napisem „GRUPA"
+czytanym od dołu (każda kolejna grupa tego dnia — inny kolor), i stają na liście obok siebie.
+Pasek to lustro paska trudności z lewej. Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
 kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pies zostaje pod palcem.
 
 - **„Wrócił ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
@@ -442,7 +453,10 @@ Pełny opis z przykładami: **`SORTING.md`**. W skrócie kafelki porównuje się
    do rozdania;
 3. **psy dwuspacerowe wyżej** — mają przed sobą więcej i muszą zacząć wcześniej;
 4. **liczba spacerów odbytych dziś** — mniej = wyżej (pies po 1/2 pod psami bez spaceru);
-5. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
+5. **opiekun** (od 1.1.1) — psy, które reguły 1–4 stawiają na równi, a ma je ta sama osoba,
+   stoją obok siebie. Tylko jako rozstrzygnięcie remisu: nigdy nie przenosi psa ponad
+   wcześniejsze reguły (pies tej osoby na dwa spacery zostaje wśród dwuspacerowych);
+6. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
 
 Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Dla psów
 jednospacerowych wychodzi z tego dokładnie to samo co dawniej: wolne, zarezerwowane,
@@ -486,6 +500,33 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.1.1 — w przygotowaniu
+
+- Zarezerwowane psy jednej osoby nie stały obok siebie (zgłoszenie z produkcji: Draco i Bysiu
+  u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz to kryterium
+  po regułach 1–4, a przed kolejnością z arkusza: psy jednej osoby stoją razem tam, gdzie
+  wcześniejsze reguły nic nie rozstrzygają, i nigdy ich nie przeskakują. Dotyczy też psów już
+  wyprowadzonych na dole listy — razem stoją psy, które wyprowadziła ta sama osoba (zgłoszenie
+  z testu: Barwik i Finito Ali rozdzielone Freją Oli).
+- Historia nie pamiętała, kto szedł w grupie — nocne czyszczenie gubiło numer grupy. Teraz
+  Historia ma kolumnę `grupa` (dokłada ją samo czyszczenie albo `migrate()`; wąska, stara
+  zakładka czyta się bez błędu). Dni zamknięte wcześniej zostają bez grup.
+- Miniony dzień: wpis ze spaceru grupowego w kolorze grupy (tło i pasek, jak na liście dnia),
+  pod listą „Spacery grupowe" — o której i kto z kim. Kolejność listy bez zmian.
+- Miniony dzień: przy każdym psie jego numer (wymóg — zrzuty historii idą do władz schroniska).
+  Historia zapisuje go przy nocnym czyszczeniu w kolumnie `identyfikator` (jako tekst, więc
+  „1/26" nie zmieni się w datę) i zachowuje, choćby psa potem przemianowano albo usunięto.
+  Dni zamknięte wcześniej znają tylko imię — numer dobieramy z katalogu, ale tylko jednoznacznie:
+  dwa psy o tym samym imieniu albo pies spoza katalogu = bez numeru.
+- Miniony dzień układa się najpierw po wolontariuszu: wszystkie spacery jednej osoby stoją
+  razem, osoby alfabetycznie, a u każdej osoby spacery po godzinie.
+- Grupę słabo było widać — samo blade tło. Kafelek w grupie ma teraz z prawej pasek w mocnym
+  odcieniu koloru grupy z napisem „GRUPA" (lustro paska trudności). Pasek leży w prawym
+  marginesie kafelka, a lewy margines jest o tyle węższy — treść ma tyle miejsca co w kafelku
+  bez grupy, więc spacer w grupie zawija się do drugiej linijki dokładnie tak jak w 1.1
+  (sprawdzone na 360, 375, 393 i 412 px). Treść kafelka w grupie zaczyna się przez to 4 px
+  bliżej lewej krawędzi.
 
 ### 1.1 — wdrożone 2026-09-28 (@17)
 

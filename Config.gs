@@ -109,9 +109,15 @@ const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
 const TASK_HEADERS = ['id', 'tresc', 'data', 'status'];
 const TASK_WIDTH = TASK_HEADERS.length;
 
-/** Zakładka Historia. */
-const HIST = { DATE: 1, DOG: 2, WHO: 3, TIME: 4 };
-const HIST_HEADERS = ['data', 'pies', 'kto', 'godzina'];
+/**
+ * Zakładka Historia. `grupa` — numer spaceru grupowego tego dnia (puste = bez grupy),
+ * `identyfikator` — numer psa w chwili spaceru (zrzuty historii idą do władz schroniska;
+ * numer ma przetrwać przemianowanie i usunięcie psa). Obie kolumny doszły później:
+ * starsze wpisy ich nie mają, a starsza zakładka bywa węższa niż HIST_WIDTH — czytamy
+ * najwyżej tyle kolumn, ile ma (histWidth_), a nocne czyszczenie dokłada brakujące (histColumns_).
+ */
+const HIST = { DATE: 1, DOG: 2, WHO: 3, TIME: 4, GROUP: 5, IDENT: 6 };
+const HIST_HEADERS = ['data', 'pies', 'kto', 'godzina', 'grupa', 'identyfikator'];
 const HIST_WIDTH = HIST_HEADERS.length;
 
 /** Dozwolone statusy i trudności. */

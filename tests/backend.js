@@ -1343,5 +1343,105 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('rezerwacje na inne dni nietknięte', slotAt(env, 1, env.api.addDays_(D, 10), 1).who==='Ala');
 })();
 
+/* ---------- B49: Historia pamięta grupę spaceru ---------- */
+(()=>{
+  console.log('B49: grupa trafia do Historii i wraca w podglądzie minionego dnia — także z wąskiej, starej zakładki');
+  // Historia sprzed tej zmiany ma 4 kolumny, a Apps Script rzuca błędem na zakres poza szerokością
+  // zakładki (strictWidth). Stare wpisy są bez grupy i tak zostają.
+  const D = '2026-08-04';
+  const env = build([], {
+    now: D + 'T10:00:00+02:00',
+    sheets: [
+      { name:'Psy', rows:[DOG_HEADERS, ...[{id:1,name:'Borys'},{id:2,name:'Luna'},{id:3,name:'Rex'},{id:4,name:'Azor'},{id:5,name:'Bari'}].map(dogRow)] },
+      { name:'Historia', strictWidth: true, rows:[HIST_HEADERS, ['2026-08-01','Luna','Ola','10:00']] },
+      { name:'Zadania',  rows:[TASK_HEADERS] },
+    ],
+  });
+  check('stara karta (getHistory) czyta wąską Historię bez błędu', !throws(() => env.api.getHistory()));
+  env.api.reserve(1, 'Ala', D, 1); env.api.reserve(2, 'Ola', D, 1); env.api.reserve(3, 'Ala', D, 1); env.api.reserve(4, 'Iza', D, 1);
+  env.api.reserve(5, 'Ela', D, 1);
+  env.api.setGroup(D, ['1:1', '2:1'], 0);                     // grupa 1: Borys i Luna
+  env.api.setGroup(D, ['3:1', '4:1'], 0);                     // grupa 2: Rex i Azor — Azor w końcu nie wyszedł
+  [1, 2, 3, 5].forEach(id => env.api.markWalked(id, '', 1, D));
+
+  env.setNow('2026-08-05T10:00:00+02:00');                    // dzień minął, czyszczenie jeszcze nie ruszyło
+  const open = env.api.getHistoryDays(D, D).history;
+  const g = (list, name, day) => (list.filter(e => e.name === name && e.date === (day || D))[0] || {}).group;
+  check('niezamknięty dzień: grupa ze Spacery', g(open, 'Borys') === 1 && g(open, 'Luna') === 1 && g(open, 'Rex') === 2 && g(open, 'Bari') === 0,
+    JSON.stringify(open));
+
+  check('nocne czyszczenie na wąskiej Historii bez błędu', !throws(() => env.api.endOfDay()));
+  const H = env.sheets['Historia'];
+  check('…dokłada kolumnę grupa z nagłówkiem', H._data[0][4] === 'grupa', JSON.stringify(H._data[0]));
+  const rows = hist(env).filter(r => r[0] === D);
+  const col = name => (rows.filter(r => r[1] === name)[0] || [])[4];
+  check('…i zapisuje numer grupy przy spacerze (pusty bez grupy)', rows.length === 4 && col('Borys') === 1 && col('Luna') === 1
+    && col('Rex') === 2 && col('Bari') === '', JSON.stringify(rows));
+  check('Azor (rezerwacja bez spaceru) do Historii nie trafia — grupa 2 ma tam jeden spacer', !rows.some(r => r[1] === 'Azor'));
+
+  const closed = env.api.getHistoryDays('2026-08-01', D).history;
+  check('zamknięty dzień: grupa z Historii, ta sama co przed czyszczeniem',
+    g(closed, 'Borys') === 1 && g(closed, 'Luna') === 1 && g(closed, 'Rex') === 2 && g(closed, 'Bari') === 0, JSON.stringify(closed));
+  check('stary wpis (sprzed kolumny grupa) — bez grupy', g(closed, 'Luna', '2026-08-01') === 0,
+    JSON.stringify(closed.filter(e => e.date === '2026-08-01')));
+  check('stara karta dalej czyta Historię', !throws(() => env.api.getHistory()) && env.api.getHistory().history.length === 5);
+
+  const m = build([{id:1, name:'Borys'}], {sheets: [
+    { name:'Psy', rows:[DOG_HEADERS, dogRow({id:1, name:'Borys'})] },
+    { name:'Historia', strictWidth: true, rows:[HIST_HEADERS, ['2026-08-01','Luna','Ola','10:00']] },
+    { name:'Zadania',  rows:[TASK_HEADERS] }]});
+  m.api.migrate();
+  check('migrate() też dokłada kolumnę grupa, danych nie rusza', m.sheets['Historia']._data[0][4] === 'grupa'
+    && m.sheets['Historia']._data[1].slice(0, 4).join() === '2026-08-01,Luna,Ola,10:00', JSON.stringify(m.sheets['Historia']._data));
+})();
+
+/* ---------- B50: numer psa (identyfikator) w historii ---------- */
+(()=>{
+  console.log('B50: minione dni niosą numer psa — zapisany przy czyszczeniu, a dla starych wpisów z katalogu');
+  // Wymóg: zrzuty historii idą do władz schroniska. Numer zapisany przy czyszczeniu zostaje, choćby
+  // psa potem przemianowano albo usunięto; stare wpisy (tylko imię) dostają numer z katalogu po imieniu —
+  // ale tylko jednoznacznie: dwa psy o tym samym imieniu = brak numeru, nie zgadywanie.
+  const D = '2026-08-04';
+  const env = build([], {
+    now: D + 'T10:00:00+02:00',
+    sheets: [
+      { name:'Psy', rows:[DOG_HEADERS, ...[{id:1,name:'Borys',ident:'101/26'},{id:2,name:'Luna',ident:'1/26'},{id:3,name:'Rex',ident:'303/26'},
+        {id:4,name:'Kora',ident:'404/26'},{id:5,name:'Kora',ident:'505/26'},{id:6,name:'',ident:'2077'},{id:7,name:'Azor'}].map(dogRow)] },
+      { name:'Historia', strictWidth: true, rows:[HIST_HEADERS,
+        ['2026-08-01','Borys','Ola','10:00'], ['2026-08-01','Kora','Ala','11:00'],
+        ['2026-08-01','Dawny','Ala','12:00'], ['2026-08-01','#2077','Iza','13:00']] },
+      { name:'Zadania',  rows:[TASK_HEADERS] },
+    ],
+  });
+  const nr = (list, name, day) => (list.filter(e => e.name === name && e.date === (day || D))[0] || {}).ident;
+  const old = env.api.getHistoryDays('2026-08-01', '2026-08-01').history;
+  check('stary wpis: numer z katalogu po imieniu', nr(old, 'Borys', '2026-08-01') === '101/26', JSON.stringify(old));
+  check('…dwa psy o tym imieniu (Kora) — bez numeru, nie zgadujemy', nr(old, 'Kora', '2026-08-01') === '', JSON.stringify(old));
+  check('…pies spoza katalogu — bez numeru', nr(old, 'Dawny', '2026-08-01') === '');
+  check('…pies bez imienia (#2077) — jego numer', nr(old, '#2077', '2026-08-01') === '2077');
+
+  [[1,'Ala'], [2,'Ola'], [4,'Zu'], [6,'Iza'], [7,'Ela']].forEach(([id, who]) => { env.api.reserve(id, who, D, 1); env.api.markWalked(id, '', 1, D); });
+  env.setNow('2026-08-05T10:00:00+02:00');
+  const open = env.api.getHistoryDays(D, D).history;
+  check('dzień niezamknięty: numer z katalogu po psie, nie po imieniu (Kora 404/26)',
+    nr(open, 'Borys') === '101/26' && nr(open, 'Kora') === '404/26' && nr(open, '#2077') === '2077' && nr(open, 'Azor') === '',
+    JSON.stringify(open));
+
+  check('czyszczenie na wąskiej Historii bez błędu', !throws(() => env.api.endOfDay()));
+  const H = env.sheets['Historia'];
+  check('…dokłada kolumnę identyfikator z nagłówkiem', H._data[0][5] === 'identyfikator', JSON.stringify(H._data[0]));
+  check('…jako tekst (@) — „1/26" nie może zostać datą', H._formats[6] === '@', JSON.stringify(H._formats));
+  const rows = hist(env).filter(r => r[0] === D), col = name => (rows.filter(r => r[1] === name)[0] || [])[5];
+  check('…i zapisuje numer przy spacerze', col('Borys') === '101/26' && col('Luna') === '1/26' && col('Kora') === '404/26'
+    && col('#2077') === '2077' && col('Azor') === '', JSON.stringify(rows));
+
+  env.sheets['Psy']._data[1][1] = 'Borys II';                // pies przemianowany po spacerze
+  env.sheets['Psy']._data.splice(4, 1);                       // a Kora 404/26 usunięta z katalogu
+  const closed = env.api.getHistoryDays(D, D).history;
+  check('zamknięty dzień: numer z Historii — przemianowanie i usunięcie psa go nie zmieniają',
+    nr(closed, 'Borys') === '101/26' && nr(closed, 'Kora') === '404/26' && nr(closed, 'Luna') === '1/26', JSON.stringify(closed));
+  check('stara karta dalej czyta Historię', !throws(() => env.api.getHistory()));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

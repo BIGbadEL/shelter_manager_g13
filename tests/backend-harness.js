@@ -42,6 +42,9 @@ function makeSheet(name, rows, onRename){
     getRange(row, col, nr, nc){
       const rows = nr === undefined ? 1 : nr;
       const cols = nc === undefined ? 1 : nc;
+      // jak Apps Script: zakres poza szerokością zakładki rzuca błędem. Tylko na życzenie
+      // (`strictWidth` w opisie zakładki) — reszta testów pisze w atrapę bez dokładania kolumn
+      if(sheet._strict && col + cols - 1 > widthOf()) throw new Error('Zakres poza arkuszem: kolumna ' + (col + cols - 1) + ' > ' + widthOf());
       return {
         getValues(){
           sheet._reads++;
@@ -79,7 +82,7 @@ function makeContext(opts){
   // zmiana nazwy zakładki (przywrócenie kopii po cofnięciu wdrożenia) — pod nową nazwą w arkuszu
   const rename = (old, n, sh) => { if(sheets[old] === sh) delete sheets[old]; sheets[n] = sh; };
   const addSheet = (n, rows) => (sheets[n] = makeSheet(n, rows, rename));
-  (opts.sheets||[]).forEach(s=>{ addSheet(s.name, s.rows); });
+  (opts.sheets||[]).forEach(s=>{ addSheet(s.name, s.rows)._strict = !!s.strictWidth; });
   const triggers = [];
 
   class FrozenDate extends Date {

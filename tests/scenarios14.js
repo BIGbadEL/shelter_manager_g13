@@ -506,8 +506,143 @@ async function S103(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S104(){
+  console.log('S104: psy jednej osoby obok siebie — ale tylko tam, gdzie wcześniejsze reguły nic nie rozstrzygają');
+  // zgłoszenie z produkcji 1.1: Draco i Bysiu u Grzesia, a między nimi Barwik, Finito, Santi.
+  // Opiekun to kryterium PO regułach 1–4 (odbyte, czeka na chętnego, dwuspacerowe, dorobek dnia),
+  // a przed kolejnością z arkusza — nigdy nie przenosi psa przez granicę tamtych reguł.
+  const app = buildApp();
+  app.seed(base({dogs:[d1(1,'Draco'), d1(2,'Barwik'), d1(3,'Finito'), d1(4,'Santi'), d1(5,'Bysiu'), d1(6,'Lego'),
+                       d2(7,'Witkacy'), d1(8,'Ever'), d1(9,'Fado'), d1(10,'Siena'), d2(11,'Marvel'), d2(12,'Bari'),
+                       d2(13,'Ares'), d2(14,'Kora'), d2(15,'Nero')],
+    slots:[sl(1,1,{status:'reserved', who:'Grzesiek'}), sl(2,1,{status:'reserved', who:'Zuza'}),
+           sl(3,1,{status:'reserved', who:'Asia'}), sl(4,1,{status:'reserved', who:'Inga'}),
+           sl(5,1,{status:'reserved', who:'grzesiek '}),                                    // ta sama osoba, inaczej wpisana
+           sl(7,1,{status:'walked', who:'Ola'}), sl(7,2,{status:'reserved', who:'Zuza'}),   // Witkacy: 1/2 odbyty, 2/2 u Zuzy
+           sl(8,1,{status:'reserved', who:'Grzesiek', group:1}), sl(9,1,{status:'reserved', who:'Ola', group:1}),
+           sl(10,1,{status:'walked', who:'Grzesiek'}),                                     // odbyty — zostaje na dole
+           sl(11,1,{status:'reserved', who:'Grzesiek'}), sl(11,2,{status:'reserved', who:'Asia'}),   // dwie osoby
+           sl(12,1,{status:'reserved', who:'Grzesiek'}),                                    // Bari: 1/2 Grześka, 2/2 wolny
+           sl(13,1,{status:'reserved', who:'Grzesiek'}), sl(13,2,{status:'reserved', who:'Grzesiek'}),  // Ares: oba u Grześka
+           sl(14,1,{status:'reserved', who:'Ola'}), sl(14,2,{status:'reserved', who:'Ola'}),              // Kora: oba u Oli
+           sl(15,1,{status:'reserved', who:'Grzesiek'}), sl(15,2,{status:'reserved', who:'Asia'})]}));    // Nero: dwie osoby
+  const o = app.window.__order(), at = id => o.indexOf(id);
+  check('Draco i Bysiu (Grzesiek) obok siebie, w miejscu Draco (przed Barwikiem)', at(5) === at(1) + 1 && at(1) < at(2), ord(app));
+  check('„czeka na chętnego" ważniejsze: Bari (2/2 wolny) u góry, nie przy Draco', at(12) === 0 && at(1) > at(6), ord(app));
+  check('„dwuspacerowe wyżej" ważniejsze: Ares (oba spacery Grześka) wśród dwuspacerowych, nie przy Draco',
+    at(13) < at(7) && at(13) < at(1) - 1, ord(app));
+  check('„dorobek dnia" ważniejszy: Barwik (Zuza) nie podjeżdża do Witkacego (2/2 Zuzy, 1/2 odbyty)',
+    at(2) > at(5) && at(2) < at(3) && at(7) < at(1), ord(app));
+  check('pies w grupie zostaje przy grupie (Ever z Fado), nie przy psach Grześka', at(9) === at(8) + 1 && at(8) > at(5), ord(app));
+  check('kafelek z dwiema osobami (Nero: Grzesiek + Asia) bez opiekuna — po Korze, nie przy Aresie',
+    at(15) === at(14) + 1 && at(14) === at(13) + 1, ord(app));
+  check('odbyty pies Grześka zostaje na dole', at(10) === o.length - 1, ord(app));
+  check('cała kolejność', ord(app) === '[12,6,11,13,14,15,7,1,5,2,3,4,8,9,10]', ord(app));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  // zgłoszenie z testu: odbyte psy Ali (Barwik, Finito) rozdzielone Freją Oli. Opiekun odbytego
+  // kafelka to osoba, która go wyprowadziła — reguły 1–4 nadal pierwsze (Kora, dwuspacerowa, wyżej)
+  const done = buildApp();
+  done.seed(base({dogs:[d1(1,'Marvel'), d1(2,'Barwik'), d1(3,'Freja'), d1(4,'Finito'), d1(5,'Lego'), d2(6,'Kora'), d1(7,'Rex')],
+    slots:[sl(1,1,{status:'reserved', who:'Ola'}), sl(2,1,{status:'walked', who:'Ala'}), sl(3,1,{status:'walked', who:'Ola'}),
+           sl(4,1,{status:'walked', who:'Ala'}), sl(5,1,{status:'walked', who:'ala '}),
+           sl(6,1,{status:'walked', who:'Ala'}), sl(6,2,{status:'walked', who:'Ala'}), sl(7,1,{status:'walked', who:''})]}));
+  const od = JSON.stringify(done.window.__order());
+  check('odbyte psy jednej osoby obok siebie: Barwik, Finito, Lego (Ala), potem Freja (Ola)', od === '[1,6,2,4,5,3,7]', od);
+  check('…a dwuspacerowa Kora (też Ala) zostaje wyżej — reguła 3 ważniejsza', done.window.__order().indexOf(6) === 1, od);
+
+  // losowe dni: reguły 1–4 nigdy się nie cofają wzdłuż listy, a psy jednej osoby w obrębie
+  // tych samych reguł 1–4 stoją razem (bez grup — grupa to osobna, wcześniejsza reguła)
+  let seed = 104;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  let broken = '', apart = '';
+  for(let run = 0; run < 40 && !broken && !apart; run++){
+    const dogs = [], slots = [], plan = {};
+    for(let id = 1; id <= 12; id++){
+      const walks = rnd() < 0.4 ? 2 : 1;
+      dogs.push(walks === 2 ? d2(id, 'P' + id) : d1(id, 'P' + id));
+      plan[id] = [];
+      for(let n = 1; n <= walks; n++){
+        const status = pick(['free', 'reserved', 'reserved', 'walked']), who = status === 'free' ? '' : pick(['Ala', 'Ola', 'Grzesiek']);
+        plan[id].push({status, who});
+        if(status !== 'free') slots.push(sl(id, n, {status, who}));
+      }
+    }
+    const r = buildApp();
+    r.seed(base({dogs, slots}));
+    const o = r.window.__order();
+    const cls = id => { const p = plan[id]; return [p.every(s => s.status==='walked') ? 1 : 0, p.some(s => s.status==='free') ? 0 : 1,
+      -p.length, p.filter(s => s.status==='walked').length]; };
+    const owner = id => { const p = plan[id], done = p.every(s => s.status==='walked');
+      const w = new Set(p.filter(s => s.status===(done ? 'walked' : 'reserved')).map(s => s.who)); return w.size === 1 ? [...w][0] : ''; };
+    const cmp = (a, b) => { for(let i = 0; i < a.length; i++) if(a[i] !== b[i]) return a[i] - b[i]; return 0; };
+    for(let i = 1; i < o.length; i++) if(cmp(cls(o[i-1]), cls(o[i])) > 0) broken = `przebieg ${run}: ${JSON.stringify(o)}`;
+    const seen = {};
+    o.forEach((id, i) => { const w = owner(id); if(!w) return; const k = cls(id).join() + '|' + w;
+      if(seen[k] !== undefined && seen[k] !== i - 1) apart = `przebieg ${run}: ${k} w ${JSON.stringify(o)}`; seen[k] = i; });
+    if(r.errors.length) broken = r.errors.join('; ');
+  }
+  check('40 losowych dni: reguły 1–4 nigdy się nie cofają wzdłuż listy', !broken, broken);
+  check('40 losowych dni: psy jednej osoby (przy tych samych regułach 1–4) zawsze obok siebie', !apart, apart);
+}
+
+async function S106(){
+  console.log('S106: pasek grupy po prawej — intensywny kolor grupy, napis GRUPA od dołu, bez kosztu szerokości');
+  // feedback 1.1: samo blade tło grupy słabo widać. Pasek to lustro paska trudności, w kolorze
+  // `ink` tej samej pozycji GROUP_COLORS co tło (grupa 7 = znów pierwszy kolor).
+  const app = buildApp();
+  app.seed(base({dogs:[d1(1,'Azor'), d2(2,'Bari'), d1(3,'Cezar'), d1(4,'Dino'), d1(5,'Ela'), d1(6,'Fado'), d1(7,'Gapa')],
+    slots:[sl(1,1,{status:'reserved', who:'Ola', group:1}), sl(2,1,{status:'reserved', who:'Iza', group:1}),
+           sl(3,1,{status:'reserved', who:'Ewa', group:2}), sl(4,1,{status:'free', group:2}),
+           sl(5,1,{status:'walked', who:'Ala', group:7}), sl(6,1,{status:'walked', who:'Ala', group:7})]}));
+  const w = app.window;
+  const grouped = [...doc(app).querySelectorAll('li.dog')].filter(li => /background:/.test(li.getAttribute('style')));
+  check('(przygotowanie) kafelki w grupach: Azor, Bari 1/2, Cezar, Dino, Ela, Fado',
+    grouped.map(li => li.dataset.tile).sort().join() === 's1.1,s2.1,s3.1,s4.1,s5.1,s6.1', grouped.map(li => li.dataset.tile).join());
+  const gidOf = li => { const r = li.dataset.tile.replace(/^[ms]/, '').split('.'); return slotOf(app, +r[0], +(r[1] || 1)).group; };
+  const bad = grouped.filter(li => { const c = w.eval(`groupColor(${gidOf(li)})`);
+    return !li.classList.contains('grouped') || li.style.getPropertyValue('--gc') !== c.ink || !li.getAttribute('style').includes('background:' + c.bg); });
+  check('każdy kafelek w grupie: klasa grouped, pasek w kolorze ink, tło bg — z tej samej pozycji palety', grouped.length === 6 && !bad.length,
+    bad.map(li => li.dataset.tile + ' ' + li.className + ' ' + li.getAttribute('style')).join(' ; '));
+  check('grupa 7 ma pasek pierwszego koloru, jak tło (sześć kolorów w obiegu)', !!tile(app, 's5.1').style.getPropertyValue('--gc')
+    && tile(app, 's5.1').style.getPropertyValue('--gc') === tile(app, 's1.1').style.getPropertyValue('--gc'));
+  check('różne grupy — różne paski', tile(app, 's1.1').style.getPropertyValue('--gc') !== tile(app, 's3.1').style.getPropertyValue('--gc'));
+  const plain = [...doc(app).querySelectorAll('li.dog')].filter(li => !grouped.includes(li));
+  check('kafelki bez grupy bez paska (Bari 2/2, Gapa)', plain.length === 2 && plain.every(li => !li.classList.contains('grouped') && !li.style.getPropertyValue('--gc')),
+    plain.map(li => li.outerHTML.slice(0, 160)).join(' ; '));
+
+  // style: jsdom liczy marginesy z arkusza, ale nie obramowania zapisane przez var() — te po treści reguł
+  const css = fs.readFileSync(path.join(__dirname, '..', 'Styles.html'), 'utf8').match(/<style>([\s\S]*)<\/style>/)[1];
+  const st = doc(app).createElement('style'); st.textContent = css; doc(app).head.appendChild(st);
+  const rules = [...doc(app).styleSheets[0].cssRules].filter(r => r.selectorText);
+  const after = rules.filter(r => /\.grouped::after/.test(r.selectorText)).map(r => r.style);
+  const a = after[after.length - 1], av = p => a ? a.getPropertyValue(p) : '';
+  check('pasek ma napis GRUPA', /GRUPA/.test(av('content')), a && a.cssText);
+  check('…czytany od dołu do góry (pionowo i obrócony)', av('writing-mode') === 'vertical-rl' && /rotate\(180deg\)/.test(av('transform')), a && a.cssText);
+  check('…biały na intensywnym kolorze grupy', /var\(--gc\)/.test(av('background') || av('background-color')) && /#fff\b|white|255, 255, 255/.test(av('color')), a && a.cssText);
+  check('…nie łapie stuknięć (przytrzymanie i zaznaczanie idą do kafelka)', av('pointer-events') === 'none', a && a.cssText);
+  // review PR #3: każdy piksel mniej na treść łamał kafelki odłączone na granicy do dwóch linijek
+  const pad = (li, side) => parseFloat(w.getComputedStyle(li)['padding' + side]);
+  const hpad = li => pad(li, 'Left') + pad(li, 'Right');
+  check('pasek leży w prawym marginesie i się w nim mieści', parseFloat(av('width')) < pad(tile(app, 's2.1'), 'Right'),
+    `pasek ${av('width')}, margines ${pad(tile(app, 's2.1'), 'Right')}px`);
+  check('…a lewy margines oddaje to, co zabrał pasek: na treść tyle miejsca co bez grupy (odłączony i pełny)',
+    hpad(tile(app, 's2.1')) === hpad(tile(app, 'm7')) && hpad(tile(app, 's1.1')) === hpad(tile(app, 'm7')),
+    `w grupie ${hpad(tile(app, 's2.1'))}px / ${hpad(tile(app, 's1.1'))}px, bez grupy ${hpad(tile(app, 'm7'))}px`);
+  const widen = rules.filter(r => /grouped/.test(r.selectorText) && !/::after/.test(r.selectorText)
+    && /border(-left|-right)?(-width)?\s*:|border-(left|right)-style/.test(r.style.cssText.replace(/border-right-color:[^;]*;?/g, '')));
+  check('…i obramowania bez zmian (pasek trudności 5 px, prawa krawędź 1 px)', !widen.length,
+    widen.map(r => r.cssText).join(' ; '));
+  const z = sel => { const r = rules.filter(x => x.selectorText === sel).map(x => x.style.getPropertyValue('z-index')).filter(Boolean); return parseInt(r[r.length - 1] || '0', 10); };
+  check('kółko zaznaczania stoi nad paskiem', z('.pickbox') > z('.dog.grouped::after'), z('.pickbox') + ' vs ' + z('.dog.grouped::after'));
+  w.eval("startSelect('1:1')");
+  check('w trybie zaznaczania kafelek grupy nadal ma pasek', tile(app, 's1.1').classList.contains('grouped') && tile(app, 's1.1').classList.contains('pick'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103, S104, S106]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

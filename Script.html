@@ -544,7 +544,9 @@
    *  2. czy któryś jego spacer czeka na chętnego (wolny → nad zarezerwowanymi),
    *  3. ile spacerów dziennie potrzebuje pies (dwuspacerowe wyżej),
    *  4. ile spacerów pies ma dziś już odbytych (mniej → wyżej),
-   *  5. kolejność z arkusza, 6. numer spaceru (żeby remis zawsze rozstrzygał się tak samo).
+   *  5. opiekun — psy jednej osoby obok siebie, tylko gdy 1–4 nic nie rozstrzygają (rankKeys),
+   *  6. kolejność z arkusza, 7. numer spaceru (żeby remis zawsze rozstrzygał się tak samo).
+   * Tu powstaje klucz bez kryterium 5 — to jedno zależy od innych kafelków dnia.
    */
   function tileKey(t){
     return [ t.slots.every(s => s.status==='walked') ? 1 : 0,
@@ -559,19 +561,54 @@
   function blockOf(t){ return t.gid ? 'g'+t.gid : t.id; }
 
   /**
-   * Kolejność spacerów policzona od nowa: bloki (kafelek główny albo cała grupa) po
-   * kluczu swojego najpilniejszego kafelka, w bloku kafelki po własnym kluczu.
+   * Opiekun kafelka: jedna osoba, która ma wszystkie jego zarezerwowane spacery, a na kafelku całym
+   * odbytym — która je odbyła (imię jak przy kolorach — volNorm). Odbyte psy jednej osoby też mają
+   * stać razem na dole listy (zgłoszenie z testu: dwa psy Ali rozdzielone psem Oli).
+   * Kafelek w grupie, bez nikogo albo z dwiema osobami — ''.
+   */
+  function ownerOf(t){
+    if(t.gid) return '';
+    const done = t.slots.every(s => s.status==='walked');
+    const who = new Set(t.slots.filter(s => s.status===(done ? 'walked' : 'reserved')).map(s => volNorm(s.who)));
+    return who.size === 1 ? [...who][0] : '';
+  }
+
+  /**
+   * Pełne klucze kafelków dnia, z kryterium 5 — opiekunem (zgłoszenie z produkcji 1.1: Draco
+   * i Bysiu u Grzesia, a między nimi trzy inne psy). Kafelki, które reguły 1–4 stawiają na
+   * równi, a mają tego samego opiekuna, dostają wspólne miejsce: najwcześniejsze w arkuszu
+   * spośród nich. Przez granice reguł 1–4 opiekun nigdy psa nie przenosi (decyzja właściciela:
+   * wszystkie wcześniejsze reguły ważniejsze) — to tylko rozstrzygnięcie remisu przed arkuszem.
+   */
+  function rankKeys(tiles){
+    const base = new Map(), anchor = new Map();
+    const cls = (k, who) => k.slice(0, 4).join(',') + '|' + who;
+    tiles.forEach(t => {
+      const k = tileKey(t), who = ownerOf(t);
+      base.set(t, {k, who});
+      if(!who) return;
+      const c = cls(k, who);
+      if(!anchor.has(c) || t.idx < anchor.get(c)) anchor.set(c, t.idx);
+    });
+    const keys = new Map();
+    base.forEach(({k, who}, t) => keys.set(t, k.slice(0, 4).concat([who ? anchor.get(cls(k, who)) : t.idx], k.slice(4))));
+    return keys;
+  }
+
+  /**
+   * Kolejność spacerów policzona od nowa: bloki (kafelek główny albo cała grupa) po kluczu
+   * swojego najpilniejszego kafelka, w bloku kafelki po własnym kluczu (rankKeys).
    */
   function sortedRefs(tiles){
-    const blocks = new Map();
+    const keys = rankKeys(tiles), blocks = new Map();
     tiles.forEach(t => {
-      const b = blockOf(t), k = tileKey(t), cur = blocks.get(b);
+      const b = blockOf(t), k = keys.get(t), cur = blocks.get(b);
       if(!cur) blocks.set(b, {key:k, tiles:[t]});
       else { cur.tiles.push(t); if(cmpKey(k, cur.key) < 0) cur.key = k; }
     });
     const out = [];
     [...blocks.values()].sort((a,b) => cmpKey(a.key, b.key)).forEach(b =>
-      b.tiles.sort((x,y) => cmpKey(tileKey(x), tileKey(y))).forEach(t => t.slots.forEach(s => out.push(refOf(t, s)))));
+      b.tiles.sort((x,y) => cmpKey(keys.get(x), keys.get(y))).forEach(t => t.slots.forEach(s => out.push(refOf(t, s)))));
     return out;
   }
 
@@ -1074,7 +1111,7 @@
     const badge = one && count > 1 ? ` <span class="slotno">${one.n}/${count}</span>` : '';
     const resv = one && count === 1 && one.status==='reserved' ? `\n          <span class="resv-pill">zarezerwowany</span>` : '';
     const pk = pickBits(t);
-    const cls = 'dog' + (allDone ? ' walked' : '') + (t.full ? '' : ' detached') + pk.cls;
+    const cls = 'dog' + (allDone ? ' walked' : '') + (t.full ? '' : ' detached') + (t.gid ? ' grouped' : '') + pk.cls;
     const open = `<li class="${cls}" data-dog="${dog.id}" data-tile="${t.id}" data-slots="${t.slots.map(s=>s.n).join(',')}" style="${tileStyle(t, dm)}">`;
     if(!t.full && one){
       const p = slotParts(dog, one);
@@ -1314,13 +1351,31 @@
       .getDiagnostics(state.pin);
   }
 
+  /**
+   * Numer psa przy wpisie minionego dnia (wymóg: zrzuty historii idą do władz schroniska, S108).
+   * Brak numeru = brak „nr" — serwer nie zgaduje (stary wpis, dwa psy o tym imieniu). Pies bez
+   * imienia ma już numer w nazwie („#2077") — drugi raz go nie piszemy.
+   */
+  function histNr(e){
+    const nr = String(e.ident == null ? '' : e.ident).trim();
+    return nr && e.name !== '#' + nr ? ` <span class="nr">nr ${esc(nr)}</span>` : '';
+  }
+
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
   function minutesOf(t){ const m=String(t||'').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
 
   /**
    * Miniony dzień — tylko podgląd, zastępuje dawną zakładkę Historia. Pokazujemy
-   * to, co się faktycznie odbyło, po kolei w ciągu dnia; rezerwacje, z których
-   * nic nie wyszło, nie są częścią zapisu.
+   * to, co się faktycznie odbyło; rezerwacje, z których nic nie wyszło, nie są
+   * częścią zapisu.
+   * Kolejność (decyzja właściciela, 1.1.1): najpierw wolontariusz — spacery jednej osoby
+   * stoją razem, osoby alfabetycznie po volNorm („grzesiek" i „Grzesiek" to ta sama osoba),
+   * wpis bez osoby na końcu; w obrębie osoby — godzina (S105).
+   * Grupy (decyzja właściciela: wersja A + podsumowanie z D, S107): wpis ze spaceru grupowego
+   * ma tło i pasek koloru swojej grupy, jak kafelek na liście dnia — kolejności to nie zmienia.
+   * Pod listą „Spacery grupowe": każda grupa w jednej linijce, po kolei w ciągu dnia — kto
+   * szedł z kim. Grupą jest tu numer z co najmniej dwoma odbytymi spacerami: gdy reszta grupy
+   * nie wyszła, pies szedł sam. Wpisy sprzed kolumny `grupa` w Historii są bez grupy.
    */
   function renderPastDay(date){
     const items = state.past[date];
@@ -1332,9 +1387,30 @@
       return html + '<div class="empty">Wczytuję…</div>';
     }
     if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
-    const sorted = items.slice().sort((a,b)=>minutesOf(a.time)-minutesOf(b.time));
+    const sorted = items.slice().sort((a,b)=>{
+      const x = volNorm(a.who), y = volNorm(b.who);
+      return x===y ? minutesOf(a.time)-minutesOf(b.time) : !x ? 1 : !y ? -1 : x<y ? -1 : 1;
+    });
+    const members = {};
+    sorted.forEach(e => { const g = posInt(e.group); if(g) (members[g] = members[g] || []).push(e); });
+    const gidOf = e => { const g = posInt(e.group); return g && members[g].length > 1 ? g : 0; };
+    const paint = g => { const c = groupColor(g); return ` style="--gbg:${c.bg};--gc:${c.ink}"`; };
     html += `<div class="hist-day"><div class="hist-date">${sorted.length} ${plural(sorted.length,'spacer','spacery','spacerów')}</div>`;
-    sorted.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    sorted.forEach(e=>{ const g = gidOf(e);
+      html+=`<div class="hist-item${g ? ' hg' : ''}"${g ? paint(g) : ''}><b>${esc(e.name)}</b>${histNr(e)} — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
+    html += `</div>`;
+    const groups = Object.keys(members).map(Number).filter(g => members[g].length > 1)
+      .map(g => ({g, time: members[g].map(e => e.time).sort((a,b)=>minutesOf(a)-minutesOf(b))[0]}))
+      .sort((a,b) => minutesOf(a.time)-minutesOf(b.time) || a.g-b.g);
+    if(!groups.length) return html;
+    html += `<div class="hist-day"><div class="hist-date">Spacery grupowe</div>`;
+    groups.forEach(({g, time}) => {
+      const people = [];                   // osoby w kolejności listy, psy jednej osoby razem
+      members[g].forEach(e => { const k = volNorm(e.who); let p = people.find(x => x.k === k);
+        if(!p) people.push(p = {k, who: e.who, dogs: []}); p.dogs.push(e.name); });
+      html += `<div class="hist-item hg hist-gsum"${paint(g)}><b>${esc(time)}</b> <span>${people.map(p =>
+        esc(p.dogs.join(', ')) + (p.k ? ` <span class="gw">(${esc(p.who)})</span>` : '')).join(' · ')}</span></div>`;
+    });
     return html + `</div>`;
   }
 
@@ -1459,8 +1535,10 @@
     for(const k in state.slots){ if(k.indexOf(date+'|')===0 && state.slots[k].group > max) max = state.slots[k].group; }
     return max + 1;
   }
+  /** Trudność — pasek z lewej. Grupa — blade tło i pasek „GRUPA" z prawej w intensywnym kolorze tej grupy (--gc). */
   function tileStyle(t, dm){
-    return `border-left-color:${dm.color}` + (t.gid ? `;background:${groupColor(t.gid).bg}` : '');
+    const g = t.gid ? groupColor(t.gid) : null;
+    return `border-left-color:${dm.color}` + (g ? `;background:${g.bg};--gc:${g.ink}` : '');
   }
 
   /** Czy spacer można zaznaczyć: odbyty nie ma czego planować — chyba że już jest w tej grupie. */

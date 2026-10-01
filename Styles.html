@@ -119,8 +119,20 @@
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
 
   /* ---------- spacery grupowe ----------
-     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy), a kafelki
-     grupy stoją na liście jednym blokiem. Znacznika „👥 grupa" już nie ma (zbędny wszędzie). */
+     Kafelek grupy: blade tło i pasek z prawej w intensywnym kolorze tej samej grupy (--gc, styl
+     w linii — kolor zależy od numeru grupy), z napisem GRUPA czytanym od dołu, jak grzbiet polskiej
+     książki. Samo tło było w terenie słabo widać (feedback 1.1). Kafelki grupy stoją jednym blokiem.
+     Pasek leży w prawym marginesie kafelka (18 px zamiast 14), a lewy margines oddaje te 4 px
+     (10 zamiast 14) — na treść zostaje dokładnie tyle miejsca co w kafelku bez grupy. Każdy piksel
+     mniej łamał kafelki odłączone na granicy do dwóch linijek (review PR #3: 375 px, 412 px), a pasek
+     dołożony do szerokości (16 px) — już przy 412 px kafelek za kafelkiem. Cena: treść kafelka grupy
+     zaczyna się 4 px bliżej lewej krawędzi. Kółko zaznaczania stoi nad paskiem, a stuknięcie przez
+     pasek idzie do kafelka (przytrzymanie, zaznaczanie). */
+  .dog.grouped{position:relative;border-right-color:var(--gc);padding-right:18px;padding-left:10px;}
+  .dog.grouped::after{content:'GRUPA';position:absolute;top:0;bottom:0;right:0;width:14px;
+    background:var(--gc);color:#fff;display:flex;align-items:center;justify-content:center;
+    writing-mode:vertical-rl;transform:rotate(180deg);border-radius:11px 0 0 11px;
+    font-size:9px;font-weight:800;letter-spacing:.16em;pointer-events:none;}
   .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
   /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
      w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
@@ -130,7 +142,7 @@
      opiekun i przyciski, a nazwa zaznaczanego kafelka zostaje czytelna (review) */
   .dog.pick.detached > .status{opacity:1;}
   .dog.pick.detached > .status > :not(.name):not(.slotno){opacity:.35;}
-  .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
+  .pickbox{position:absolute;z-index:1;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
     border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
   .dog.picked{box-shadow:0 0 0 2px var(--ink);}
@@ -242,6 +254,16 @@
   .hist-item{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);}
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
+  /* numer psa przy imieniu — jak „nr 258/26" na kafelku listy dnia */
+  .hist-item .nr{color:var(--muted);font-size:12.5px;white-space:nowrap;}
+  /* spacer grupowy: blade tło i pasek z prawej w kolorze grupy (--gbg / --gc), jak kafelek grupy
+     na liście dnia; ujemny margines trzyma tekst w linii z wpisami bez grupy */
+  .hist-item.hg{background:var(--gbg);border-right:5px solid var(--gc);border-radius:8px;
+    margin:0 -8px;padding:6px 8px;border-bottom-color:transparent;}
+  /* „Spacery grupowe" pod listą: godzina, potem kto z kim */
+  .hist-gsum{align-items:baseline;line-height:1.4;}
+  .hist-gsum b{flex:none;}
+  .hist-gsum .gw{color:var(--muted);}
   .saving{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--honey);
     border-radius:50%;vertical-align:-1px;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
