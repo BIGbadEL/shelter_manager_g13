@@ -92,8 +92,8 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | wersja | co | gałąź | wdrożenie |
 |---|---|---|---|
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
-| 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
-| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
+| 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
+| 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) = `main` | @18, 2026-10-01 |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -501,7 +501,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
-### 1.1.1 — w przygotowaniu
+### 1.1.1 — wdrożone 2026-10-01 (@18)
 
 - Zarezerwowane psy jednej osoby nie stały obok siebie (zgłoszenie z produkcji: Draco i Bysiu
   u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz to kryterium

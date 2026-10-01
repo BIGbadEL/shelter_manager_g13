@@ -514,7 +514,8 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   (np. z filmikiem): 1.1 → 1.2.
 - **Y — drobne zmiany w tle**, bez ogłaszania: 1.1 → 1.1.1 → 1.1.2.
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
-  w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28).
+  w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
+  **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01).
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -587,7 +588,13 @@ autoryzacji** przy pierwszym uruchomieniu.
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja 1.1 (PR #2, `ee58018`) od 2026-09-28, 20:41 — wdrożenie @17.** Poprzednia
+- **Produkcja: wersja 1.1.1 (PR #3, `985dc1a`, merge `31721b5`) od 2026-10-01, 22:50 — wdrożenie
+  @18.** Weszła pilnie przez numer psa w historii (zrzuty dla władz schroniska od 2.10). Pierwsze
+  nocne czyszczenie na 1.1.1 (2.10, 19:00) dokłada do Historii kolumny `grupa` i `identyfikator`;
+  dni do 1.10 włącznie mają numer psa tylko z katalogu po imieniu (jednoznacznym). Poprzednia
+  to 1.1 = @17 = `ee58018` (gałąź `release/1.1`) — do niej się cofa zwykłym `deploy:prod` z tej
+  gałęzi; dodatkowych kolumn Historii nie czyta i nie psuje.
+- Wersja 1.1 (PR #2, `ee58018`) od 2026-09-28, 20:41 — wdrożenie @17. Poprzednia
   to 1.0 = @16 = `0cc01e0` (sprzed dat, gałąź `release/1.0`) — do niej się cofa, według README
   („Projekt bez wersji z datami").
   Zakładka Spacery powstała przy wdrożeniu (import ze starych kolumn Psy — po czyszczeniu o 19:00
