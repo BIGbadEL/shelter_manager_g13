@@ -506,8 +506,35 @@ async function S103(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S104(){
+  console.log('S104: zarezerwowane psy jednej osoby stoją obok siebie (blok opiekuna)');
+  // zgłoszenie z produkcji 1.1: Draco i Bysiu u Grzesia, a między nimi Barwik, Finito, Santi
+  const app = buildApp();
+  app.seed(base({dogs:[d1(1,'Draco'), d1(2,'Barwik'), d1(3,'Finito'), d1(4,'Santi'), d1(5,'Bysiu'), d1(6,'Lego'),
+                       d2(7,'Witkacy'), d1(8,'Ever'), d1(9,'Fado'), d1(10,'Siena'), d2(11,'Marvel'), d2(12,'Bari')],
+    slots:[sl(1,1,{status:'reserved', who:'Grzesiek'}), sl(2,1,{status:'reserved', who:'Zuza'}),
+           sl(3,1,{status:'reserved', who:'Asia'}), sl(4,1,{status:'reserved', who:'Inga'}),
+           sl(5,1,{status:'reserved', who:'grzesiek '}),                                    // ta sama osoba, inaczej wpisana
+           sl(7,1,{status:'walked', who:'Ola'}), sl(7,2,{status:'reserved', who:'Zuza'}),   // Witkacy: 1/2 odbyty, 2/2 u Zuzy
+           sl(8,1,{status:'reserved', who:'Grzesiek', group:1}), sl(9,1,{status:'reserved', who:'Ola', group:1}),
+           sl(10,1,{status:'walked', who:'Grzesiek'}),                                     // odbyty — zostaje na dole
+           sl(11,1,{status:'reserved', who:'Grzesiek'}), sl(11,2,{status:'reserved', who:'Asia'}),   // dwie osoby
+           sl(12,1,{status:'reserved', who:'Grzesiek'})]}));                                // Bari: 1/2 Grześka, 2/2 wolny
+  const o = app.window.__order(), at = id => o.indexOf(id);
+  check('pies z wolnym spacerem (Bari 2/2) zostaje u góry i nie ciągnie za sobą bloku Grześka',
+    at(12) === 0 && at(1) > at(6), ord(app));
+  check('Draco i Bysiu (Grzesiek) obok siebie, w miejscu Draco (przed Finito)', at(5) === at(1) + 1 && at(1) < at(3), ord(app));
+  check('blok Zuzy: Barwik podciągnięty do Witkacego (2/2 Zuzy) — blok stoi tam, gdzie jego najpilniejszy pies',
+    at(2) === at(7) + 1, ord(app));
+  check('pies w grupie zostaje przy grupie (Ever z Fado), nie w bloku Grześka', at(9) === at(8) + 1 && at(8) > at(5), ord(app));
+  check('kafelek z dwiema osobami (Marvel) nie wchodzi do żadnego bloku', at(11) < at(7) && at(11) !== at(1) - 1, ord(app));
+  check('odbyty pies Grześka zostaje na dole', at(10) === o.length - 1, ord(app));
+  check('cała kolejność', ord(app) === '[12,6,11,7,2,1,5,3,4,8,9,10]', ord(app));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103, S104]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

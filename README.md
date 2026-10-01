@@ -93,7 +93,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 |---|---|---|---|
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
-| 1.1.1 | w przygotowaniu | `release/1.1.1` | — |
+| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście | `release/1.1.1` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -444,7 +444,9 @@ Pełny opis z przykładami: **`SORTING.md`**. W skrócie kafelki porównuje się
 4. **liczba spacerów odbytych dziś** — mniej = wyżej (pies po 1/2 pod psami bez spaceru);
 5. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
 
-Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Dla psów
+Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Tak samo od 1.1.1
+**zarezerwowane psy jednej osoby** — stoją obok siebie, w miejscu tego, który byłby najwyżej
+(psy w grupach zostają przy grupie, a pies z wolnym spacerem — u góry listy). Dla psów
 jednospacerowych wychodzi z tego dokładnie to samo co dawniej: wolne, zarezerwowane,
 wyprowadzone. Nową regułę dopisuje się w jednym miejscu (`tileKey` w `Script.html`).
 
@@ -486,6 +488,12 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.1.1 — w przygotowaniu
+
+- Zarezerwowane psy jednej osoby nie stały obok siebie (zgłoszenie z produkcji: Draco i Bysiu
+  u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz jego psy tworzą
+  blok, jak grupa, w miejscu tego, który stanąłby najwyżej.
 
 ### 1.1 — wdrożone 2026-09-28 (@17)
 

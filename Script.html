@@ -556,16 +556,36 @@
   }
   function cmpKey(a, b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]-b[i]; } return 0; }
   function refOf(t, s){ return t.dog.id+'.'+s.n; }
+  /** Blok na ekranie: grupa rysuje się razem, reszta kafelków osobno. */
   function blockOf(t){ return t.gid ? 'g'+t.gid : t.id; }
 
   /**
-   * Kolejność spacerów policzona od nowa: bloki (kafelek główny albo cała grupa) po
-   * kluczu swojego najpilniejszego kafelka, w bloku kafelki po własnym kluczu.
+   * Opiekun kafelka — do bloku wolontariusza (zgłoszenie z produkcji 1.1: Draco i Bysiu
+   * u Grzesia, a między nimi trzy inne psy). Tylko kafelek bez grupy z części „obsadzone"
+   * (nic nie czeka na chętnego, nie wszystko odbyte), którego zarezerwowane spacery ma jedna
+   * osoba; imię porównujemy jak przy kolorach (volNorm). Inaczej '' — kafelek bez bloku.
+   */
+  function ownerOf(t){
+    if(t.gid || t.slots.some(s => s.status==='free') || t.slots.every(s => s.status==='walked')) return '';
+    const who = new Set(t.slots.filter(s => s.status==='reserved').map(s => volNorm(s.who)));
+    return who.size === 1 ? [...who][0] : '';
+  }
+  /** Blok do sortowania: grupa, psy jednego opiekuna albo sam kafelek. */
+  function sortBlockOf(t){
+    if(t.gid) return 'g'+t.gid;
+    const who = ownerOf(t);
+    return who ? 'v:'+who : t.id;
+  }
+
+  /**
+   * Kolejność spacerów policzona od nowa: bloki (kafelek, cała grupa albo zarezerwowane psy
+   * jednego opiekuna) po kluczu swojego najpilniejszego kafelka, w bloku kafelki po własnym
+   * kluczu. Psy opiekuna stoją więc razem tam, gdzie stanąłby najwyżej z nich.
    */
   function sortedRefs(tiles){
     const blocks = new Map();
     tiles.forEach(t => {
-      const b = blockOf(t), k = tileKey(t), cur = blocks.get(b);
+      const b = sortBlockOf(t), k = tileKey(t), cur = blocks.get(b);
       if(!cur) blocks.set(b, {key:k, tiles:[t]});
       else { cur.tiles.push(t); if(cmpKey(k, cur.key) < 0) cur.key = k; }
     });

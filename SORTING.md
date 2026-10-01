@@ -80,8 +80,8 @@ Z spacerów powstają **kafelki** (`buildTiles`):
 
 ### Blok
 
-**Blok** to jednostka, która ma miejsce na liście: kafelek główny (sam) albo **cała grupa**
-(wszystkie jej kafelki obok siebie).
+**Blok** to jednostka, która ma miejsce na liście: kafelek główny (sam), **cała grupa**
+(wszystkie jej kafelki obok siebie) albo **zarezerwowane psy jednego opiekuna** (od 1.1.1).
 
 ## 3. Klucz kafelka — reguły i priorytety
 
@@ -107,6 +107,15 @@ do części „czeka na chętnego" — popołudnie wciąż jest do obsadzenia.
 - Klucz bloku = klucz **najpilniejszego** kafelka bloku (minimum). Grupa stoi więc tam,
   gdzie stanąłby jej najpilniejszy spacer — i „podciąga" resztę składu do siebie.
 - W środku grupy kafelki idą po własnym kluczu.
+- **Blok opiekuna** (`ownerOf`, `sortBlockOf`, od 1.1.1 — zgłoszenie z produkcji: Draco i Bysiu
+  u Grzesia, a między nimi trzy inne psy). Zarezerwowane psy jednej osoby stoją razem, w miejscu
+  tego, który stanąłby najwyżej — ta sama zasada co grupa, więc reszta listy się nie przestawia.
+  Do bloku wchodzi kafelek **bez grupy** z części „obsadzone" (nic nie czeka na chętnego, nie
+  wszystko odbyte), którego zarezerwowane spacery ma **jedna** osoba; imię porównujemy jak przy
+  kolorach (`volNorm`: „Grzesiek" = „grzesiek "). Nie wchodzą: psy w grupach (stoją przy grupie),
+  kafelki z wolnym spacerem (zostają u góry — inaczej pociągnęłyby blok do części „czeka"),
+  kafelki z dwiema osobami i psy odbyte. Blok opiekuna to tylko kolejność — na ekranie nie ma
+  ramki, rysuje się jak zwykłe kafelki (`blockOf` zostaje do rysowania grup). Test S104.
 - Kolejność spacerów do wyświetlenia (`sortedRefs`): bloki po kluczu → w bloku kafelki po
   kluczu → w kafelku spacery rosnąco. To lista odnośników `'pies.nr'`.
 
@@ -248,6 +257,7 @@ wolne), Bibi, Ever (1/2 zarezerwowany, ale 2/2 wolny — też „czekają"), Fin
    pierwszego spaceru (`layoutDay`) ani zamrożenia/zapowiedzi (`decideOrder`) — to one
    pilnują, że nic nie ucieka spod palca.
 3. Testy, które opisują kolejność i trzeba je zaktualizować świadomie: **S90** (reguły),
+   **S104** (blok opiekuna),
    **S47** (lista z terenu), S43–S45 (zamrożenie), S80, S91, S97 (pies w dwóch miejscach,
    stabilność układu), S93–S94 (osłona i zapowiedź). Każdy nowy wyjątek = nowy scenariusz.
 4. **Trzeci spacer:** model i sortowanie są gotowe (numery spacerów, `slotCount`).
