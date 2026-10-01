@@ -611,13 +611,17 @@ async function S106(){
   check('…czytany od dołu do góry (pionowo i obrócony)', av('writing-mode') === 'vertical-rl' && /rotate\(180deg\)/.test(av('transform')), a && a.cssText);
   check('…biały na intensywnym kolorze grupy', /var\(--gc\)/.test(av('background') || av('background-color')) && /#fff\b|white|255, 255, 255/.test(av('color')), a && a.cssText);
   check('…nie łapie stuknięć (przytrzymanie i zaznaczanie idą do kafelka)', av('pointer-events') === 'none', a && a.cssText);
-  const pad = li => parseFloat(w.getComputedStyle(li).paddingRight);
-  const extra = pad(tile(app, 's2.1')) - pad(tile(app, 'm7'));
-  check('pasek leży w prawym marginesie: szerszy margines o 4 px, pasek się w nim mieści', extra === 4 && parseFloat(av('width')) <= pad(tile(app, 's2.1')),
-    `margines +${extra}px, pasek ${av('width')}`);
+  // review PR #3: każdy piksel mniej na treść łamał kafelki odłączone na granicy do dwóch linijek
+  const pad = (li, side) => parseFloat(w.getComputedStyle(li)['padding' + side]);
+  const hpad = li => pad(li, 'Left') + pad(li, 'Right');
+  check('pasek leży w prawym marginesie i się w nim mieści', parseFloat(av('width')) < pad(tile(app, 's2.1'), 'Right'),
+    `pasek ${av('width')}, margines ${pad(tile(app, 's2.1'), 'Right')}px`);
+  check('…a lewy margines oddaje to, co zabrał pasek: na treść tyle miejsca co bez grupy (odłączony i pełny)',
+    hpad(tile(app, 's2.1')) === hpad(tile(app, 'm7')) && hpad(tile(app, 's1.1')) === hpad(tile(app, 'm7')),
+    `w grupie ${hpad(tile(app, 's2.1'))}px / ${hpad(tile(app, 's1.1'))}px, bez grupy ${hpad(tile(app, 'm7'))}px`);
   const widen = rules.filter(r => /grouped/.test(r.selectorText) && !/::after/.test(r.selectorText)
-    && /border(-right)?(-width)?\s*:|border-right-style/.test(r.style.cssText.replace(/border-right-color:[^;]*;?/g, '')));
-  check('…a obramowanie zostaje 1 px (kafelek w grupie węższy tylko o te 4 px — wiersz spaceru się nie łamie)', !widen.length,
+    && /border(-left|-right)?(-width)?\s*:|border-(left|right)-style/.test(r.style.cssText.replace(/border-right-color:[^;]*;?/g, '')));
+  check('…i obramowania bez zmian (pasek trudności 5 px, prawa krawędź 1 px)', !widen.length,
     widen.map(r => r.cssText).join(' ; '));
   const z = sel => { const r = rules.filter(x => x.selectorText === sel).map(x => x.style.getPropertyValue('z-index')).filter(Boolean); return parseInt(r[r.length - 1] || '0', 10); };
   check('kółko zaznaczania stoi nad paskiem', z('.pickbox') > z('.dog.grouped::after'), z('.pickbox') + ' vs ' + z('.dog.grouped::after'));

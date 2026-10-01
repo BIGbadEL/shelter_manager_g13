@@ -208,9 +208,11 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   Z terenu wróciło „grupę słabo widać", więc od 1.1.1 kafelek w grupie (klasa `grouped`, `--gc`
   w `tileStyle`) ma z prawej **pasek w kolorze `ink` z napisem GRUPA od dołu** (decyzja
   właściciela, wersja B z czterech — S106). Pasek leży w prawym marginesie kafelka (18 px
-  zamiast 14): kafelek traci 4 px. Pasek dołożony do szerokości wypychał przyciski kafelka
-  odłączonego do drugiej linijki już przy 412 px. Kółko zaznaczania ma `z-index` nad paskiem,
-  pasek ma `pointer-events:none`. Grupa
+  zamiast 14), a lewy margines oddaje te 4 px (10 zamiast 14): **na treść zostaje tyle miejsca
+  co bez grupy**. Pierwsza wersja zabierała 4 px i kafelki odłączone na granicy łamały się do
+  dwóch linijek częściej niż na 1.1 (review PR #3, pomiar w Chromium 360–412 px); pasek dołożony
+  do szerokości — już przy 412 px kafelek za kafelkiem. Kółko zaznaczania ma `z-index` nad
+  paskiem, pasek ma `pointer-events:none`. Grupa
   trzyma się razem na liście jako blok (SORTING.md); po zatwierdzeniu lista układa się od razu
   (to cel akcji). **„Wrócił ✓" w grupie jest aktywny, gdy żaden spacer z grupy nie jest
   WOLNY** i odhacza wszystkie zarezerwowane. Nie „wszystkie zarezerwowane" — w grupie bywa
@@ -308,7 +310,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1019 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1020 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -371,7 +373,7 @@ spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie bledni
 na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
 S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
 S105 miniony dzień po wolontariuszu (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
-4 px szerokości, kółko zaznaczania nad paskiem — 1.1.1),
+na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
