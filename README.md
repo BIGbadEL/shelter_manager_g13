@@ -78,10 +78,22 @@ na serwer) i skrypty npm; token logowania siedzi w katalogu domowym i nigdy w re
 4. Sprawdź, czy wszystko się zgadza: `npm run deployments` musi pokazać wdrożenie
    z identyfikatorem wpisanym w `deploy:prod` w `package.json` (ten sam ciąg, co w linku do aplikacji).
 
-**Gałąź `main` = produkcja.** Nowe rzeczy zbiera gałąź wydania `release/<nazwa>` odgałęziona
+**Gałąź `main` = produkcja.** Nowe rzeczy zbiera gałąź wydania `release/<wersja>` odgałęziona
 od `main`; z niej idzie wdrożenie na test. Wydanie to PR `release/…` → `main`, a **merge oznacza
 od razu wdrożenie na produkcję** z aktualnego `main` — tak, żeby na produkcji stało zawsze
-dokładnie to, co na `main`.
+dokładnie to, co na `main`. Gałęzie `release/…` zostają po wydaniu jako ślad tego, co poszło
+na produkcję.
+
+### Wersje
+
+Numer `1.X.Y`: **X** rośnie przy wydaniu z poważnymi nowymi funkcjami, o którym wolontariusze
+dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w `package.json`.
+
+| wersja | co | gałąź | wdrożenie |
+|---|---|---|---|
+| 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
+| 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
+| 1.1.1 | w przygotowaniu | `release/1.1.1` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -475,6 +487,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
+### 1.1 — wdrożone 2026-09-28 (@17)
+
 **Feedback z testów spacerów 1/2, 2/2:**
 - Spacer psa dwuspacerowego zajmował dwie linijki („Zwolnij" spadało pod spód). Przyciski trzymają
   się razem, a przycisk spaceru mówi krótko „Wrócił ✓" (73 px zamiast 129 px) — od 360 px jeden
@@ -569,6 +583,8 @@ jedno „Wyprowadzony ✓" dla całej grupy, cofanie pojedynczo, zmiana składu 
   `endOfDay()` w środku dnia nie kasuje już bieżącej listy — dawniej zerowało wszystko.
 - `withLock_` znosi zagnieżdżenie. Akcja edycyjna wołająca `getData()` spod blokady mogłaby
   inaczej zwolnić blokadę zewnętrzną w połowie pracy.
+
+### 1.0 — wdrożenie @16 (`0cc01e0`) i wcześniejsze
 
 **Pierwszy feedback z terenu:**
 - **Godzina spaceru zniknęła z kafelka** psa wyprowadzonego. Nie niosła nic, czego

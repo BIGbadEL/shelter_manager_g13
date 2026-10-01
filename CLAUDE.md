@@ -464,17 +464,27 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 `deployments:test`) — jedyna różnica to `-P .clasp.test.json`. **Kolejność zawsze ta sama:
 `npm run deploy:test` → sprawdzenie na telefonie → `npm run deploy:prod`.**
 
+**Wersje** (decyzja właściciela): numer `1.X.Y`.
+- **X — wydanie z poważnymi nowymi funkcjami**, o którym wolontariusze dostają wiadomość
+  (np. z filmikiem): 1.1 → 1.2.
+- **Y — drobne zmiany w tle**, bez ogłaszania: 1.1 → 1.1.1 → 1.1.2.
+- Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
+  w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28).
+
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
   i nic nie trafia na `main` bez wdrożenia.
-- Nowe rzeczy zbiera **gałąź wydania** `release/<nazwa>`, odgałęziona od `main`. Zmiany trafiają
-  do niej (wprost albo z gałęzi `feature/…`); z niej idzie `npm run deploy:test` i sprawdzenie
-  na telefonie.
+- Nowe rzeczy zbiera **gałąź wydania `release/<wersja>`** (np. `release/1.1.1`), odgałęziona od
+  `main`; jej pierwszy commit podnosi `version` w `package.json`. Zmiany trafiają do niej (wprost
+  albo z gałęzi `feature/…`); z niej idzie `npm run deploy:test` i sprawdzenie na telefonie.
 - **Wydanie = PR `release/…` → `main`. Merge i od razu `npm run deploy:prod`** z aktualnego
   `main` (`git checkout main && git pull`). Merge bez wdrożenia albo wdrożenie z innej gałęzi
   rozjeżdża produkcję z `main`. Poza godziną czyszczenia (produkcja: 19:00).
-- Po wdrożeniu: wpis w „Stan i rzeczy otwarte" (numer @N, commit, poprzednia wersja do cofnięcia)
-  i nowa gałąź wydania od `main`.
+- Po wdrożeniu: wiersz w tabeli „Wersje" (README) i wpis w „Stan i rzeczy otwarte" (numer @N,
+  commit, poprzednia wersja do cofnięcia), potem nowa gałąź wydania od `main`.
+- **Gałęzie `release/…` zostają po wydaniu** — każda wskazuje to, co poszło na produkcję
+  (`release/1.0` = @16, `release/1.1` = @17). Nic na nie nie commitujemy. Gałęzie `feature/…`
+  po scaleniu kasujemy — historię trzyma `main`.
 - Pilna poprawka produkcji: gałąź od `main` → PR do `main` → merge + `deploy:prod`, potem `main`
   wmergowany do bieżącej gałęzi wydania.
 - Zmiana, która nie dotyka plików jadących do Apps Script (`npm run files`: README, CLAUDE.md,
@@ -532,8 +542,9 @@ autoryzacji** przy pierwszym uruchomieniu.
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja z PR #2 (`ee58018`) od 2026-09-28, 20:41 — wdrożenie @17.** Poprzednia
-  to @16 = `0cc01e0` (sprzed dat) — do niej się cofa, według README („Projekt bez wersji z datami").
+- **Produkcja: wersja 1.1 (PR #2, `ee58018`) od 2026-09-28, 20:41 — wdrożenie @17.** Poprzednia
+  to 1.0 = @16 = `0cc01e0` (sprzed dat, gałąź `release/1.0`) — do niej się cofa, według README
+  („Projekt bez wersji z datami").
   Zakładka Spacery powstała przy wdrożeniu (import ze starych kolumn Psy — po czyszczeniu o 19:00
   pustych). Czyszczenie na produkcji jest o **19:00**, nie domyślnie o 22:00. Przed wdrożeniem
   zrobiona próba generalna: kod @16 i nowy na jednym arkuszu (dzień, noc, cofnięcie, ponowne
