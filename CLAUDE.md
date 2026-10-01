@@ -286,7 +286,8 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
-  `rankKeys`, S104), potem arkusz. Grupa to blok w miejscu swojego najpilniejszego spaceru.
+  `rankKeys`, S104; także w części odbytej — opiekun odbytego kafelka to ten, kto go wyprowadził),
+  potem arkusz. Grupa to blok w miejscu swojego najpilniejszego spaceru.
   **Opiekun ma najniższy priorytet z reguł** (decyzja właściciela) — to pozycja w kluczu, nie
   blok: pierwsza wersja (blok jak grupa) przenosiła psy przez granice reguł 3–4.
   **KIEDY** (`decideOrder`): kolejność (lista spacerów `'pies.nr'`) zmienia się wyłącznie, gdy
@@ -322,7 +323,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1041 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1043 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),

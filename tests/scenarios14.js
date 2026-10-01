@@ -540,6 +540,17 @@ async function S104(){
   check('cała kolejność', ord(app) === '[12,6,11,13,14,15,7,1,5,2,3,4,8,9,10]', ord(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 
+  // zgłoszenie z testu: odbyte psy Ali (Barwik, Finito) rozdzielone Freją Oli. Opiekun odbytego
+  // kafelka to osoba, która go wyprowadziła — reguły 1–4 nadal pierwsze (Kora, dwuspacerowa, wyżej)
+  const done = buildApp();
+  done.seed(base({dogs:[d1(1,'Marvel'), d1(2,'Barwik'), d1(3,'Freja'), d1(4,'Finito'), d1(5,'Lego'), d2(6,'Kora'), d1(7,'Rex')],
+    slots:[sl(1,1,{status:'reserved', who:'Ola'}), sl(2,1,{status:'walked', who:'Ala'}), sl(3,1,{status:'walked', who:'Ola'}),
+           sl(4,1,{status:'walked', who:'Ala'}), sl(5,1,{status:'walked', who:'ala '}),
+           sl(6,1,{status:'walked', who:'Ala'}), sl(6,2,{status:'walked', who:'Ala'}), sl(7,1,{status:'walked', who:''})]}));
+  const od = JSON.stringify(done.window.__order());
+  check('odbyte psy jednej osoby obok siebie: Barwik, Finito, Lego (Ala), potem Freja (Ola)', od === '[1,6,2,4,5,3,7]', od);
+  check('…a dwuspacerowa Kora (też Ala) zostaje wyżej — reguła 3 ważniejsza', done.window.__order().indexOf(6) === 1, od);
+
   // losowe dni: reguły 1–4 nigdy się nie cofają wzdłuż listy, a psy jednej osoby w obrębie
   // tych samych reguł 1–4 stoją razem (bez grup — grupa to osobna, wcześniejsza reguła)
   let seed = 104;
@@ -563,8 +574,8 @@ async function S104(){
     const o = r.window.__order();
     const cls = id => { const p = plan[id]; return [p.every(s => s.status==='walked') ? 1 : 0, p.some(s => s.status==='free') ? 0 : 1,
       -p.length, p.filter(s => s.status==='walked').length]; };
-    const owner = id => { const p = plan[id]; if(p.every(s => s.status==='walked')) return '';
-      const w = new Set(p.filter(s => s.status==='reserved').map(s => s.who)); return w.size === 1 ? [...w][0] : ''; };
+    const owner = id => { const p = plan[id], done = p.every(s => s.status==='walked');
+      const w = new Set(p.filter(s => s.status===(done ? 'walked' : 'reserved')).map(s => s.who)); return w.size === 1 ? [...w][0] : ''; };
     const cmp = (a, b) => { for(let i = 0; i < a.length; i++) if(a[i] !== b[i]) return a[i] - b[i]; return 0; };
     for(let i = 1; i < o.length; i++) if(cmp(cls(o[i-1]), cls(o[i])) > 0) broken = `przebieg ${run}: ${JSON.stringify(o)}`;
     const seen = {};

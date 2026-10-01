@@ -561,12 +561,15 @@
   function blockOf(t){ return t.gid ? 'g'+t.gid : t.id; }
 
   /**
-   * Opiekun kafelka: jedna osoba, która ma wszystkie jego zarezerwowane spacery (imię jak przy
-   * kolorach — volNorm). Kafelek w grupie, bez rezerwacji, z dwiema osobami albo cały odbyty — ''.
+   * Opiekun kafelka: jedna osoba, która ma wszystkie jego zarezerwowane spacery, a na kafelku całym
+   * odbytym — która je odbyła (imię jak przy kolorach — volNorm). Odbyte psy jednej osoby też mają
+   * stać razem na dole listy (zgłoszenie z testu: dwa psy Ali rozdzielone psem Oli).
+   * Kafelek w grupie, bez nikogo albo z dwiema osobami — ''.
    */
   function ownerOf(t){
-    if(t.gid || t.slots.every(s => s.status==='walked')) return '';
-    const who = new Set(t.slots.filter(s => s.status==='reserved').map(s => volNorm(s.who)));
+    if(t.gid) return '';
+    const done = t.slots.every(s => s.status==='walked');
+    const who = new Set(t.slots.filter(s => s.status===(done ? 'walked' : 'reserved')).map(s => volNorm(s.who)));
     return who.size === 1 ? [...who][0] : '';
   }
 

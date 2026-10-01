@@ -105,9 +105,10 @@ potem arkusz.
 
 **Kryterium 5 — opiekun** (`ownerOf`, `rankKeys`; zgłoszenie z produkcji 1.1: Draco i Bysiu
 u Grzesia, a między nimi trzy inne psy). Opiekun kafelka to jedna osoba, która ma wszystkie
-jego zarezerwowane spacery; imię porównujemy jak przy kolorach (`volNorm`: „Grzesiek" =
-„grzesiek "). Bez opiekuna: kafelek w grupie (stoi przy grupie), bez rezerwacji, z dwiema
-osobami, cały odbyty. **Wszystkie wcześniejsze reguły są ważniejsze** (decyzja właściciela):
+jego zarezerwowane spacery, a na kafelku całym odbytym — która je odbyła (zgłoszenie z testu:
+odbyte Barwik i Finito Ali rozdzielone Freją Oli); imię porównujemy jak przy kolorach
+(`volNorm`: „Grzesiek" = „grzesiek "). Bez opiekuna: kafelek w grupie (stoi przy grupie),
+bez nikogo, z dwiema osobami. **Wszystkie wcześniejsze reguły są ważniejsze** (decyzja właściciela):
 opiekun nigdy nie przenosi psa przez granicę reguł 1–4 — pies Grzesia na dwa spacery zostaje
 wśród dwuspacerowych, pies z wolnym 2/2 u góry. Pierwsza wersja robiła z psów opiekuna blok
 (jak grupa) i podciągała je do najwyżej stojącego — łamała tym reguły 3 i 4. S104 pilnuje
