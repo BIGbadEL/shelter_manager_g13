@@ -267,9 +267,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   błąd powtarzalny przy każdym rysowaniu robił pętlę `getData` z każdego telefonu (bug nr 12).
 - **Minione dni dociąga `renderPastDay`**, gdy ich nie ma w pamięci (`fetchPast` sama pilnuje
   dublowania) — po przełomie dnia `applyData` czyści pamięć, a ekran wisiał na „Wczytuję…" (S84).
-  **Kolejność minionego dnia — jedna reguła: wolontariusz** (decyzja właściciela, 1.1.1, S105):
-  spacery jednej osoby razem, osoby alfabetycznie po `volNorm`, bez osoby na końcu, w obrębie
-  osoby kolejność z serwera. Godzina celowo się nie liczy — nie dokładaj jej bez pytania.
+  **Kolejność minionego dnia: wolontariusz, potem godzina** (decyzje właściciela, 1.1.1, S105):
+  spacery jednej osoby razem, osoby alfabetycznie po `volNorm`, bez osoby na końcu; w obrębie
+  osoby po godzinie (`minutesOf` — jako czas, napisowo „11:00" < „9:00"). Pierwsza wersja
+  miała jedną regułę i u jednej osoby czytało się „Luna 17:00, Nero 10:00" (review PR #3).
   To nie jest `tileKey` — SORTING.md dotyczy listy dnia otwartego.
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
@@ -372,7 +373,7 @@ przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedba
 spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie blednie imienia psa
 na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
 S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
-S105 miniony dzień po wolontariuszu (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
+S105 miniony dzień po wolontariuszu, potem po godzinie (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
 na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,

@@ -99,7 +99,7 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
 
 /* ---------- S105: miniony dzień po wolontariuszu (1.1.1) ---------- */
 (()=>{
-  console.log('S105: miniony dzień — jedna reguła: wolontariusz, spacery jednej osoby razem');
+  console.log('S105: miniony dzień — po wolontariuszu (spacery jednej osoby razem), potem po godzinie');
   const app = buildApp();
   app.seed(base());
   back(app);
@@ -124,8 +124,10 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
     new Set(runs).size === runs.length, rows.join(','));
   check('osoby alfabetycznie, Łukasz jak „L", wpis bez osoby na końcu',
     JSON.stringify(runs) === JSON.stringify(['ania','grzesiek','łukasz','zuza','']), JSON.stringify(runs));
-  check('to jedyna reguła: w obrębie osoby kolejność z serwera, nie godzina',
-    rows.join(',') === 'Luna,Nero,Borys,Draco,Bysiu,Łatka,Rex,Kora', rows.join(','));
+  // drugie kryterium (decyzja właściciela po review PR #3): godzina w obrębie osoby,
+  // liczona jako czas — napisowo „11:00" < „9:00"
+  check('w obrębie osoby po godzinie: Nero 10:00 przed Luną 17:00, Draco 9:00 przed Bysiem 11:00',
+    rows.join(',') === 'Nero,Luna,Draco,Bysiu,Borys,Łatka,Rex,Kora', rows.join(','));
   check('godzina nadal widoczna przy wpisie', /9:00/.test(app.html()) && /17:00/.test(app.html()), app.html());
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();

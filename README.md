@@ -93,7 +93,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 |---|---|---|---|
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
-| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
+| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -249,8 +249,8 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   jednym pobraniem, więc strzałka w przód nie czeka na sieć.
 - **Dni minione** — tylko podgląd tego, co faktycznie się odbyło (zastępuje zakładkę Historia).
   Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci. Kolejność —
-  jedna reguła: wolontariusz. Spacery jednej osoby stoją razem, osoby alfabetycznie (wielkość
-  liter i ogonki bez znaczenia), wpis bez osoby na końcu; godzina nie wpływa na kolejność.
+  najpierw wolontariusz: spacery jednej osoby stoją razem, osoby alfabetycznie (wielkość
+  liter i ogonki bez znaczenia), wpis bez osoby na końcu; u każdej osoby — po godzinie.
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -499,8 +499,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz to kryterium
   po regułach 1–4, a przed kolejnością z arkusza: psy jednej osoby stoją razem tam, gdzie
   wcześniejsze reguły nic nie rozstrzygają, i nigdy ich nie przeskakują.
-- Miniony dzień układa się po wolontariuszu, nie po godzinie: wszystkie spacery jednej osoby
-  stoją razem, osoby alfabetycznie.
+- Miniony dzień układa się najpierw po wolontariuszu: wszystkie spacery jednej osoby stoją
+  razem, osoby alfabetycznie, a u każdej osoby spacery po godzinie.
 - Grupę słabo było widać — samo blade tło. Kafelek w grupie ma teraz z prawej pasek w mocnym
   odcieniu koloru grupy z napisem „GRUPA" (lustro paska trudności). Pasek leży w prawym
   marginesie kafelka, a lewy margines jest o tyle węższy — treść ma tyle miejsca co w kafelku
