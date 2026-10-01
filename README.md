@@ -388,8 +388,9 @@ Trzy rzeczy warto wiedzieć:
 **Przytrzymaj kafelek psa** (ok. pół sekundy) — włącza się zaznaczanie. Przytrzymany pies jest
 zaznaczony od razu; stukając w kolejne kafelki dobierasz resztę. Przycisk **Grupa** na dole jest
 wyszarzony, dopóki nie zaznaczysz przynajmniej jednego towarzysza. Po zatwierdzeniu psy dostają
-wspólny, delikatny kolor (każda kolejna grupa tego dnia — inny) i stają na liście obok siebie
-(bez napisu „grupa" — kolor i blok wystarczą). Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
+wspólny, delikatny kolor tła i pasek z prawej w mocnym odcieniu tego koloru, z napisem „GRUPA"
+czytanym od dołu (każda kolejna grupa tego dnia — inny kolor), i stają na liście obok siebie.
+Pasek to lustro paska trudności z lewej. Kafelki w trakcie zaznaczania wyglądają tak jak zwykle — dochodzi tylko
 kółko w rogu, a przyciski bledną — więc lista nie skacze i przytrzymany pies zostaje pod palcem.
 
 - **„Wrócił ✓" na dowolnym psie z grupy odhacza wszystkich zarezerwowanych.** Przycisk jest
@@ -500,6 +501,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   wcześniejsze reguły nic nie rozstrzygają, i nigdy ich nie przeskakują.
 - Miniony dzień układa się po wolontariuszu, nie po godzinie: wszystkie spacery jednej osoby
   stoją razem, osoby alfabetycznie.
+- Grupę słabo było widać — samo blade tło. Kafelek w grupie ma teraz z prawej pasek w mocnym
+  odcieniu koloru grupy z napisem „GRUPA" (lustro paska trudności). Pasek leży w marginesie
+  kafelka, więc spacer w grupie nie zawija się do drugiej linijki częściej niż dotąd.
 
 ### 1.1 — wdrożone 2026-09-28 (@17)
 

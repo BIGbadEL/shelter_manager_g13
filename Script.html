@@ -1108,7 +1108,7 @@
     const badge = one && count > 1 ? ` <span class="slotno">${one.n}/${count}</span>` : '';
     const resv = one && count === 1 && one.status==='reserved' ? `\n          <span class="resv-pill">zarezerwowany</span>` : '';
     const pk = pickBits(t);
-    const cls = 'dog' + (allDone ? ' walked' : '') + (t.full ? '' : ' detached') + pk.cls;
+    const cls = 'dog' + (allDone ? ' walked' : '') + (t.full ? '' : ' detached') + (t.gid ? ' grouped' : '') + pk.cls;
     const open = `<li class="${cls}" data-dog="${dog.id}" data-tile="${t.id}" data-slots="${t.slots.map(s=>s.n).join(',')}" style="${tileStyle(t, dm)}">`;
     if(!t.full && one){
       const p = slotParts(dog, one);
@@ -1497,8 +1497,10 @@
     for(const k in state.slots){ if(k.indexOf(date+'|')===0 && state.slots[k].group > max) max = state.slots[k].group; }
     return max + 1;
   }
+  /** Trudność — pasek z lewej. Grupa — blade tło i pasek „GRUPA" z prawej w intensywnym kolorze tej grupy (--gc). */
   function tileStyle(t, dm){
-    return `border-left-color:${dm.color}` + (t.gid ? `;background:${groupColor(t.gid).bg}` : '');
+    const g = t.gid ? groupColor(t.gid) : null;
+    return `border-left-color:${dm.color}` + (g ? `;background:${g.bg};--gc:${g.ink}` : '');
   }
 
   /** Czy spacer można zaznaczyć: odbyty nie ma czego planować — chyba że już jest w tej grupie. */

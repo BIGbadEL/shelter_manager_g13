@@ -119,8 +119,18 @@
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
 
   /* ---------- spacery grupowe ----------
-     Tło kafelka niesie kolor grupy (styl w linii — kolor zależy od numeru grupy), a kafelki
-     grupy stoją na liście jednym blokiem. Znacznika „👥 grupa" już nie ma (zbędny wszędzie). */
+     Kafelek grupy: blade tło i pasek z prawej w intensywnym kolorze tej samej grupy (--gc, styl
+     w linii — kolor zależy od numeru grupy), z napisem GRUPA czytanym od dołu, jak grzbiet polskiej
+     książki. Samo tło było w terenie słabo widać (feedback 1.1). Kafelki grupy stoją jednym blokiem.
+     Pasek leży w prawym marginesie kafelka (18 px zamiast 14) — kafelek traci 4 px, jak przy pasku
+     5 px z lewej. Pasek dołożony do szerokości (16 px) wypychał przyciski spaceru kafelka
+     odłączonego do drugiej linijki już na telefonach 412 px. Kółko zaznaczania stoi nad paskiem,
+     a stuknięcie przez pasek idzie do kafelka (przytrzymanie, zaznaczanie). */
+  .dog.grouped{position:relative;border-right-color:var(--gc);padding-right:18px;}
+  .dog.grouped::after{content:'GRUPA';position:absolute;top:0;bottom:0;right:0;width:14px;
+    background:var(--gc);color:#fff;display:flex;align-items:center;justify-content:center;
+    writing-mode:vertical-rl;transform:rotate(180deg);border-radius:11px 0 0 11px;
+    font-size:9px;font-weight:800;letter-spacing:.16em;pointer-events:none;}
   .grpwait{margin-top:6px;font-size:12px;font-weight:600;color:var(--muted);}
   /* Zaznaczanie nie zmienia układu kafelka ani o piksel: kółko leży na wierzchu,
      w rogu, a przyciski zostają na swoim miejscu — tylko bledną i nie reagują. */
@@ -130,7 +140,7 @@
      opiekun i przyciski, a nazwa zaznaczanego kafelka zostaje czytelna (review) */
   .dog.pick.detached > .status{opacity:1;}
   .dog.pick.detached > .status > :not(.name):not(.slotno){opacity:.35;}
-  .pickbox{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
+  .pickbox{position:absolute;z-index:1;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;
     border:2px solid var(--ink);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;}
   .dog.picked{box-shadow:0 0 0 2px var(--ink);}

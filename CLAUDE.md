@@ -203,9 +203,14 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   przytrzymania i pies uciekał spod palca z ekranu (S78). Jeśli przytrzymany pies wypada pod
   pasek na dole, `keepAboveBar` przesuwa listę dokładnie o tyle (S81).
   Przytrzymanie spaceru z grupy otwiera jej skład do zmiany / „Rozwiąż". Kolor grupy wynika
-  z numeru (`GROUP_COLORS`). Znacznik „👥 grupa" przy tle usunięty na prośbę właściciela
-  (zbędny) — był po to, że w pełnym słońcu blade tło potrafi zniknąć; zostaje tło i blok. Jeśli
-  z terenu wróci „nie widać, kto jest w grupie", to jest ten powód. Grupa
+  z numeru (`GROUP_COLORS`: `bg` = tło, `ink` = pasek). Znacznik „👥 grupa" przy tle usunięty
+  na prośbę właściciela (zbędny) — był po to, że w pełnym słońcu blade tło potrafi zniknąć.
+  Z terenu wróciło „grupę słabo widać", więc od 1.1.1 kafelek w grupie (klasa `grouped`, `--gc`
+  w `tileStyle`) ma z prawej **pasek w kolorze `ink` z napisem GRUPA od dołu** (decyzja
+  właściciela, wersja B z czterech — S106). Pasek leży w prawym marginesie kafelka (18 px
+  zamiast 14): kafelek traci 4 px. Pasek dołożony do szerokości wypychał przyciski kafelka
+  odłączonego do drugiej linijki już przy 412 px. Kółko zaznaczania ma `z-index` nad paskiem,
+  pasek ma `pointer-events:none`. Grupa
   trzyma się razem na liście jako blok (SORTING.md); po zatwierdzeniu lista układa się od razu
   (to cel akcji). **„Wrócił ✓" w grupie jest aktywny, gdy żaden spacer z grupy nie jest
   WOLNY** i odhacza wszystkie zarezerwowane. Nie „wszystkie zarezerwowane" — w grupie bywa
@@ -222,7 +227,8 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   odpowiedzi i rozwiązuje grupy, w których przez to został jeden spacer (S87).
 - **Kolor wolontariusza** (`volChip`, `volColor`): kapsułka z konturem i kropką w kolorze osoby
   przy jej imieniu — imię zostaje tekstem. Paleta `VOL_COLORS` celowo z innej rodziny niż grupy
-  (grupa = blade tło kafelka, wolontariusz = nasycony kontur) i bez zieleni/żółci/czerwieni
+  (grupa = blade tło kafelka i pasek na krawędzi, wolontariusz = kontur wokół imienia; od 1.1.1
+  obie są nasycone, więc rozróżnia je już kształt i miejsce, nie nasycenie) i bez zieleni/żółci/czerwieni
   trudności; jej długość = `VOLUNTEER_COLORS` w `Config.gs` (S95 pilnuje obu).
 - **Akcja pamięta swój dzień.** `doReserve` & spółka biorą datę w chwili kliknięcia,
   wysyłają ją i zapisują odpowiedź pod NIĄ, nie pod `state.date` — wolontariusz mógł
@@ -302,7 +308,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1005 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1019 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -364,7 +370,8 @@ przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedba
 spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie blednie imienia psa
 na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
 S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
-S105 miniony dzień po wolontariuszu (1.1.1),
+S105 miniony dzień po wolontariuszu (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
+4 px szerokości, kółko zaznaczania nad paskiem — 1.1.1),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,

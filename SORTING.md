@@ -75,8 +75,9 @@ Z spacerów powstają **kafelki** (`buildTiles`):
   imię psa, numer spaceru („1/2"), opiekun i przyciski tego spaceru. Reszta jest na kafelku
   pełnym. Za wąsko na jeden wiersz (poniżej ~412 px przy typowych imionach) — przyciski
   schodzą razem do drugiego.
-- Znacznika „👥 grupa" nie ma nigdzie: grupę niesie kolor tła i to, że jej kafelki stoją
-  razem jednym blokiem.
+- Znacznika „👥 grupa" nie ma nigdzie: grupę niesie kolor tła, pasek „GRUPA" z prawej
+  w mocnym odcieniu tego koloru (od 1.1.1, klasa `grouped`) i to, że jej kafelki stoją razem
+  jednym blokiem.
 
 ### Blok
 

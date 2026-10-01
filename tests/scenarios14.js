@@ -576,8 +576,58 @@ async function S104(){
   check('40 losowych dni: psy jednej osoby (przy tych samych regułach 1–4) zawsze obok siebie', !apart, apart);
 }
 
+async function S106(){
+  console.log('S106: pasek grupy po prawej — intensywny kolor grupy, napis GRUPA od dołu, bez kosztu szerokości');
+  // feedback 1.1: samo blade tło grupy słabo widać. Pasek to lustro paska trudności, w kolorze
+  // `ink` tej samej pozycji GROUP_COLORS co tło (grupa 7 = znów pierwszy kolor).
+  const app = buildApp();
+  app.seed(base({dogs:[d1(1,'Azor'), d2(2,'Bari'), d1(3,'Cezar'), d1(4,'Dino'), d1(5,'Ela'), d1(6,'Fado'), d1(7,'Gapa')],
+    slots:[sl(1,1,{status:'reserved', who:'Ola', group:1}), sl(2,1,{status:'reserved', who:'Iza', group:1}),
+           sl(3,1,{status:'reserved', who:'Ewa', group:2}), sl(4,1,{status:'free', group:2}),
+           sl(5,1,{status:'walked', who:'Ala', group:7}), sl(6,1,{status:'walked', who:'Ala', group:7})]}));
+  const w = app.window;
+  const grouped = [...doc(app).querySelectorAll('li.dog')].filter(li => /background:/.test(li.getAttribute('style')));
+  check('(przygotowanie) kafelki w grupach: Azor, Bari 1/2, Cezar, Dino, Ela, Fado',
+    grouped.map(li => li.dataset.tile).sort().join() === 's1.1,s2.1,s3.1,s4.1,s5.1,s6.1', grouped.map(li => li.dataset.tile).join());
+  const gidOf = li => { const r = li.dataset.tile.replace(/^[ms]/, '').split('.'); return slotOf(app, +r[0], +(r[1] || 1)).group; };
+  const bad = grouped.filter(li => { const c = w.eval(`groupColor(${gidOf(li)})`);
+    return !li.classList.contains('grouped') || li.style.getPropertyValue('--gc') !== c.ink || !li.getAttribute('style').includes('background:' + c.bg); });
+  check('każdy kafelek w grupie: klasa grouped, pasek w kolorze ink, tło bg — z tej samej pozycji palety', grouped.length === 6 && !bad.length,
+    bad.map(li => li.dataset.tile + ' ' + li.className + ' ' + li.getAttribute('style')).join(' ; '));
+  check('grupa 7 ma pasek pierwszego koloru, jak tło (sześć kolorów w obiegu)', !!tile(app, 's5.1').style.getPropertyValue('--gc')
+    && tile(app, 's5.1').style.getPropertyValue('--gc') === tile(app, 's1.1').style.getPropertyValue('--gc'));
+  check('różne grupy — różne paski', tile(app, 's1.1').style.getPropertyValue('--gc') !== tile(app, 's3.1').style.getPropertyValue('--gc'));
+  const plain = [...doc(app).querySelectorAll('li.dog')].filter(li => !grouped.includes(li));
+  check('kafelki bez grupy bez paska (Bari 2/2, Gapa)', plain.length === 2 && plain.every(li => !li.classList.contains('grouped') && !li.style.getPropertyValue('--gc')),
+    plain.map(li => li.outerHTML.slice(0, 160)).join(' ; '));
+
+  // style: jsdom liczy marginesy z arkusza, ale nie obramowania zapisane przez var() — te po treści reguł
+  const css = fs.readFileSync(path.join(__dirname, '..', 'Styles.html'), 'utf8').match(/<style>([\s\S]*)<\/style>/)[1];
+  const st = doc(app).createElement('style'); st.textContent = css; doc(app).head.appendChild(st);
+  const rules = [...doc(app).styleSheets[0].cssRules].filter(r => r.selectorText);
+  const after = rules.filter(r => /\.grouped::after/.test(r.selectorText)).map(r => r.style);
+  const a = after[after.length - 1], av = p => a ? a.getPropertyValue(p) : '';
+  check('pasek ma napis GRUPA', /GRUPA/.test(av('content')), a && a.cssText);
+  check('…czytany od dołu do góry (pionowo i obrócony)', av('writing-mode') === 'vertical-rl' && /rotate\(180deg\)/.test(av('transform')), a && a.cssText);
+  check('…biały na intensywnym kolorze grupy', /var\(--gc\)/.test(av('background') || av('background-color')) && /#fff\b|white|255, 255, 255/.test(av('color')), a && a.cssText);
+  check('…nie łapie stuknięć (przytrzymanie i zaznaczanie idą do kafelka)', av('pointer-events') === 'none', a && a.cssText);
+  const pad = li => parseFloat(w.getComputedStyle(li).paddingRight);
+  const extra = pad(tile(app, 's2.1')) - pad(tile(app, 'm7'));
+  check('pasek leży w prawym marginesie: szerszy margines o 4 px, pasek się w nim mieści', extra === 4 && parseFloat(av('width')) <= pad(tile(app, 's2.1')),
+    `margines +${extra}px, pasek ${av('width')}`);
+  const widen = rules.filter(r => /grouped/.test(r.selectorText) && !/::after/.test(r.selectorText)
+    && /border(-right)?(-width)?\s*:|border-right-style/.test(r.style.cssText.replace(/border-right-color:[^;]*;?/g, '')));
+  check('…a obramowanie zostaje 1 px (kafelek w grupie węższy tylko o te 4 px — wiersz spaceru się nie łamie)', !widen.length,
+    widen.map(r => r.cssText).join(' ; '));
+  const z = sel => { const r = rules.filter(x => x.selectorText === sel).map(x => x.style.getPropertyValue('z-index')).filter(Boolean); return parseInt(r[r.length - 1] || '0', 10); };
+  check('kółko zaznaczania stoi nad paskiem', z('.pickbox') > z('.dog.grouped::after'), z('.pickbox') + ' vs ' + z('.dog.grouped::after'));
+  w.eval("startSelect('1:1')");
+  check('w trybie zaznaczania kafelek grupy nadal ma pasek', tile(app, 's1.1').classList.contains('grouped') && tile(app, 's1.1').classList.contains('pick'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103, S104]){
+  for(const s of [S90, S91, S92, S93, S94, S95, S96, S97, S98, S99, S100, S101, S102, S103, S104, S106]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }
