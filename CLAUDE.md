@@ -259,6 +259,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   błąd powtarzalny przy każdym rysowaniu robił pętlę `getData` z każdego telefonu (bug nr 12).
 - **Minione dni dociąga `renderPastDay`**, gdy ich nie ma w pamięci (`fetchPast` sama pilnuje
   dublowania) — po przełomie dnia `applyData` czyści pamięć, a ekran wisiał na „Wczytuję…" (S84).
+  **Kolejność minionego dnia — jedna reguła: wolontariusz** (decyzja właściciela, 1.1.1, S105):
+  spacery jednej osoby razem, osoby alfabetycznie po `volNorm`, bez osoby na końcu, w obrębie
+  osoby kolejność z serwera. Godzina celowo się nie liczy — nie dokładaj jej bez pytania.
+  To nie jest `tileKey` — SORTING.md dotyczy listy dnia otwartego.
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
@@ -298,7 +302,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **999 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1005 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -360,6 +364,7 @@ przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedba
 spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie blednie imienia psa
 na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
 S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
+S105 miniony dzień po wolontariuszu (1.1.1),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,

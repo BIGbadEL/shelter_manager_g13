@@ -1348,13 +1348,14 @@
       .getDiagnostics(state.pin);
   }
 
-  /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
-  function minutesOf(t){ const m=String(t||'').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
-
   /**
    * Miniony dzień — tylko podgląd, zastępuje dawną zakładkę Historia. Pokazujemy
-   * to, co się faktycznie odbyło, po kolei w ciągu dnia; rezerwacje, z których
-   * nic nie wyszło, nie są częścią zapisu.
+   * to, co się faktycznie odbyło; rezerwacje, z których nic nie wyszło, nie są
+   * częścią zapisu.
+   * Kolejność — jedna reguła, wolontariusz (decyzja właściciela, 1.1.1): spacery jednej
+   * osoby stoją razem, osoby alfabetycznie po volNorm („grzesiek" i „Grzesiek" to ta sama
+   * osoba), wpis bez osoby na końcu. W obrębie osoby kolejność z serwera — godzina się
+   * nie liczy (S105).
    */
   function renderPastDay(date){
     const items = state.past[date];
@@ -1366,7 +1367,10 @@
       return html + '<div class="empty">Wczytuję…</div>';
     }
     if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
-    const sorted = items.slice().sort((a,b)=>minutesOf(a.time)-minutesOf(b.time));
+    const sorted = items.slice().sort((a,b)=>{
+      const x = volNorm(a.who), y = volNorm(b.who);
+      return x===y ? 0 : !x ? 1 : !y ? -1 : x<y ? -1 : 1;
+    });
     html += `<div class="hist-day"><div class="hist-date">${sorted.length} ${plural(sorted.length,'spacer','spacery','spacerów')}</div>`;
     sorted.forEach(e=>{ html+=`<div class="hist-item"><b>${esc(e.name)}</b> — ${esc(e.who)}<span class="t">${esc(e.time)}</span></div>`; });
     return html + `</div>`;

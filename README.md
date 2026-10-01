@@ -248,7 +248,9 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   i zwolnienie; spacer odhacza się w dniu spaceru. Wszystkie dni otwarte przychodzą z serwera
   jednym pobraniem, więc strzałka w przód nie czeka na sieć.
 - **Dni minione** — tylko podgląd tego, co faktycznie się odbyło (zastępuje zakładkę Historia).
-  Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci.
+  Przychodzą blokami po dwa tygodnie, więc kolejne dni wstecz są już w pamięci. Kolejność —
+  jedna reguła: wolontariusz. Spacery jednej osoby stoją razem, osoby alfabetycznie (wielkość
+  liter i ogonki bez znaczenia), wpis bez osoby na końcu; godzina nie wpływa na kolejność.
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -496,6 +498,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz to kryterium
   po regułach 1–4, a przed kolejnością z arkusza: psy jednej osoby stoją razem tam, gdzie
   wcześniejsze reguły nic nie rozstrzygają, i nigdy ich nie przeskakują.
+- Miniony dzień układa się po wolontariuszu, nie po godzinie: wszystkie spacery jednej osoby
+  stoją razem, osoby alfabetycznie.
 
 ### 1.1 — wdrożone 2026-09-28 (@17)
 

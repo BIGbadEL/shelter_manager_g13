@@ -1,4 +1,4 @@
-// S40-S42: miniony dzień (strzałka wstecz) — zastępuje dawną zakładkę Historia.
+// S40-S42, S105: miniony dzień (strzałka wstecz) — zastępuje dawną zakładkę Historia.
 // Tylko podgląd, dociągany blokami po dwa tygodnie; ekran nigdy nie może utknąć
 // na „Wczytuję…".
 const { buildApp, dogFree } = require('./harness');
@@ -18,7 +18,7 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
 
 /* ---------- S40: podgląd minionego dnia ---------- */
 (()=>{
-  console.log('S40: wczoraj — tylko podgląd, po kolei w ciągu dnia');
+  console.log('S40: wczoraj — tylko podgląd');
   const app = buildApp();
   app.seed(base());
   back(app);
@@ -36,7 +36,7 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
   const html = app.html();
   check('mówi, że to podgląd', /Miniony dzień — tylko podgląd/.test(html));
   check('liczba z poprawną odmianą', /3 spacery/.test(html), html);
-  check('po kolei w ciągu dnia: 9:05 przed 10:30 przed 17:00',
+  check('po wolontariuszu: Ala, Ela, Ola (kolejność z serwera inna — S105)',
     html.indexOf('Ala') < html.indexOf('Ela') && html.indexOf('Ela') < html.indexOf('Ola'), html);
   check('tylko ten dzień — bez wpisu z 20.09', !/Iza/.test(html));
   check('żadnego przycisku akcji', !/data-act=/.test(html), html);
@@ -94,6 +94,39 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
   app.click('#nextDay');
   back(app);
   check('...ale po watchdogu pytamy znowu', sentPast(app)===4, app.shipped.join(','));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
+/* ---------- S105: miniony dzień po wolontariuszu (1.1.1) ---------- */
+(()=>{
+  console.log('S105: miniony dzień — jedna reguła: wolontariusz, spacery jednej osoby razem');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  // kolejność z serwera celowo ani po godzinie, ani po osobie
+  const day = [
+    {name:'Borys', who:'GRZESIEK', time:'13:00'},
+    {name:'Kora',  who:'',         time:'8:00'},
+    {name:'Luna',  who:'Ania',     time:'17:00'},
+    {name:'Draco', who:'Grzesiek', time:'9:00'},
+    {name:'Rex',   who:'Zuza',     time:'12:00'},
+    {name:'Bysiu', who:' grzesiek',time:'11:00'},
+    {name:'Łatka', who:'Łukasz',   time:'14:00'},
+    {name:'Nero',  who:'Ania',     time:'10:00'},
+  ];
+  app.respondNext({history: day.map(e => Object.assign({date:'2026-09-23'}, e))});
+  const doc = app.window.document;
+  const rows = [...doc.querySelectorAll('.hist-item')].map(el => el.querySelector('b').textContent);
+  const whoOf = n => day.find(e => e.name === n).who.trim().toLowerCase();
+  check('wszystkie wpisy dnia', rows.length === day.length, rows.join(','));
+  const runs = rows.map(whoOf).filter((w, i, a) => i === 0 || a[i-1] !== w);
+  check('spacery jednej osoby stoją razem (wielkość liter i spacje bez znaczenia)',
+    new Set(runs).size === runs.length, rows.join(','));
+  check('osoby alfabetycznie, Łukasz jak „L", wpis bez osoby na końcu',
+    JSON.stringify(runs) === JSON.stringify(['ania','grzesiek','łukasz','zuza','']), JSON.stringify(runs));
+  check('to jedyna reguła: w obrębie osoby kolejność z serwera, nie godzina',
+    rows.join(',') === 'Luna,Nero,Borys,Draco,Bysiu,Łatka,Rex,Kora', rows.join(','));
+  check('godzina nadal widoczna przy wpisie', /9:00/.test(app.html()) && /17:00/.test(app.html()), app.html());
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
