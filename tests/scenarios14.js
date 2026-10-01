@@ -507,11 +507,14 @@ async function S103(){
 }
 
 async function S104(){
-  console.log('S104: zarezerwowane psy jednej osoby stoją obok siebie (blok opiekuna)');
-  // zgłoszenie z produkcji 1.1: Draco i Bysiu u Grzesia, a między nimi Barwik, Finito, Santi
+  console.log('S104: psy jednej osoby obok siebie — ale tylko tam, gdzie wcześniejsze reguły nic nie rozstrzygają');
+  // zgłoszenie z produkcji 1.1: Draco i Bysiu u Grzesia, a między nimi Barwik, Finito, Santi.
+  // Opiekun to kryterium PO regułach 1–4 (odbyte, czeka na chętnego, dwuspacerowe, dorobek dnia),
+  // a przed kolejnością z arkusza — nigdy nie przenosi psa przez granicę tamtych reguł.
   const app = buildApp();
   app.seed(base({dogs:[d1(1,'Draco'), d1(2,'Barwik'), d1(3,'Finito'), d1(4,'Santi'), d1(5,'Bysiu'), d1(6,'Lego'),
-                       d2(7,'Witkacy'), d1(8,'Ever'), d1(9,'Fado'), d1(10,'Siena'), d2(11,'Marvel'), d2(12,'Bari')],
+                       d2(7,'Witkacy'), d1(8,'Ever'), d1(9,'Fado'), d1(10,'Siena'), d2(11,'Marvel'), d2(12,'Bari'),
+                       d2(13,'Ares'), d2(14,'Kora'), d2(15,'Nero')],
     slots:[sl(1,1,{status:'reserved', who:'Grzesiek'}), sl(2,1,{status:'reserved', who:'Zuza'}),
            sl(3,1,{status:'reserved', who:'Asia'}), sl(4,1,{status:'reserved', who:'Inga'}),
            sl(5,1,{status:'reserved', who:'grzesiek '}),                                    // ta sama osoba, inaczej wpisana
@@ -519,18 +522,58 @@ async function S104(){
            sl(8,1,{status:'reserved', who:'Grzesiek', group:1}), sl(9,1,{status:'reserved', who:'Ola', group:1}),
            sl(10,1,{status:'walked', who:'Grzesiek'}),                                     // odbyty — zostaje na dole
            sl(11,1,{status:'reserved', who:'Grzesiek'}), sl(11,2,{status:'reserved', who:'Asia'}),   // dwie osoby
-           sl(12,1,{status:'reserved', who:'Grzesiek'})]}));                                // Bari: 1/2 Grześka, 2/2 wolny
+           sl(12,1,{status:'reserved', who:'Grzesiek'}),                                    // Bari: 1/2 Grześka, 2/2 wolny
+           sl(13,1,{status:'reserved', who:'Grzesiek'}), sl(13,2,{status:'reserved', who:'Grzesiek'}),  // Ares: oba u Grześka
+           sl(14,1,{status:'reserved', who:'Ola'}), sl(14,2,{status:'reserved', who:'Ola'}),              // Kora: oba u Oli
+           sl(15,1,{status:'reserved', who:'Grzesiek'}), sl(15,2,{status:'reserved', who:'Asia'})]}));    // Nero: dwie osoby
   const o = app.window.__order(), at = id => o.indexOf(id);
-  check('pies z wolnym spacerem (Bari 2/2) zostaje u góry i nie ciągnie za sobą bloku Grześka',
-    at(12) === 0 && at(1) > at(6), ord(app));
-  check('Draco i Bysiu (Grzesiek) obok siebie, w miejscu Draco (przed Finito)', at(5) === at(1) + 1 && at(1) < at(3), ord(app));
-  check('blok Zuzy: Barwik podciągnięty do Witkacego (2/2 Zuzy) — blok stoi tam, gdzie jego najpilniejszy pies',
-    at(2) === at(7) + 1, ord(app));
-  check('pies w grupie zostaje przy grupie (Ever z Fado), nie w bloku Grześka', at(9) === at(8) + 1 && at(8) > at(5), ord(app));
-  check('kafelek z dwiema osobami (Marvel) nie wchodzi do żadnego bloku', at(11) < at(7) && at(11) !== at(1) - 1, ord(app));
+  check('Draco i Bysiu (Grzesiek) obok siebie, w miejscu Draco (przed Barwikiem)', at(5) === at(1) + 1 && at(1) < at(2), ord(app));
+  check('„czeka na chętnego" ważniejsze: Bari (2/2 wolny) u góry, nie przy Draco', at(12) === 0 && at(1) > at(6), ord(app));
+  check('„dwuspacerowe wyżej" ważniejsze: Ares (oba spacery Grześka) wśród dwuspacerowych, nie przy Draco',
+    at(13) < at(7) && at(13) < at(1) - 1, ord(app));
+  check('„dorobek dnia" ważniejszy: Barwik (Zuza) nie podjeżdża do Witkacego (2/2 Zuzy, 1/2 odbyty)',
+    at(2) > at(5) && at(2) < at(3) && at(7) < at(1), ord(app));
+  check('pies w grupie zostaje przy grupie (Ever z Fado), nie przy psach Grześka', at(9) === at(8) + 1 && at(8) > at(5), ord(app));
+  check('kafelek z dwiema osobami (Nero: Grzesiek + Asia) bez opiekuna — po Korze, nie przy Aresie',
+    at(15) === at(14) + 1 && at(14) === at(13) + 1, ord(app));
   check('odbyty pies Grześka zostaje na dole', at(10) === o.length - 1, ord(app));
-  check('cała kolejność', ord(app) === '[12,6,11,7,2,1,5,3,4,8,9,10]', ord(app));
+  check('cała kolejność', ord(app) === '[12,6,11,13,14,15,7,1,5,2,3,4,8,9,10]', ord(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  // losowe dni: reguły 1–4 nigdy się nie cofają wzdłuż listy, a psy jednej osoby w obrębie
+  // tych samych reguł 1–4 stoją razem (bez grup — grupa to osobna, wcześniejsza reguła)
+  let seed = 104;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  let broken = '', apart = '';
+  for(let run = 0; run < 40 && !broken && !apart; run++){
+    const dogs = [], slots = [], plan = {};
+    for(let id = 1; id <= 12; id++){
+      const walks = rnd() < 0.4 ? 2 : 1;
+      dogs.push(walks === 2 ? d2(id, 'P' + id) : d1(id, 'P' + id));
+      plan[id] = [];
+      for(let n = 1; n <= walks; n++){
+        const status = pick(['free', 'reserved', 'reserved', 'walked']), who = status === 'free' ? '' : pick(['Ala', 'Ola', 'Grzesiek']);
+        plan[id].push({status, who});
+        if(status !== 'free') slots.push(sl(id, n, {status, who}));
+      }
+    }
+    const r = buildApp();
+    r.seed(base({dogs, slots}));
+    const o = r.window.__order();
+    const cls = id => { const p = plan[id]; return [p.every(s => s.status==='walked') ? 1 : 0, p.some(s => s.status==='free') ? 0 : 1,
+      -p.length, p.filter(s => s.status==='walked').length]; };
+    const owner = id => { const p = plan[id]; if(p.every(s => s.status==='walked')) return '';
+      const w = new Set(p.filter(s => s.status==='reserved').map(s => s.who)); return w.size === 1 ? [...w][0] : ''; };
+    const cmp = (a, b) => { for(let i = 0; i < a.length; i++) if(a[i] !== b[i]) return a[i] - b[i]; return 0; };
+    for(let i = 1; i < o.length; i++) if(cmp(cls(o[i-1]), cls(o[i])) > 0) broken = `przebieg ${run}: ${JSON.stringify(o)}`;
+    const seen = {};
+    o.forEach((id, i) => { const w = owner(id); if(!w) return; const k = cls(id).join() + '|' + w;
+      if(seen[k] !== undefined && seen[k] !== i - 1) apart = `przebieg ${run}: ${k} w ${JSON.stringify(o)}`; seen[k] = i; });
+    if(r.errors.length) broken = r.errors.join('; ');
+  }
+  check('40 losowych dni: reguły 1–4 nigdy się nie cofają wzdłuż listy', !broken, broken);
+  check('40 losowych dni: psy jednej osoby (przy tych samych regułach 1–4) zawsze obok siebie', !apart, apart);
 }
 
 (async ()=>{

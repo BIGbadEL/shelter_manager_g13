@@ -80,12 +80,13 @@ Z spacerów powstają **kafelki** (`buildTiles`):
 
 ### Blok
 
-**Blok** to jednostka, która ma miejsce na liście: kafelek główny (sam), **cała grupa**
-(wszystkie jej kafelki obok siebie) albo **zarezerwowane psy jednego opiekuna** (od 1.1.1).
+**Blok** to jednostka, która ma miejsce na liście: kafelek główny (sam) albo **cała grupa**
+(wszystkie jej kafelki obok siebie).
 
 ## 3. Klucz kafelka — reguły i priorytety
 
-Kafelki porównujemy kluczem `tileKey` (krotka; mniejsza = wyżej). Kryteria po kolei:
+Kafelki porównujemy kluczem (krotka; mniejsza = wyżej) — `tileKey` liczy kryteria 1–4, 6, 7,
+a `rankKeys` wstawia kryterium 5, bo ono jedno zależy od innych kafelków dnia. Kryteria po kolei:
 
 | # | kryterium | wartość | dlaczego |
 |---|---|---|---|
@@ -93,11 +94,24 @@ Kafelki porównujemy kluczem `tileKey` (krotka; mniejsza = wyżej). Kryteria po 
 | 2 | czy któryś spacer kafelka **czeka na chętnego** | 0 = jest wolny spacer, 1 = wszystko obsadzone | góra listy to to, co trzeba jeszcze obsadzić |
 | 3 | ile spacerów dziennie potrzebuje pies | −2 przed −1 | **psy dwuspacerowe mają pierwszeństwo** |
 | 4 | ile spacerów pies ma dziś już odbytych (cały pies) | mniej = wyżej | pies bez spaceru przed psem po jednym |
-| 5 | kolejność z arkusza Psy | rosnąco | stała, przewidywalna kolejność remisów |
-| 6 | numer spaceru w kafelku | rosnąco | determinizm (np. poranna grupa przed popołudniem) |
+| 5 | **opiekun** (od 1.1.1) | najwcześniejsze miejsce w arkuszu wśród psów tej osoby z tymi samymi 1–4 | psy jednej osoby obok siebie — ale tylko tam, gdzie 1–4 nic nie rozstrzygają |
+| 6 | kolejność z arkusza Psy | rosnąco | stała, przewidywalna kolejność remisów |
+| 7 | numer spaceru w kafelku | rosnąco | determinizm (np. poranna grupa przed popołudniem) |
 
 Wynik w skrócie: **czekające na chętnego → obsadzone → odbyte**, w każdej części
-**najpierw psy dwuspacerowe**, potem ci z mniejszym dorobkiem, potem arkusz.
+**najpierw psy dwuspacerowe**, potem ci z mniejszym dorobkiem, potem psy jednej osoby razem,
+potem arkusz.
+
+**Kryterium 5 — opiekun** (`ownerOf`, `rankKeys`; zgłoszenie z produkcji 1.1: Draco i Bysiu
+u Grzesia, a między nimi trzy inne psy). Opiekun kafelka to jedna osoba, która ma wszystkie
+jego zarezerwowane spacery; imię porównujemy jak przy kolorach (`volNorm`: „Grzesiek" =
+„grzesiek "). Bez opiekuna: kafelek w grupie (stoi przy grupie), bez rezerwacji, z dwiema
+osobami, cały odbyty. **Wszystkie wcześniejsze reguły są ważniejsze** (decyzja właściciela):
+opiekun nigdy nie przenosi psa przez granicę reguł 1–4 — pies Grzesia na dwa spacery zostaje
+wśród dwuspacerowych, pies z wolnym 2/2 u góry. Pierwsza wersja robiła z psów opiekuna blok
+(jak grupa) i podciągała je do najwyżej stojącego — łamała tym reguły 3 i 4. S104 pilnuje
+tego przykładem i 40 losowymi dniami (reguły 1–4 nigdy się nie cofają wzdłuż listy, psy jednej
+osoby przy tych samych 1–4 zawsze obok siebie).
 
 Kafelek główny psa dwuspacerowego, w którym 1/2 jest zarezerwowany, a 2/2 wolny, trafia
 do części „czeka na chętnego" — popołudnie wciąż jest do obsadzenia.
@@ -107,15 +121,8 @@ do części „czeka na chętnego" — popołudnie wciąż jest do obsadzenia.
 - Klucz bloku = klucz **najpilniejszego** kafelka bloku (minimum). Grupa stoi więc tam,
   gdzie stanąłby jej najpilniejszy spacer — i „podciąga" resztę składu do siebie.
 - W środku grupy kafelki idą po własnym kluczu.
-- **Blok opiekuna** (`ownerOf`, `sortBlockOf`, od 1.1.1 — zgłoszenie z produkcji: Draco i Bysiu
-  u Grzesia, a między nimi trzy inne psy). Zarezerwowane psy jednej osoby stoją razem, w miejscu
-  tego, który stanąłby najwyżej — ta sama zasada co grupa, więc reszta listy się nie przestawia.
-  Do bloku wchodzi kafelek **bez grupy** z części „obsadzone" (nic nie czeka na chętnego, nie
-  wszystko odbyte), którego zarezerwowane spacery ma **jedna** osoba; imię porównujemy jak przy
-  kolorach (`volNorm`: „Grzesiek" = „grzesiek "). Nie wchodzą: psy w grupach (stoją przy grupie),
-  kafelki z wolnym spacerem (zostają u góry — inaczej pociągnęłyby blok do części „czeka"),
-  kafelki z dwiema osobami i psy odbyte. Blok opiekuna to tylko kolejność — na ekranie nie ma
-  ramki, rysuje się jak zwykłe kafelki (`blockOf` zostaje do rysowania grup). Test S104.
+- Psy jednego opiekuna **nie są blokiem** — to kryterium 5 klucza (p. 3), więc nie mogą
+  przeskoczyć wcześniejszych reguł tak, jak grupa podciąga swój skład.
 - Kolejność spacerów do wyświetlenia (`sortedRefs`): bloki po kluczu → w bloku kafelki po
   kluczu → w kafelku spacery rosnąco. To lista odnośników `'pies.nr'`.
 
@@ -251,13 +258,16 @@ wolne), Bibi, Ever (1/2 zarezerwowany, ale 2/2 wolny — też „czekają"), Fin
 
 ## 10. Jak zmieniać sortowanie
 
-1. **Kolejność kryteriów** to wyłącznie `tileKey` w `Script.html`. Dopisanie kryterium =
-   dopisanie pozycji w krotce w odpowiednim miejscu (i opisu w tabeli w p. 3).
+1. **Kolejność kryteriów** to wyłącznie `tileKey` w `Script.html` (plus `rankKeys`, który
+   wstawia kryterium 5 — opiekuna). Dopisanie kryterium = dopisanie pozycji w krotce
+   w odpowiednim miejscu (i opisu w tabeli w p. 3). Kryterium, które ma działać „tylko gdy
+   wcześniejsze nic nie rozstrzygają", to pozycja w krotce — **nie blok**: blok przenosi
+   kafelki przez granice wcześniejszych reguł (tak było z pierwszą wersją opiekuna).
 2. **Nie ruszaj** bez potrzeby: bloku grupy (klucz = minimum), układania w miejscu
    pierwszego spaceru (`layoutDay`) ani zamrożenia/zapowiedzi (`decideOrder`) — to one
    pilnują, że nic nie ucieka spod palca.
 3. Testy, które opisują kolejność i trzeba je zaktualizować świadomie: **S90** (reguły),
-   **S104** (blok opiekuna),
+   **S104** (opiekun — kryterium 5, z losowymi dniami),
    **S47** (lista z terenu), S43–S45 (zamrożenie), S80, S91, S97 (pies w dwóch miejscach,
    stabilność układu), S93–S94 (osłona i zapowiedź). Każdy nowy wyjątek = nowy scenariusz.
 4. **Trzeci spacer:** model i sortowanie są gotowe (numery spacerów, `slotCount`).

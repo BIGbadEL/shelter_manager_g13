@@ -544,7 +544,9 @@
    *  2. czy któryś jego spacer czeka na chętnego (wolny → nad zarezerwowanymi),
    *  3. ile spacerów dziennie potrzebuje pies (dwuspacerowe wyżej),
    *  4. ile spacerów pies ma dziś już odbytych (mniej → wyżej),
-   *  5. kolejność z arkusza, 6. numer spaceru (żeby remis zawsze rozstrzygał się tak samo).
+   *  5. opiekun — psy jednej osoby obok siebie, tylko gdy 1–4 nic nie rozstrzygają (rankKeys),
+   *  6. kolejność z arkusza, 7. numer spaceru (żeby remis zawsze rozstrzygał się tak samo).
+   * Tu powstaje klucz bez kryterium 5 — to jedno zależy od innych kafelków dnia.
    */
   function tileKey(t){
     return [ t.slots.every(s => s.status==='walked') ? 1 : 0,
@@ -556,42 +558,54 @@
   }
   function cmpKey(a, b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]-b[i]; } return 0; }
   function refOf(t, s){ return t.dog.id+'.'+s.n; }
-  /** Blok na ekranie: grupa rysuje się razem, reszta kafelków osobno. */
   function blockOf(t){ return t.gid ? 'g'+t.gid : t.id; }
 
   /**
-   * Opiekun kafelka — do bloku wolontariusza (zgłoszenie z produkcji 1.1: Draco i Bysiu
-   * u Grzesia, a między nimi trzy inne psy). Tylko kafelek bez grupy z części „obsadzone"
-   * (nic nie czeka na chętnego, nie wszystko odbyte), którego zarezerwowane spacery ma jedna
-   * osoba; imię porównujemy jak przy kolorach (volNorm). Inaczej '' — kafelek bez bloku.
+   * Opiekun kafelka: jedna osoba, która ma wszystkie jego zarezerwowane spacery (imię jak przy
+   * kolorach — volNorm). Kafelek w grupie, bez rezerwacji, z dwiema osobami albo cały odbyty — ''.
    */
   function ownerOf(t){
-    if(t.gid || t.slots.some(s => s.status==='free') || t.slots.every(s => s.status==='walked')) return '';
+    if(t.gid || t.slots.every(s => s.status==='walked')) return '';
     const who = new Set(t.slots.filter(s => s.status==='reserved').map(s => volNorm(s.who)));
     return who.size === 1 ? [...who][0] : '';
   }
-  /** Blok do sortowania: grupa, psy jednego opiekuna albo sam kafelek. */
-  function sortBlockOf(t){
-    if(t.gid) return 'g'+t.gid;
-    const who = ownerOf(t);
-    return who ? 'v:'+who : t.id;
+
+  /**
+   * Pełne klucze kafelków dnia, z kryterium 5 — opiekunem (zgłoszenie z produkcji 1.1: Draco
+   * i Bysiu u Grzesia, a między nimi trzy inne psy). Kafelki, które reguły 1–4 stawiają na
+   * równi, a mają tego samego opiekuna, dostają wspólne miejsce: najwcześniejsze w arkuszu
+   * spośród nich. Przez granice reguł 1–4 opiekun nigdy psa nie przenosi (decyzja właściciela:
+   * wszystkie wcześniejsze reguły ważniejsze) — to tylko rozstrzygnięcie remisu przed arkuszem.
+   */
+  function rankKeys(tiles){
+    const base = new Map(), anchor = new Map();
+    const cls = (k, who) => k.slice(0, 4).join(',') + '|' + who;
+    tiles.forEach(t => {
+      const k = tileKey(t), who = ownerOf(t);
+      base.set(t, {k, who});
+      if(!who) return;
+      const c = cls(k, who);
+      if(!anchor.has(c) || t.idx < anchor.get(c)) anchor.set(c, t.idx);
+    });
+    const keys = new Map();
+    base.forEach(({k, who}, t) => keys.set(t, k.slice(0, 4).concat([who ? anchor.get(cls(k, who)) : t.idx], k.slice(4))));
+    return keys;
   }
 
   /**
-   * Kolejność spacerów policzona od nowa: bloki (kafelek, cała grupa albo zarezerwowane psy
-   * jednego opiekuna) po kluczu swojego najpilniejszego kafelka, w bloku kafelki po własnym
-   * kluczu. Psy opiekuna stoją więc razem tam, gdzie stanąłby najwyżej z nich.
+   * Kolejność spacerów policzona od nowa: bloki (kafelek główny albo cała grupa) po kluczu
+   * swojego najpilniejszego kafelka, w bloku kafelki po własnym kluczu (rankKeys).
    */
   function sortedRefs(tiles){
-    const blocks = new Map();
+    const keys = rankKeys(tiles), blocks = new Map();
     tiles.forEach(t => {
-      const b = sortBlockOf(t), k = tileKey(t), cur = blocks.get(b);
+      const b = blockOf(t), k = keys.get(t), cur = blocks.get(b);
       if(!cur) blocks.set(b, {key:k, tiles:[t]});
       else { cur.tiles.push(t); if(cmpKey(k, cur.key) < 0) cur.key = k; }
     });
     const out = [];
     [...blocks.values()].sort((a,b) => cmpKey(a.key, b.key)).forEach(b =>
-      b.tiles.sort((x,y) => cmpKey(tileKey(x), tileKey(y))).forEach(t => t.slots.forEach(s => out.push(refOf(t, s)))));
+      b.tiles.sort((x,y) => cmpKey(keys.get(x), keys.get(y))).forEach(t => t.slots.forEach(s => out.push(refOf(t, s)))));
     return out;
   }
 

@@ -442,11 +442,12 @@ Pełny opis z przykładami: **`SORTING.md`**. W skrócie kafelki porównuje się
    do rozdania;
 3. **psy dwuspacerowe wyżej** — mają przed sobą więcej i muszą zacząć wcześniej;
 4. **liczba spacerów odbytych dziś** — mniej = wyżej (pies po 1/2 pod psami bez spaceru);
-5. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
+5. **opiekun** (od 1.1.1) — psy, które reguły 1–4 stawiają na równi, a ma je ta sama osoba,
+   stoją obok siebie. Tylko jako rozstrzygnięcie remisu: nigdy nie przenosi psa ponad
+   wcześniejsze reguły (pies tej osoby na dwa spacery zostaje wśród dwuspacerowych);
+6. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
 
-Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Tak samo od 1.1.1
-**zarezerwowane psy jednej osoby** — stoją obok siebie, w miejscu tego, który byłby najwyżej
-(psy w grupach zostają przy grupie, a pies z wolnym spacerem — u góry listy). Dla psów
+Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Dla psów
 jednospacerowych wychodzi z tego dokładnie to samo co dawniej: wolne, zarezerwowane,
 wyprowadzone. Nową regułę dopisuje się w jednym miejscu (`tileKey` w `Script.html`).
 
@@ -492,8 +493,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 ### 1.1.1 — w przygotowaniu
 
 - Zarezerwowane psy jednej osoby nie stały obok siebie (zgłoszenie z produkcji: Draco i Bysiu
-  u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz jego psy tworzą
-  blok, jak grupa, w miejscu tego, który stanąłby najwyżej.
+  u Grzesia, a między nimi trzy inne psy). Sortowanie nie znało opiekuna — teraz to kryterium
+  po regułach 1–4, a przed kolejnością z arkusza: psy jednej osoby stoją razem tam, gdzie
+  wcześniejsze reguły nic nie rozstrzygają, i nigdy ich nie przeskakują.
 
 ### 1.1 — wdrożone 2026-09-28 (@17)
 

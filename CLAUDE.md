@@ -261,10 +261,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   dublowania) — po przełomie dnia `applyData` czyści pamięć, a ekran wisiał na „Wczytuję…" (S84).
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
-  dorobek dnia, potem arkusz. Grupa to blok w miejscu swojego najpilniejszego spaceru, a od 1.1.1
-  tak samo **zarezerwowane psy jednego opiekuna** (`ownerOf`/`sortBlockOf`, S104): kafelki bez
-  grupy z części „obsadzone" z jedną osobą (imię przez `volNorm`) stoją razem. `blockOf` zostaje
-  do rysowania (grupa rysuje się razem), `sortBlockOf` — do kolejności.
+  dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
+  `rankKeys`, S104), potem arkusz. Grupa to blok w miejscu swojego najpilniejszego spaceru.
+  **Opiekun ma najniższy priorytet z reguł** (decyzja właściciela) — to pozycja w kluczu, nie
+  blok: pierwsza wersja (blok jak grupa) przenosiła psy przez granice reguł 3–4.
   **KIEDY** (`decideOrder`): kolejność (lista spacerów `'pies.nr'`) zmienia się wyłącznie, gdy
   nikt nie jest w trakcie (`canReorder()`: zero zapisów w drodze, nic otwartego do edycji,
   `T.quiet` = 4 s ciszy po ostatnim dotknięciu), i nie z zaskoczenia: najpierw dymek
@@ -298,7 +298,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **996 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **999 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -359,7 +359,7 @@ przeżywa konflikt na 1/2, koszt rysowania z rezerwacjami naprzód), S102 feedba
 (kafelek odłączony w jednym wierszu, bez linijki „w grupie", „👥 grupa" i „na stałe", przyciski
 spaceru razem, krótki `WALK_LABEL`, dymek na dole), S103 zaznaczanie nie blednie imienia psa
 na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczona po regułach),
-S104 blok opiekuna (zarezerwowane psy jednej osoby obok siebie — 1.1.1),
+S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
