@@ -62,12 +62,17 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   i **z kopii trzeba usunąć dni sprzed bieżącego** — nowa wersja je domknęła, a stara zapisałaby
   je do Historii drugi raz. Na produkcji bez zakładki Spacery to samo dotyczy starych kolumn
   Psy: po nocy na nowej wersji trzeba je wyczyścić.
-- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa` (pies jako etykieta, nie id;
-  `grupa` — numer spaceru grupowego dnia, puste = bez grupy). Kolumna `grupa` doszła później:
-  stare wpisy jej nie mają, a stara zakładka bywa węższa niż `HIST_WIDTH` — **czytaj najwyżej
-  `histWidth_(sh)` kolumn** (getRange poza szerokość rzuca błędem), a brakującą kolumnę dokłada
-  `histGroupColumn_` (nocne czyszczenie i `setup()`/`migrate()`, B49). Wersja sprzed tej kolumny
-  czyta i pisze cztery kolumny — cofnięcie wdrożenia jej nie przeszkadza.
+- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa | identyfikator` (pies jako
+  etykieta, nie id; `grupa` — numer spaceru grupowego dnia, puste = bez grupy; `identyfikator` —
+  numer psa z katalogu w chwili czyszczenia, **tekst `@`**, bo „1/26" arkusz zrobiłby datą).
+  **Numer psa w historii to wymóg** (od 1.1.1: zrzuty historii idą do władz schroniska) — ma
+  przetrwać przemianowanie i usunięcie psa, dlatego zapisujemy go przy czyszczeniu, a nie
+  doczytujemy. Wpisy sprzed tej kolumny dostają numer z katalogu po etykiecie, **tylko
+  jednoznacznie** (`identsByLabel_`: dwa psy o tym imieniu = brak numeru, nie zgadywanie; B50).
+  Obie kolumny doszły później: stare wpisy ich nie mają, a stara zakładka bywa węższa niż
+  `HIST_WIDTH` — **czytaj najwyżej `histWidth_(sh)` kolumn** (getRange poza szerokość rzuca
+  błędem), a brakujące dokłada `histColumns_` (nocne czyszczenie i `setup()`/`migrate()`, B49).
+  Wersja sprzed tych kolumn czyta i pisze cztery — cofnięcie wdrożenia jej nie przeszkadza.
 - **Zadania** — `id | tresc | data | status`
 
 Statusy psa: `free` / `reserved` / `walked`. Trudności: `easy` / `med` / `hard`
@@ -283,6 +288,9 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   w linijce, po godzinie, psy jednej osoby razem. Grupa = numer z **co najmniej dwoma** odbytymi
   spacerami tego dnia — gdy reszta grupy nie wyszła, pies szedł sam. Numer grupy przychodzi
   z `getHistoryDays` (`group`) — z Historii albo ze Spacery dla dni jeszcze niezamkniętych.
+  **Przy każdym psie jego numer** (`histNr`: „Draco nr 552/26 — Grzesiek", z `ident`; S108) —
+  wymóg, zrzuty idą do władz schroniska. Brak numeru = brak „nr", pies bez imienia („#2077")
+  nie dostaje numeru drugi raz. Nie usuwaj go przy porządkowaniu widoku.
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
@@ -323,7 +331,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1043 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1061 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -389,7 +397,8 @@ na kafelku odłączonym (style dokładane do jsdom ręcznie, widoczność liczon
 S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40 losowymi dniami — 1.1.1),
 S105 miniony dzień po wolontariuszu, potem po godzinie (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
 na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1), S107 grupy w minionym
-dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy),
+dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy), S108 numer psa
+w minionym dniu,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -405,6 +414,7 @@ B43 kolory wolontariuszy, B44 akcje na spacerach i zgodność ze starymi kartami
 układu Spacery i cofnięcie wdrożenia, B46 kolor wolontariusza nie blokuje zapisu (awaria, sufity),
 B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem, B49 grupa w Historii
 (zapis przy czyszczeniu, odczyt, wąska stara zakładka — `strictWidth` w atrapie, `migrate()`),
+B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednoznacznie, przemianowanie),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna

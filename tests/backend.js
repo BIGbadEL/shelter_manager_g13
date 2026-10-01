@@ -1395,5 +1395,53 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
     && m.sheets['Historia']._data[1].slice(0, 4).join() === '2026-08-01,Luna,Ola,10:00', JSON.stringify(m.sheets['Historia']._data));
 })();
 
+/* ---------- B50: numer psa (identyfikator) w historii ---------- */
+(()=>{
+  console.log('B50: minione dni niosą numer psa — zapisany przy czyszczeniu, a dla starych wpisów z katalogu');
+  // Wymóg: zrzuty historii idą do władz schroniska. Numer zapisany przy czyszczeniu zostaje, choćby
+  // psa potem przemianowano albo usunięto; stare wpisy (tylko imię) dostają numer z katalogu po imieniu —
+  // ale tylko jednoznacznie: dwa psy o tym samym imieniu = brak numeru, nie zgadywanie.
+  const D = '2026-08-04';
+  const env = build([], {
+    now: D + 'T10:00:00+02:00',
+    sheets: [
+      { name:'Psy', rows:[DOG_HEADERS, ...[{id:1,name:'Borys',ident:'101/26'},{id:2,name:'Luna',ident:'1/26'},{id:3,name:'Rex',ident:'303/26'},
+        {id:4,name:'Kora',ident:'404/26'},{id:5,name:'Kora',ident:'505/26'},{id:6,name:'',ident:'2077'},{id:7,name:'Azor'}].map(dogRow)] },
+      { name:'Historia', strictWidth: true, rows:[HIST_HEADERS,
+        ['2026-08-01','Borys','Ola','10:00'], ['2026-08-01','Kora','Ala','11:00'],
+        ['2026-08-01','Dawny','Ala','12:00'], ['2026-08-01','#2077','Iza','13:00']] },
+      { name:'Zadania',  rows:[TASK_HEADERS] },
+    ],
+  });
+  const nr = (list, name, day) => (list.filter(e => e.name === name && e.date === (day || D))[0] || {}).ident;
+  const old = env.api.getHistoryDays('2026-08-01', '2026-08-01').history;
+  check('stary wpis: numer z katalogu po imieniu', nr(old, 'Borys', '2026-08-01') === '101/26', JSON.stringify(old));
+  check('…dwa psy o tym imieniu (Kora) — bez numeru, nie zgadujemy', nr(old, 'Kora', '2026-08-01') === '', JSON.stringify(old));
+  check('…pies spoza katalogu — bez numeru', nr(old, 'Dawny', '2026-08-01') === '');
+  check('…pies bez imienia (#2077) — jego numer', nr(old, '#2077', '2026-08-01') === '2077');
+
+  [[1,'Ala'], [2,'Ola'], [4,'Zu'], [6,'Iza'], [7,'Ela']].forEach(([id, who]) => { env.api.reserve(id, who, D, 1); env.api.markWalked(id, '', 1, D); });
+  env.setNow('2026-08-05T10:00:00+02:00');
+  const open = env.api.getHistoryDays(D, D).history;
+  check('dzień niezamknięty: numer z katalogu po psie, nie po imieniu (Kora 404/26)',
+    nr(open, 'Borys') === '101/26' && nr(open, 'Kora') === '404/26' && nr(open, '#2077') === '2077' && nr(open, 'Azor') === '',
+    JSON.stringify(open));
+
+  check('czyszczenie na wąskiej Historii bez błędu', !throws(() => env.api.endOfDay()));
+  const H = env.sheets['Historia'];
+  check('…dokłada kolumnę identyfikator z nagłówkiem', H._data[0][5] === 'identyfikator', JSON.stringify(H._data[0]));
+  check('…jako tekst (@) — „1/26" nie może zostać datą', H._formats[6] === '@', JSON.stringify(H._formats));
+  const rows = hist(env).filter(r => r[0] === D), col = name => (rows.filter(r => r[1] === name)[0] || [])[5];
+  check('…i zapisuje numer przy spacerze', col('Borys') === '101/26' && col('Luna') === '1/26' && col('Kora') === '404/26'
+    && col('#2077') === '2077' && col('Azor') === '', JSON.stringify(rows));
+
+  env.sheets['Psy']._data[1][1] = 'Borys II';                // pies przemianowany po spacerze
+  env.sheets['Psy']._data.splice(4, 1);                       // a Kora 404/26 usunięta z katalogu
+  const closed = env.api.getHistoryDays(D, D).history;
+  check('zamknięty dzień: numer z Historii — przemianowanie i usunięcie psa go nie zmieniają',
+    nr(closed, 'Borys') === '101/26' && nr(closed, 'Kora') === '404/26' && nr(closed, 'Luna') === '1/26', JSON.stringify(closed));
+  check('stara karta dalej czyta Historię', !throws(() => env.api.getHistory()));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

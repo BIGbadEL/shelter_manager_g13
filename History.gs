@@ -32,19 +32,39 @@ function historyStartRow_(sh, last) {
 }
 
 /**
- * Ile kolumn Historii da się przeczytać. Zakładka sprzed kolumny `grupa` bywa węższa niż
- * HIST_WIDTH, a getRange poza szerokość zakładki rzuca błędem — Historia przestałaby się
- * otwierać do pierwszego nocnego czyszczenia, które kolumnę dokłada.
+ * Ile kolumn Historii da się przeczytać. Zakładka sprzed kolumn `grupa` / `identyfikator`
+ * bywa węższa niż HIST_WIDTH, a getRange poza szerokość zakładki rzuca błędem — Historia
+ * przestałaby się otwierać do pierwszego nocnego czyszczenia, które kolumny dokłada.
  */
 function histWidth_(sh) { return Math.min(HIST_WIDTH, sh.getMaxColumns()); }
 
-/** Kolumna `grupa` w Historii — dokłada brakującą i jej nagłówek. Tylko pod blokadą. */
-function histGroupColumn_(sh) {
+/**
+ * Kolumny dołożone do Historii później (`grupa`, `identyfikator`) — dokłada brakujące i ich
+ * nagłówki. Numer psa jako tekst ('@'), ZANIM cokolwiek do niego trafi: „1/26" arkusz
+ * zamieniłby na datę (ten sam błąd co z godziną, bug nr 3). Tylko pod blokadą albo z edytora.
+ */
+function histColumns_(sh) {
   const missing = HIST_WIDTH - sh.getMaxColumns();
   if (missing > 0) sh.insertColumnsAfter(sh.getMaxColumns(), missing);
-  if (String(sh.getRange(1, HIST.GROUP).getValue()) !== HIST_HEADERS[HIST.GROUP - 1]) {
-    sh.getRange(1, HIST.GROUP).setValue(HIST_HEADERS[HIST.GROUP - 1]);
-  }
+  [HIST.GROUP, HIST.IDENT].forEach(c => {
+    if (String(sh.getRange(1, c).getValue()) === HIST_HEADERS[c - 1]) return;
+    sh.getRange(1, c).setValue(HIST_HEADERS[c - 1]);
+    if (c === HIST.IDENT) sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@');
+  });
+}
+
+/**
+ * Numer psa po etykiecie z Historii — dla wpisów sprzed kolumny `identyfikator`, które
+ * znają tylko imię. Wyłącznie jednoznacznie: dwa psy o tej samej etykiecie dają brak numeru
+ * (zrzuty idą do władz schroniska — lepiej żaden numer niż cudzy).
+ */
+function identsByLabel_(catalog) {
+  const map = {};
+  catalog.forEach(d => {
+    const label = dogLabel_(d.name, d.ident, d.id);
+    map[label] = Object.prototype.hasOwnProperty.call(map, label) ? null : d.ident;
+  });
+  return label => (Object.prototype.hasOwnProperty.call(map, label) && map[label]) || '';
 }
 
 function readHistory_() {
@@ -76,13 +96,15 @@ function histCount_() {
  * spacery z dni, których nocne czyszczenie jeszcze nie domknęło (wyzwalacz
  * odpala się gdzieś w godzinie resetu, a w projekcie testowym nie ma go wcale).
  * Każdy wpis niesie numer grupy tego dnia (`group`, 0 = bez grupy albo wpis sprzed
- * kolumny `grupa`).
+ * kolumny `grupa`) i numer psa (`ident`): z Historii, dla wpisów sprzed tej kolumny —
+ * z katalogu po etykiecie (identsByLabel_), dla dni niezamkniętych — z katalogu po psie.
  *
  * Historia bywa długa, więc najpierw czytamy samą kolumnę dat, a w pełnej
  * szerokości tylko zakres wierszy, w którym leżą szukane dni.
  */
 function readHistoryDays_(from, to) {
   const out = [];
+  const catalog = readDogCatalog_();
   const sh = ss_().getSheetByName(SHEETS.HIST);
   const last = sh.getLastRow();
   if (last >= 2) {
@@ -90,20 +112,25 @@ function readHistoryDays_(from, to) {
     let lo = -1, hi = -1;
     dates.forEach((d, i) => { if (d >= from && d <= to) { if (lo < 0) lo = i; hi = i; } });
     if (lo >= 0) {
+      const identOf = identsByLabel_(catalog);
       sh.getRange(lo + 2, 1, hi - lo + 1, histWidth_(sh)).getValues().forEach(r => {
         const d = cellDate_(r[HIST.DATE - 1]);
         if (d < from || d > to) return;
-        out.push({ date: d, name: String(r[HIST.DOG - 1]), who: String(r[HIST.WHO - 1] || ''),
-                   time: cellTime_(r[HIST.TIME - 1]), group: posInt_(r[HIST.GROUP - 1]) });
+        const name = String(r[HIST.DOG - 1]);
+        out.push({ date: d, name, who: String(r[HIST.WHO - 1] || ''),
+                   time: cellTime_(r[HIST.TIME - 1]), group: posInt_(r[HIST.GROUP - 1]),
+                   ident: String(r[HIST.IDENT - 1] == null ? '' : r[HIST.IDENT - 1]) || identOf(name) });
       });
     }
   }
 
-  const labels = {};
-  readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); });
+  const dogs = {};
+  catalog.forEach(d => { dogs[d.id] = d; });
   readSlots_(walksSheet_()).forEach(s => {
     if (s.date < from || s.date > to || s.status !== STATUS.WALKED) return;
-    out.push({ date: s.date, name: labels[s.dogId] || ('Pies ' + s.dogId), who: s.who, time: s.time, group: s.group });
+    const d = dogs[s.dogId];
+    out.push({ date: s.date, name: d ? dogLabel_(d.name, d.ident, d.id) : ('Pies ' + s.dogId), who: s.who, time: s.time,
+               group: s.group, ident: d ? d.ident : '' });
   });
   return out;
 }
@@ -142,16 +169,17 @@ function endOfDay() {
  * Zamyka spacery zakładki Spacery spełniające `match`: odbyte trafiają do Historii
  * pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania, który dzień właśnie
  * się skończył. Pies na dwa spacery daje dwa wpisy. Wpis niesie numer grupy dnia
- * (podgląd minionego dnia pokazuje, kto szedł razem). Same wiersze znikają. Zwraca mapę
- * pies -> data jego ostatniego zamkniętego spaceru. Tylko pod blokadą.
+ * (podgląd minionego dnia pokazuje, kto szedł razem) i numer psa z katalogu w tej chwili.
+ * Same wiersze znikają. Zwraca mapę pies -> data jego ostatniego zamkniętego spaceru.
+ * Tylko pod blokadą.
  */
 function closeWalks_(match) {
   const sh = walksSheetLocked_();
   const last = sh.getLastRow();
   if (last < 2) return {};
   const rows = sh.getRange(2, 1, last - 1, WALK_WIDTH).getValues();
-  const labels = {};
-  readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); });
+  const labels = {}, idents = {};
+  readDogCatalog_().forEach(d => { labels[d.id] = dogLabel_(d.name, d.ident, d.id); idents[d.id] = d.ident; });
 
   const keep = [], toHist = [], lastWalk = {};
   rows.forEach(r => {
@@ -159,7 +187,8 @@ function closeWalks_(match) {
     if (!isDate_(s.date) || !(s.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
     if (!match(s)) { keep.push(r); return; }
     if (s.status !== STATUS.WALKED) return;            // rezerwacja, z której nic nie wyszło — przepada
-    toHist.push({ row: [s.date, labels[s.dogId] || ('Pies ' + s.dogId), s.who, s.time, s.group || ''], slot: s.slot });
+    toHist.push({ row: [s.date, labels[s.dogId] || ('Pies ' + s.dogId), s.who, s.time, s.group || '', idents[s.dogId] || ''],
+                  slot: s.slot });
     if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
   });
   if (keep.length === rows.length) return lastWalk;
@@ -169,7 +198,7 @@ function closeWalks_(match) {
     // w obrębie dnia spacer 1/2 przed 2/2 (sort stabilny, numer spaceru tylko do porządku)
     toHist.sort((a, b) => (a.row[0] < b.row[0] ? -1 : a.row[0] > b.row[0] ? 1 : a.slot - b.slot));
     const hist = ss_().getSheetByName(SHEETS.HIST);
-    histGroupColumn_(hist);
+    histColumns_(hist);
     hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist.map(t => t.row));
   }
   // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste

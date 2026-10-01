@@ -25,7 +25,7 @@ Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
 - **Spacery** — stan pojedynczego spaceru: `data | pies_id | spacer | status | kto | godzina | grupa`. Wiersz na (dzień, pies, numer spaceru); brak wiersza = ten spacer jest wolny. Pies na dwa spacery ma dwa niezależne spacery 1/2 i 2/2 — każdy z własną rezerwacją, osobą i grupą. Trzyma tylko dni otwarte. Zakładkę w starym układzie (wiersz na psa, drugi spacer w `kto1`/`godzina1`) aplikacja przepisuje sama przy pierwszym dostępie.
-- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa` (`grupa` — numer spaceru grupowego tego dnia; kolumnę dokłada samo nocne czyszczenie, wpisy sprzed niej są bez grupy)
+- **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa | identyfikator` (`grupa` — numer spaceru grupowego tego dnia; `identyfikator` — numer psa z chwili spaceru, jako tekst; obie kolumny dokłada samo nocne czyszczenie, wpisy sprzed nich są bez grupy, a numer dostają z katalogu, jeśli imię jest jednoznaczne)
 - **Zadania** — `id | tresc | data | status`
 
 Konwencja: funkcje z sufiksem `_` są prywatne (niewywoływalne z przeglądarki); pozostałe to publiczne API dla `google.script.run`.
@@ -93,7 +93,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 |---|---|---|---|
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) = `main` | @17, 2026-09-28 |
-| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe"), pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
+| 1.1.1 | w przygotowaniu: zarezerwowane psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -253,7 +253,8 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   liter i ogonki bez znaczenia), wpis bez osoby na końcu; u każdej osoby — po godzinie.
   Spacer grupowy ma tło i pasek w kolorze swojej grupy (jak na liście dnia), a pod listą sekcja
   „Spacery grupowe" mówi w jednej linijce na grupę, o której i kto szedł z kim. Grupa, z której
-  wyszedł tylko jeden pies, to spacer pojedynczy.
+  wyszedł tylko jeden pies, to spacer pojedynczy. Przy każdym psie jest jego numer
+  („Draco nr 552/26 — Grzesiek") — zrzuty historii idą do władz schroniska.
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -334,8 +335,9 @@ pojawiają się liczby.
 **Przed `npm run deploy:prod` zrób kopię całego arkusza** (*Plik → Utwórz kopię*) — niezależnie
 od kopii, którą robi aplikacja.
 
-Kolumna `grupa` w Historii niczego tu nie zmienia: wersja bez niej czyta i pisze cztery kolumny,
-a piątą zostawia. Wpisy dopisane przez nią są po prostu bez grupy.
+Kolumny `grupa` i `identyfikator` w Historii niczego tu nie zmieniają: wersja bez nich czyta
+i pisze cztery kolumny, a dalsze zostawia. Wpisy dopisane przez nią są po prostu bez grupy
+i bez zapisanego numeru.
 
 Kroki cofnięcia rób **w podanej kolejności, jeden zaraz po drugim** i nie w godzinie czyszczenia.
 Wdrożenie poprzedniej wersji: w Apps Script *Wdróż → Zarządzaj wdrożeniami → edycja → wersja*,
@@ -512,6 +514,11 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   zakładka czyta się bez błędu). Dni zamknięte wcześniej zostają bez grup.
 - Miniony dzień: wpis ze spaceru grupowego w kolorze grupy (tło i pasek, jak na liście dnia),
   pod listą „Spacery grupowe" — o której i kto z kim. Kolejność listy bez zmian.
+- Miniony dzień: przy każdym psie jego numer (wymóg — zrzuty historii idą do władz schroniska).
+  Historia zapisuje go przy nocnym czyszczeniu w kolumnie `identyfikator` (jako tekst, więc
+  „1/26" nie zmieni się w datę) i zachowuje, choćby psa potem przemianowano albo usunięto.
+  Dni zamknięte wcześniej znają tylko imię — numer dobieramy z katalogu, ale tylko jednoznacznie:
+  dwa psy o tym samym imieniu albo pies spoza katalogu = bez numeru.
 - Miniony dzień układa się najpierw po wolontariuszu: wszystkie spacery jednej osoby stoją
   razem, osoby alfabetycznie, a u każdej osoby spacery po godzinie.
 - Grupę słabo było widać — samo blade tło. Kafelek w grupie ma teraz z prawej pasek w mocnym

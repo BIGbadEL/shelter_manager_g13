@@ -185,5 +185,33 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
+/* ---------- S108: numer psa w minionym dniu ---------- */
+(()=>{
+  console.log('S108: miniony dzień — przy każdym psie jego numer (zrzuty idą do władz schroniska)');
+  const app = buildApp();
+  app.seed(base());
+  back(app);
+  const Y = '2026-09-23';
+  app.respondNext({history:[
+    {date:Y, name:'Borys',   who:'Ala', time:'9:00',  ident:'101/26'},
+    {date:Y, name:'Luna',    who:'Ola', time:'10:00', ident:'1/26', group:1},
+    {date:Y, name:'Rex',     who:'Ola', time:'10:00', ident:'', group:1},        // numer nieznany (stary wpis, dwa psy o tym imieniu)
+    {date:Y, name:'#2077',   who:'Iza', time:'11:00', ident:'2077'},             // pies bez imienia — numer już jest w nazwie
+    {date:Y, name:'Azor',    who:'Zu',  time:'12:00'},                           // stary serwer: bez pola ident
+    {date:Y, name:'Kot',     who:'Zu',  time:'13:00', ident:'7<i>7'},
+  ]});
+  const doc = app.window.document;
+  const row = n => [...doc.querySelector('.hist-day').querySelectorAll('.hist-item')].filter(el => el.querySelector('b').textContent === n)[0];
+  const nrOf = n => { const el = row(n) && row(n).querySelector('.nr'); return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; };
+  check('numer przy psie: „Borys nr 101/26"', nrOf('Borys') === 'nr 101/26', row('Borys') ? row('Borys').outerHTML : app.html());
+  check('…zaraz po imieniu, przed osobą', !!row('Borys') && /^Borys\s*nr 101\/26\s*— Ala/.test(row('Borys').textContent.replace(/\s+/g, ' ').trim()),
+    row('Borys') && row('Borys').textContent);
+  check('…także na wpisie ze spaceru grupowego', nrOf('Luna') === 'nr 1/26' && row('Luna').classList.contains('hg'));
+  check('bez numeru — bez „nr" (nie zgadujemy)', !nrOf('Rex') && !nrOf('Azor') && !/nr\s*—/.test(app.html()));
+  check('pies bez imienia: numer raz, nie „#2077 nr 2077"', !nrOf('#2077'), row('#2077') && row('#2077').outerHTML);
+  check('numer z arkusza nie jest HTML-em', nrOf('Kot') === 'nr 7<i>7' && !doc.querySelector('#view i'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
