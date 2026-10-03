@@ -94,6 +94,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) = `main` | @18, 2026-10-01 |
+| 1.1.2 | w przygotowaniu: pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie | `release/1.1.2` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -500,6 +501,13 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.1.2 — w przygotowaniu
+
+- Nocne czyszczenie dopisywało spacery pod ostatni wpis Historii, a zakładka ma stałą liczbę
+  wierszy (nowa: 1000). W dniu, w którym Historia by się zapełniła, czyszczenie stawało i dni
+  przestawały się zamykać. Teraz dokłada brakujące wiersze (z tekstowym formatem daty, godziny
+  i numeru psa). Historii nic nie ubywa — trzyma komplet, bo idzie do władz schroniska.
 
 ### 1.1.1 — wdrożone 2026-10-01 (@18)
 

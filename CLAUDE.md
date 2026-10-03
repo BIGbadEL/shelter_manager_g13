@@ -331,7 +331,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1061 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1069 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -369,7 +369,9 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
   i zmienia nazwę (`setName`) — tak test odgrywa cofnięcie wdrożenia (B45). `env.failProps(f)`
   psuje usługę właściwości dla wybranych kluczy (B46). Zakładka opisana z `strictWidth: true`
   rzuca błędem na zakres poza swoją szerokością, jak Apps Script (B49) — domyślnie atrapa
-  dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny.
+  dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny. Tak samo `maxRows: N` —
+  stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
+  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -415,6 +417,7 @@ układu Spacery i cofnięcie wdrożenia, B46 kolor wolontariusza nie blokuje zap
 B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem, B49 grupa w Historii
 (zapis przy czyszczeniu, odczyt, wąska stara zakładka — `strictWidth` w atrapie, `migrate()`),
 B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednoznacznie, przemianowanie),
+B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.1.2,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -494,6 +497,13 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
 - Ustawienie z Panelu godziny resetu, która **dziś już minęła**, od razu przełącza listę
   na kolejny dzień (to spójne z modelem, ale warto o tym wiedzieć — Panel to mówi).
 - `getRange()` poza `getMaxColumns()` rzuca błędem — `migrate()` najpierw dokłada kolumny.
+  **To samo w dół: poza `getMaxRows()`** (nowa zakładka ma 1000 wierszy i sama nie rośnie od
+  `setValues`). Historia dopisywała pod ostatni wpis i w dniu zapełnienia nocne czyszczenie
+  stawałoby — dni przestałyby się zamykać. Od 1.1.2 `histRoom_` dokłada brakujące wiersze
+  z formatem `@` (B51); **historii nie kasujemy** (decyzja właściciela — idzie do władz
+  schroniska). `appendRow` (Psy, Zadania) rośnie sam. Zakładka Spacery dopisuje nowe spacery
+  tak samo pod ostatni wiersz (`walkDay_().save`) — na produkcji czyszczona co noc, ale na teście
+  (bez wyzwalacza) rośnie bez końca.
 - Aplikacja działa w zagnieżdżonym iframie `googleusercontent.com`. Wbudowane
   przeglądarki (WhatsApp, Messenger) potrafią zablokować most `postMessage`
   i wtedy wywołania wiszą — to nie jest błąd kodu.

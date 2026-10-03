@@ -54,6 +54,21 @@ function histColumns_(sh) {
 }
 
 /**
+ * Miejsce na `n` nowych wpisów pod ostatnim zajętym wierszem Historii. Zakładka ma stałą liczbę
+ * wierszy (nowa: 1000), a getRange poza nią rzuca błędem — w dniu, w którym Historia by się
+ * zapełniła, nocne czyszczenie stawałoby i dni przestawałyby się zamykać. Dokładamy dokładnie
+ * brakujące wiersze; niczego nie kasujemy (decyzja właściciela, 1.1.2: Historia trzyma komplet).
+ * Nowe wiersze dostają format tekstowy na dacie, godzinie i numerze psa, ZANIM coś do nich trafi —
+ * „17:21" i „1/26" arkusz zrobiłby datami (bug nr 3). Tylko pod blokadą.
+ */
+function histRoom_(sh, n) {
+  const max = sh.getMaxRows(), need = sh.getLastRow() + n;
+  if (need <= max) return;
+  sh.insertRowsAfter(max, need - max);
+  [HIST.DATE, HIST.TIME, HIST.IDENT].forEach(c => sh.getRange(max + 1, c, need - max, 1).setNumberFormat('@'));
+}
+
+/**
  * Numer psa po etykiecie z Historii — dla wpisów sprzed kolumny `identyfikator`, które
  * znają tylko imię. Wyłącznie jednoznacznie: dwa psy o tej samej etykiecie dają brak numeru
  * (zrzuty idą do władz schroniska — lepiej żaden numer niż cudzy).
@@ -199,6 +214,7 @@ function closeWalks_(match) {
     toHist.sort((a, b) => (a.row[0] < b.row[0] ? -1 : a.row[0] > b.row[0] ? 1 : a.slot - b.slot));
     const hist = ss_().getSheetByName(SHEETS.HIST);
     histColumns_(hist);
+    histRoom_(hist, toHist.length);
     hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist.map(t => t.row));
   }
   // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste
