@@ -48,7 +48,8 @@ function include(filename) {
  *              niej strzałka w przyszłość nie czeka na serwer,
  *  - `volunteers` — kolory wolontariuszy dni otwartych: data -> {imię -> numer koloru},
  *  - `today` — data kalendarzowa (Europe/Warsaw) do odznak "od wczoraj" i terminów,
- *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy).
+ *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy),
+ *  - `mailTemplate` — treść maila z listą spacerów (przycisk w minionym dniu, ustawiana w panelu).
  *
  * Pole `walks` (wiersz na psa) zniknęło razem ze starym układem — karta z wersji
  * z datami, ale sprzed spacerów, bez niego wraca do stanu bieżącego dnia z `dogs`.
@@ -70,6 +71,7 @@ function getData() {
     businessDate: date,
     resetHour: resetHour_(),
     env: env_(),
+    mailTemplate: mailTemplate_(),
   };
 }
 

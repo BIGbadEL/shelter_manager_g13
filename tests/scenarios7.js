@@ -213,5 +213,116 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
-process.exit(failures ? 1 : 0);
+/* ---------- S109: e-mail z listą psów dla schroniska ---------- */
+const later = [];   // testy czekające na obietnicę (schowek przeglądarki) — koniec pliku na nie czeka
+const TPL = 'Dzień dobry,\nPrzesyłam listę spacerową z [DATA] z grupy G13.\n[LISTA]\nPozdrawiam,\n';
+const DAY = [
+  {date:'2026-09-23', name:'Rex',         who:'Ola', time:'17:00', ident:'303/26'},
+  {date:'2026-09-23', name:'Borys, mały', who:'Ala', time:'9:00',  ident:'101/26'},
+  {date:'2026-09-23', name:'Witkacy',     who:'Ala', time:'9:30',  ident:'258/26'},
+  {date:'2026-09-23', name:'Witkacy',     who:'Zu',  time:'16:00', ident:'258/26', group:1},   // drugi spacer tego dnia
+  {date:'2026-09-23', name:'Azor',        who:'Ela', time:'12:00', ident:''},
+  {date:'2026-09-23', name:'#2077',       who:'Iza', time:'11:00', ident:'2077'},
+];
+const MAIL = 'Dzień dobry,\nPrzesyłam listę spacerową z 23.09.2026 z grupy G13.\n'
+  + 'data,pies,numer\n23.09.2026,#2077,2077\n23.09.2026,Azor,\n23.09.2026,"Borys, mały",101/26\n'
+  + '23.09.2026,Rex,303/26\n23.09.2026,Witkacy,258/26\nPozdrawiam,\n';
+/** Aplikacja na wczorajszym dniu z DAY; `copy` — co robi document.execCommand('copy'). */
+function mailApp(o){
+  const app = buildApp();
+  app.seed(base(Object.assign({mailTemplate: TPL}, o && o.data)));
+  const doc = app.window.document;
+  app.copied = null;
+  doc.execCommand = cmd => {
+    if(cmd !== 'copy' || (o && o.copy === false)) return false;
+    const ta = doc.querySelector('textarea[data-copy]');
+    app.copied = ta ? ta.value : null;
+    return !!ta;
+  };
+  back(app);
+  app.respondNext({history: DAY});
+  return app;
+}
+(()=>{
+  console.log('S109: miniony dzień — przycisk kopiuje gotowy e-mail z listą psów (CSV: data, pies, numer)');
+  const app = mailApp();
+  const doc = app.window.document;
+  const btn = doc.querySelector('[data-act="copyMail"]');
+  check('na minionym dniu jest przycisk kopiowania maila', !!btn, app.html().slice(0, 300));
+  check('…i dalej żadnej akcji na spacerach', !/data-act="(reserve|walk|free|confirm)"/.test(app.html()));
+  app.click('[data-act="copyMail"]');
+  check('do schowka idzie gotowy mail: [DATA] i [LISTA] podstawione', app.copied === MAIL, JSON.stringify(app.copied));
+  check('…pies raz, choć szedł dwa razy (Witkacy)', app.copied && app.copied.split('Witkacy').length === 2);
+  check('…pole z przecinkiem w cudzysłowie (CSV)', app.copied && app.copied.includes('"Borys, mały"'));
+  check('…pies bez numeru z pustą kolumną, nie „undefined"', app.copied && app.copied.includes('23.09.2026,Azor,\n') && !/undefined/.test(app.copied));
+  check('…po „Pozdrawiam," wolna linia na podpis', app.copied && /Pozdrawiam,\n$/.test(app.copied));
+  check('pomocnicze pole schowka sprzątnięte', !doc.querySelector('textarea[data-copy]'));
+  check('komunikat: skopiowano', /Skopiowano/.test(doc.getElementById('toast').textContent), doc.getElementById('toast').textContent);
+  back(app);                                                   // 22.09 — pusty dzień
+  check('pusty dzień: bez przycisku (nie ma czego wysłać)', /nie zapisano żadnego spaceru/.test(app.html()) && !doc.querySelector('[data-act="copyMail"]'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  const old = mailApp({data: {mailTemplate: undefined}});
+  check('serwer bez treści maila (starsza wersja): bez przycisku, bez błędu',
+    !old.window.document.querySelector('[data-act="copyMail"]') && old.errors.length===0);
+})();
+(()=>{
+  console.log('S109b: schowek nie działa (iframe Apps Script) — tekst do ręcznego skopiowania, nigdy cisza');
+  const app = mailApp({copy: false});
+  const doc = app.window.document;
+  app.click('[data-act="copyMail"]');
+  const box = doc.querySelector('textarea.mailbox');
+  check('bez execCommand i bez schowka: pole z gotowym mailem na ekranie', !!box && box.value === MAIL, box ? JSON.stringify(box.value) : app.html());
+  check('…z komunikatem, co zrobić', /skopiuj/i.test(doc.getElementById('toast').textContent), doc.getElementById('toast').textContent);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  const viaApi = mailApp({copy: false});
+  let written = null;
+  Object.defineProperty(viaApi.window.navigator, 'clipboard', {value: {writeText: t => { written = t; return Promise.resolve(); }}, configurable: true});
+  viaApi.click('[data-act="copyMail"]');
+  later.push(Promise.resolve().then(() => new Promise(r => setTimeout(r, 0))).then(() => {
+    const d = viaApi.window.document;
+    check('S109b: execCommand nie działa, ale schowek przeglądarki tak — mail w schowku', written === MAIL, JSON.stringify(written));
+    check('S109b: …bez pola awaryjnego, z komunikatem „Skopiowano"', !d.querySelector('textarea.mailbox') && /Skopiowano/.test(d.getElementById('toast').textContent));
+  }));
+})();
+
+/* ---------- S110: treść maila w panelu prowadzącej ---------- */
+(()=>{
+  console.log('S110: panel — treść maila do ustawienia, zapis z PIN-em, przycisk używa nowej treści');
+  const app = mailApp();
+  const w = app.window, doc = w.document;
+  app.click('#nextDay');                                       // z powrotem na bieżący dzień
+  w.__setAdmin('4321');
+  app.click('[data-tab="diag"]');
+  const ta = doc.getElementById('mailTemplate');
+  check('w panelu pole z obecną treścią maila', !!ta && ta.value === TPL, ta ? JSON.stringify(ta.value) : app.html().slice(0, 300));
+  check('…z opisem [DATA] i [LISTA]', /\[DATA\]/.test(app.html()) && /\[LISTA\]/.test(app.html()));
+  const mine = 'Witam,\nlista G13 z [DATA]:\n[LISTA]\nPozdrawiam,\n';
+  ta.value = mine; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
+  // odświeżenie co 15 s nie może zjeść pisanego tekstu; inna godzina zmienia HTML panelu, więc pole
+  // naprawdę rysuje się od nowa (przy tym samym HTML render nie dotyka DOM i test niczego by nie dowodził)
+  w.__state.resetHour = 8; w.eval('safeRender()');
+  check('pisana treść przeżywa przerysowanie panelu', doc.getElementById('mailTemplate') !== ta && doc.getElementById('mailTemplate').value === mine,
+    doc.getElementById('mailTemplate') === ta ? 'pole nie przerysowane' : JSON.stringify(doc.getElementById('mailTemplate').value));
+  const typing = doc.getElementById('mailTemplate');
+  typing.focus();
+  w.__state.resetHour = 7; w.eval('safeRender()');             // coś w panelu się zmieniło, a ona pisze
+  check('…a gdy pole ma fokus, nie jest podmieniane (kursor zostaje)', doc.getElementById('mailTemplate') === typing);
+  typing.blur();
+  app.click('[data-act="saveMail"]');
+  const job = app.pending.filter(j => j.fn === 'setMailTemplate')[0];
+  check('zapis idzie na serwer z treścią i PIN-em', !!job && job.args[0] === mine && job.args[1] === '4321', job && JSON.stringify(job.args));
+  app.pending.splice(app.pending.indexOf(job), 1); job.ok({mailTemplate: mine});
+  check('po zapisie: komunikat', /zapisan/i.test(doc.getElementById('toast').textContent), doc.getElementById('toast').textContent);
+  app.click('#gear');                                          // tryb edycji to katalog — dzień widać po wyjściu z niego
+  back(app);
+  app.click('[data-act="copyMail"]');
+  check('przycisk używa nowej treści', !!app.copied && app.copied.startsWith('Witam,\nlista G13 z 23.09.2026:\ndata,pies,numer\n'), JSON.stringify(app.copied));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
+Promise.all(later).catch(e => { failures++; console.log('  FAIL wyjątek | ' + (e && e.stack || e)); }).then(() => {
+  console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
+  process.exit(failures ? 1 : 0);
+});

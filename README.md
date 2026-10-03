@@ -94,7 +94,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | 1.0 | zapisy na dziś, Historia, dwa spacery, notatki z terminem, PIN poza kodem, środowisko testowe | `release/1.0` (`0cc01e0`) | @16 |
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) = `main` | @18, 2026-10-01 |
-| 1.1.2 | w przygotowaniu: pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie | `release/1.1.2` | — |
+| 1.1.2 | w przygotowaniu: pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -255,7 +255,8 @@ swobodnie w obie strony, a dotknięcie daty wraca do bieżącego dnia.
   Spacer grupowy ma tło i pasek w kolorze swojej grupy (jak na liście dnia), a pod listą sekcja
   „Spacery grupowe" mówi w jednej linijce na grupę, o której i kto szedł z kim. Grupa, z której
   wyszedł tylko jeden pies, to spacer pojedynczy. Przy każdym psie jest jego numer
-  („Draco nr 552/26 — Grzesiek") — zrzuty historii idą do władz schroniska.
+  („Draco nr 552/26 — Grzesiek") — zrzuty historii idą do władz schroniska. Nad listą przycisk
+  „Skopiuj e-mail z listą psów" — gotowy mail dla schroniska z listą CSV (data, pies, numer).
 
 **Dzień rezerwacyjny zaczyna się o godzinie czyszczenia, nie o północy.** Przy resecie
 o 20:00: do 19:59 bieżący dzień to dziś, od 20:00 — jutro. Dzięki temu przed czyszczeniem
@@ -508,6 +509,12 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   wierszy (nowa: 1000). W dniu, w którym Historia by się zapełniła, czyszczenie stawało i dni
   przestawały się zamykać. Teraz dokłada brakujące wiersze (z tekstowym formatem daty, godziny
   i numeru psa). Historii nic nie ubywa — trzyma komplet, bo idzie do władz schroniska.
+- Schronisko chce listy psów z numerami i datą wyprowadzenia. W minionym dniu jest przycisk
+  „Skopiuj e-mail z listą psów": kopiuje do schowka gotowy mail — treść z panelu, w której
+  `[DATA]` zamienia się na dzień (02.10.2026), a `[LISTA]` na listę CSV `data,pies,numer`
+  (każdy pies raz). Treść zmienia prowadząca w panelu (tryb edycji → Panel → „E-mail z listą
+  spacerów"); `[LISTA]` musi w niej zostać, pusta treść przywraca domyślną. Gdy telefon nie da
+  skopiować samemu, mail pojawia się na ekranie do zaznaczenia i skopiowania.
 
 ### 1.1.1 — wdrożone 2026-10-01 (@18)
 

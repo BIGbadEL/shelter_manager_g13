@@ -254,6 +254,10 @@
   .hist-item{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);}
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
+  /* „Skopiuj e-mail z listą psów" nad listą minionego dnia; pole awaryjne, gdy schowek nie zadziałał */
+  .mailcopy{display:block;width:100%;margin-top:10px;padding:11px 14px;background:var(--forest);color:#fff;font-size:14px;}
+  .mailbox{display:block;width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;
+    background:#fff;color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.45;}
   /* numer psa przy imieniu — jak „nr 258/26" na kafelku listy dnia */
   .hist-item .nr{color:var(--muted);font-size:12.5px;white-space:nowrap;}
   /* spacer grupowy: blade tło i pasek z prawej w kolorze grupy (--gbg / --gc), jak kafelek grupy
@@ -273,6 +277,7 @@
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
     font-size:13px;font-weight:600;padding:9px 15px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;}
   .toast.show{opacity:1;}
+  .toast.ok{background:var(--forest);}          /* udało się (np. „Skopiowano") — nie czerwień błędu */
 
   /* ---------- zakładka Panel (ustawienia + diagnostyka) ---------- */
   .panelbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-top:12px;}
@@ -280,6 +285,8 @@
   .panelbox .lbl{font-size:13px;color:var(--ink);font-weight:600;flex:1;}
   .panelbox select{min-width:104px;}
   .hint{margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted);}
+  .mailtpl{display:block;width:100%;margin-bottom:8px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;
+    background:#fff;color:var(--ink);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical;}
   .diag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
   .diagrow{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--line);}
   .diagrow:last-child{border-bottom:0;}

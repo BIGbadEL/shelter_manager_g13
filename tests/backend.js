@@ -1488,5 +1488,25 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('jest miejsce: zakładka nie rośnie', roomy.sheets['Historia'].getMaxRows() === 50 && hist(roomy).length === 1);
 })();
 
+/* ---------- B52: treść maila z listą spacerów ---------- */
+(()=>{
+  console.log('B52: treść maila z listą — domyślna, zmiana z panelu tylko z PIN-em, [LISTA] obowiązkowa');
+  // schronisko chce listę psów z numerami i datą; prowadząca kopiuje gotowy mail z podglądu dnia
+  const env = build([{id:1, name:'Borys'}]);
+  const def = env.api.getData().mailTemplate;
+  check('getData niesie domyślną treść: powitanie, [DATA], [LISTA], miejsce na podpis',
+    /^Dzień dobry,\n/.test(def) && /\[DATA\]/.test(def) && /\n\[LISTA\]\n/.test(def) && /Pozdrawiam,\n$/.test(def), JSON.stringify(def));
+  check('bez PIN-u ani rusz', throws(() => env.api.setMailTemplate('X [LISTA]', TEST_PIN + 'x')) && env.api.getData().mailTemplate === def);
+  check('treść bez [LISTA] odrzucona — mail bez listy nie ma sensu', throws(() => env.api.setMailTemplate('Dzień dobry', TEST_PIN)));
+  check('za długa odrzucona (właściwości mają limit)', throws(() => env.api.setMailTemplate('[LISTA]' + 'x'.repeat(5000), TEST_PIN)));
+  const mine = 'Witam,\nlista z [DATA]:\n[LISTA]\nG13\n';
+  const r = env.api.setMailTemplate(mine, TEST_PIN);
+  check('zapis oddaje nową treść', !!r && r.mailTemplate === mine, JSON.stringify(r));
+  check('…i getData ją niesie (nowe wykonanie)', env.api.getData().mailTemplate === mine);
+  check('końce linii z Windowsa ujednolicone', env.api.setMailTemplate('A\r\n[LISTA]\r\n', TEST_PIN).mailTemplate === 'A\n[LISTA]\n');
+  check('pusta treść = powrót do domyślnej', env.api.setMailTemplate('  \n ', TEST_PIN).mailTemplate === def
+    && env.api.getData().mailTemplate === def && !('mailTemplate' in env.props));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
