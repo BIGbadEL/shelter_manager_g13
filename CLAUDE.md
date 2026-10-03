@@ -552,7 +552,8 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 - **Y — drobne zmiany w tle**, bez ogłaszania: 1.1 → 1.1.1 → 1.1.2.
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
-  **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01).
+  **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
+  (merge `7546154`, 2026-10-03).
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -562,7 +563,7 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   albo z gałęzi `feature/…`); z niej idzie `npm run deploy:test` i sprawdzenie na telefonie.
 - **Wydanie = PR `release/…` → `main`. Merge i od razu `npm run deploy:prod`** z aktualnego
   `main` (`git checkout main && git pull`). Merge bez wdrożenia albo wdrożenie z innej gałęzi
-  rozjeżdża produkcję z `main`. Poza godziną czyszczenia (produkcja: 19:00).
+  rozjeżdża produkcję z `main`. Poza godziną czyszczenia (produkcja: 18:00, od 2026-10-03).
 - Po wdrożeniu: wiersz w tabeli „Wersje" (README) i wpis w „Stan i rzeczy otwarte" (numer @N,
   commit, poprzednia wersja do cofnięcia), potem nowa gałąź wydania od `main`.
 - **Gałęzie `release/…` zostają po wydaniu** — każda wskazuje to, co poszło na produkcję
@@ -628,8 +629,17 @@ autoryzacji** przy pierwszym uruchomieniu.
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja 1.1.1 (PR #3, `985dc1a`, merge `31721b5`) od 2026-10-01, 22:50 — wdrożenie
-  @18.** Weszła pilnie przez numer psa w historii (zrzuty dla władz schroniska od 2.10). Pierwsze
+- **Produkcja: wersja 1.1.2 (PR #4, `e0df6c8`, merge `7546154`) od 2026-10-03, 17:58 — wdrożenie
+  @19.** Pełna Historia dostaje wiersze, e-mail z listą psów dla schroniska (przycisk w minionym
+  dniu, treść w panelu). Arkusz bez nowych kolumn; właściwość `mailTemplate` powstaje dopiero przy
+  zapisie z panelu. **Czyszczenie na produkcji jest od 2026-10-03 o 18:00** (ustawione w panelu,
+  wcześniej 19:00) — okno bez wdrożeń to teraz 18:00–18:59. Poprzednia to 1.1.1 = @18 = `985dc1a`
+  (gałąź `release/1.1.1`) — do niej się cofa zwykłym `deploy:prod` z tej gałęzi; `mailTemplate`
+  zostaje wtedy nieużywana, a Historia działa jak dotąd, do zapełnienia zakładki.
+  Do sprawdzenia na telefonie po wydaniu: kopiowanie maila w prawdziwym iframie (Android, iPhone,
+  przeglądarka WhatsAppa) — po „Skopiowano" naprawdę wkleić w poczcie.
+- Wersja 1.1.1 (PR #3, `985dc1a`, merge `31721b5`) od 2026-10-01, 22:50 — wdrożenie
+  @18. Weszła pilnie przez numer psa w historii (zrzuty dla władz schroniska od 2.10). Pierwsze
   nocne czyszczenie na 1.1.1 (2.10, 19:00) dokłada do Historii kolumny `grupa` i `identyfikator`;
   dni do 1.10 włącznie mają numer psa tylko z katalogu po imieniu (jednoznacznym). Poprzednia
   to 1.1 = @17 = `ee58018` (gałąź `release/1.1`) — do niej się cofa zwykłym `deploy:prod` z tej
@@ -638,7 +648,7 @@ autoryzacji** przy pierwszym uruchomieniu.
   to 1.0 = @16 = `0cc01e0` (sprzed dat, gałąź `release/1.0`) — do niej się cofa, według README
   („Projekt bez wersji z datami").
   Zakładka Spacery powstała przy wdrożeniu (import ze starych kolumn Psy — po czyszczeniu o 19:00
-  pustych). Czyszczenie na produkcji jest o **19:00**, nie domyślnie o 22:00. Przed wdrożeniem
+  pustych). Czyszczenie na produkcji było wtedy o 19:00 (od 2026-10-03 — 18:00). Przed wdrożeniem
   zrobiona próba generalna: kod @16 i nowy na jednym arkuszu (dzień, noc, cofnięcie, ponowne
   wdrożenie) oraz stara karta @16 z nowym serwerem — wszystko zielone.
 - **Projekt testowy nie ma wyzwalacza `endOfDay`** (wyzwalacze nie kopiują się z projektem).
