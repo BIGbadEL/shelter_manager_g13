@@ -20,6 +20,8 @@ function makeSheet(name, rows, onRename){
   const sheet = {
     _name: name, _data: data,
     _formats: {},          // kolumna -> format ('@' = tekst) — bug z datą 1899 jest do sprawdzenia
+    _formatRanges: [],     // każde setNumberFormat z zakresem wierszy — format dokładanych wierszy (B51)
+    _maxRows: null,        // stała liczba wierszy jak w Apps Script (`maxRows` w opisie zakładki); null = rośnie sama
     _reads: 0,             // ile razy czytano wartości — do testów kosztu (trimSlots_)
     _id: ++sheetSeq,       // jak getSheetId(): kopia ma inne id niż oryginał
 
@@ -34,8 +36,12 @@ function makeSheet(name, rows, onRename){
     },
     getMaxColumns(){ return widthOf(); },
     // używane przez applyTextFormats_() — bez tego setup()/migrate() nie dawały się przetestować
-    getMaxRows(){ return Math.max(data.length, 1); },
+    getMaxRows(){ return sheet._maxRows != null ? sheet._maxRows : Math.max(data.length, 1); },
     insertColumnsAfter(after, n){ data.forEach(r=>{ pad(r, after); for(let i=0;i<n;i++) r.splice(after,0,''); }); },
+    insertRowsAfter(after, n){
+      if(sheet._maxRows != null) sheet._maxRows += n;
+      if(after < data.length) for(let i=0;i<n;i++) data.splice(after, 0, []);
+    },
     setFrozenRows(){},
     appendRow(row){ data.push(row.slice()); },
     deleteRow(r){ data.splice(r-1,1); },
@@ -45,6 +51,8 @@ function makeSheet(name, rows, onRename){
       // jak Apps Script: zakres poza szerokością zakładki rzuca błędem. Tylko na życzenie
       // (`strictWidth` w opisie zakładki) — reszta testów pisze w atrapę bez dokładania kolumn
       if(sheet._strict && col + cols - 1 > widthOf()) throw new Error('Zakres poza arkuszem: kolumna ' + (col + cols - 1) + ' > ' + widthOf());
+      // to samo w dół: zakładka ze stałą liczbą wierszy (`maxRows`) nie rośnie od zapisu
+      if(sheet._maxRows != null && row + rows - 1 > sheet._maxRows) throw new Error('Zakres poza arkuszem: wiersz ' + (row + rows - 1) + ' > ' + sheet._maxRows);
       return {
         getValues(){
           sheet._reads++;
@@ -63,7 +71,11 @@ function makeSheet(name, rows, onRename){
         },
         getValue(){ return cell(row, col)[col-1]; },
         setValue(v){ cell(row, col)[col-1] = v; },
-        setNumberFormat(f){ for(let j=0;j<cols;j++) sheet._formats[col+j] = f; return this; },
+        setNumberFormat(f){
+          for(let j=0;j<cols;j++) sheet._formats[col+j] = f;
+          sheet._formatRanges.push({ row, col, rows, cols, f });
+          return this;
+        },
       };
     },
   };
@@ -82,7 +94,11 @@ function makeContext(opts){
   // zmiana nazwy zakładki (przywrócenie kopii po cofnięciu wdrożenia) — pod nową nazwą w arkuszu
   const rename = (old, n, sh) => { if(sheets[old] === sh) delete sheets[old]; sheets[n] = sh; };
   const addSheet = (n, rows) => (sheets[n] = makeSheet(n, rows, rename));
-  (opts.sheets||[]).forEach(s=>{ addSheet(s.name, s.rows)._strict = !!s.strictWidth; });
+  (opts.sheets||[]).forEach(s=>{
+    const sh = addSheet(s.name, s.rows);
+    sh._strict = !!s.strictWidth;
+    if(s.maxRows) sh._maxRows = s.maxRows;
+  });
   const triggers = [];
 
   class FrozenDate extends Date {
@@ -153,7 +169,7 @@ function makeContext(opts){
                           resetHour_, installTriggers, getDiagnostics, migrate, setup,
                           reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
                           readHistory_, getHistory, getHistoryDays, histCount_,
-                          checkPin, requirePin_, pin_, env_,
+                          checkPin, requirePin_, pin_, env_, setMailTemplate, mailTemplate_,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_ };

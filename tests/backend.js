@@ -1443,5 +1443,70 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('stara karta dalej czyta Historię', !throws(() => env.api.getHistory()));
 })();
 
+/* ---------- B51: pełna Historia dostaje wiersze, nic nie znika ---------- */
+(()=>{
+  console.log('B51: nocne czyszczenie na pełnej Historii — dokłada wiersze zamiast stanąć, niczego nie kasuje');
+  // Zakładka ma stałą liczbę wierszy (nowa: 1000), a getRange poza nią rzuca w Apps Script błędem:
+  // nocne czyszczenie stawało, dni przestawały się zamykać. Decyzja właściciela (1.1.2): dokładać
+  // wiersze, historii nie kasować. Tu zakładka ma 4 wiersze: nagłówek, dwa wpisy i jedno wolne miejsce.
+  const D = '2026-08-04';
+  const env = build([], {
+    now: D + 'T10:00:00+02:00',
+    sheets: [
+      { name:'Psy', rows:[DOG_HEADERS, ...[{id:1,name:'Borys',ident:'1/26'},{id:2,name:'Luna'},{id:3,name:'Rex'}].map(dogRow)] },
+      { name:'Historia', maxRows: 4, rows:[HIST_HEADERS, ['2026-08-01','Luna','Ola','10:00'], ['2026-08-02','Rex','Ala','11:00']] },
+      { name:'Zadania',  rows:[TASK_HEADERS] },
+    ],
+  });
+  const H = env.sheets['Historia'];
+  const walk = (date, who) => [1, 2, 3].forEach(id => { env.api.reserve(id, who, date, 1); env.api.markWalked(id, '', 1, date); });
+  walk(D, 'Ala');
+  env.setNow('2026-08-05T10:00:00+02:00');
+  check('pełna Historia: czyszczenie bez błędu', !throws(() => env.api.endOfDay()));
+  const rows = () => hist(env).map(r => r[0] + ' ' + r[1]);
+  check('…wszystkie trzy spacery zapisane, stare wpisy na miejscu', JSON.stringify(rows()) ===
+    JSON.stringify(['2026-08-01 Luna', '2026-08-02 Rex', D + ' Borys', D + ' Luna', D + ' Rex']), JSON.stringify(rows()));
+  check('…zakładka urosła dokładnie o brakujące wiersze', H.getMaxRows() === 6, String(H.getMaxRows()));
+  const textOn = (c, r) => H._formatRanges.some(f => f.f === '@' && f.col <= c && c < f.col + f.cols && f.row <= r && r < f.row + f.rows);
+  check('…nowe wiersze: data, godzina i numer psa jako tekst (bug nr 3, „1/26" nie zostaje datą)',
+    [1, 4, 6].every(c => textOn(c, 5) && textOn(c, 6)), JSON.stringify(H._formatRanges));
+  check('dzień czyta się w podglądzie', env.api.getHistoryDays(D, D).history.length === 3);
+  check('Spacery bez zamkniętego dnia', !openRows(env).some(r => r[0] === D), JSON.stringify(openRows(env)));
+
+  walk('2026-08-05', 'Ola');                                  // kolejna noc — znowu brak miejsca
+  env.setNow('2026-08-06T10:00:00+02:00');
+  check('kolejna noc: znowu dokłada, nic nie kasuje', !throws(() => env.api.endOfDay()) && hist(env).length === 8
+    && H.getMaxRows() === 9 && env.api.histCount_() === 8, hist(env).length + ' / ' + H.getMaxRows());
+
+  const roomy = build([{id:1, name:'Borys'}], {now: D + 'T10:00:00+02:00', sheets: [
+    { name:'Psy', rows:[DOG_HEADERS, dogRow({id:1, name:'Borys'})] },
+    { name:'Historia', maxRows: 50, rows:[HIST_HEADERS] },
+    { name:'Zadania',  rows:[TASK_HEADERS] }]});
+  roomy.api.reserve(1, 'Ala', D, 1); roomy.api.markWalked(1, '', 1, D);
+  roomy.setNow('2026-08-05T10:00:00+02:00');
+  roomy.api.endOfDay();
+  check('jest miejsce: zakładka nie rośnie', roomy.sheets['Historia'].getMaxRows() === 50 && hist(roomy).length === 1);
+})();
+
+/* ---------- B52: treść maila z listą spacerów ---------- */
+(()=>{
+  console.log('B52: treść maila z listą — domyślna, zmiana z panelu tylko z PIN-em, [LISTA] obowiązkowa');
+  // schronisko chce listę psów z numerami i datą; prowadząca kopiuje gotowy mail z podglądu dnia
+  const env = build([{id:1, name:'Borys'}]);
+  const def = env.api.getData().mailTemplate;
+  check('getData niesie domyślną treść: powitanie, [DATA], [LISTA], miejsce na podpis',
+    /^Dzień dobry,\n/.test(def) && /\[DATA\]/.test(def) && /\n\[LISTA\]\n/.test(def) && /Pozdrawiam,\n$/.test(def), JSON.stringify(def));
+  check('bez PIN-u ani rusz', throws(() => env.api.setMailTemplate('X [LISTA]', TEST_PIN + 'x')) && env.api.getData().mailTemplate === def);
+  check('treść bez [LISTA] odrzucona — mail bez listy nie ma sensu', throws(() => env.api.setMailTemplate('Dzień dobry', TEST_PIN)));
+  check('za długa odrzucona (właściwości mają limit)', throws(() => env.api.setMailTemplate('[LISTA]' + 'x'.repeat(5000), TEST_PIN)));
+  const mine = 'Witam,\nlista z [DATA]:\n[LISTA]\nG13\n';
+  const r = env.api.setMailTemplate(mine, TEST_PIN);
+  check('zapis oddaje nową treść', !!r && r.mailTemplate === mine, JSON.stringify(r));
+  check('…i getData ją niesie (nowe wykonanie)', env.api.getData().mailTemplate === mine);
+  check('końce linii z Windowsa ujednolicone', env.api.setMailTemplate('A\r\n[LISTA]\r\n', TEST_PIN).mailTemplate === 'A\n[LISTA]\n');
+  check('pusta treść = powrót do domyślnej', env.api.setMailTemplate('  \n ', TEST_PIN).mailTemplate === def
+    && env.api.getData().mailTemplate === def && !('mailTemplate' in env.props));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

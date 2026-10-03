@@ -14,6 +14,7 @@ const PROP_ENV = 'env';
 const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesienia stanu dnia z Psy do Spacery
 const PROP_WALKS_LAYOUT = 'walksLayout';       // zakładka Spacery sprawdzona: '2:<id zakładki>' (patrz ensureWalksLayout_)
 const PROP_VOL_PREFIX = 'vol:';                // 'vol:2026-09-27' -> kolory wolontariuszy tego dnia (JSON)
+const PROP_MAIL_TEMPLATE = 'mailTemplate';     // treść maila z listą spacerów (panel); brak = DEFAULT_MAIL_TEMPLATE
 
 /**
  * Wszystkie właściwości skryptu — czytane RAZ na wykonanie. Każde getProperty to
@@ -125,6 +126,31 @@ function setResetHour(hour, pin) {
     installTriggers();      // wyzwalacz musi iść za ustawieniem, inaczej reset zostałby o starej porze
     return getData();
   });
+}
+
+/** Treść maila z listą spacerów dnia — ustawiona w panelu albo domyślna (Config.gs). */
+function mailTemplate_() {
+  const t = prop_(PROP_MAIL_TEMPLATE);
+  return t ? String(t) : DEFAULT_MAIL_TEMPLATE;
+}
+
+/**
+ * Zapisuje treść maila z panelu. [LISTA] jest obowiązkowa — mail bez listy psów nie ma po co
+ * wychodzić; pusta treść wraca do domyślnej. Długość ograniczona, bo właściwości skryptu mają
+ * limit rozmiaru (patrz kolory wolontariuszy, B46). Dwa takie same wywołania dają to samo co
+ * jedno, więc może być ponawiana (RETRIABLE).
+ */
+function setMailTemplate(text, pin) {
+  requirePin_(pin);
+  const t = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  if (!t.trim()) {
+    withLock_(() => delProp_(PROP_MAIL_TEMPLATE));
+    return { mailTemplate: mailTemplate_() };
+  }
+  if (t.length > MAX_LEN.MAIL) throw new Error('Treść maila jest za długa — najwyżej ' + MAX_LEN.MAIL + ' znaków');
+  if (t.indexOf('[LISTA]') < 0) throw new Error('W treści musi zostać [LISTA] — w to miejsce trafia lista psów');
+  withLock_(() => setProp_(PROP_MAIL_TEMPLATE, t));
+  return { mailTemplate: mailTemplate_() };
 }
 
 /** Stan wyzwalacza do panelu diagnostycznego — czy reset w ogóle jest uzbrojony. */

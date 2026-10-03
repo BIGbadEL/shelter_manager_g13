@@ -131,8 +131,16 @@ const DIFFICULTIES = ['easy', 'med', 'hard'];
  */
 const NOTE_FOREVER = 'nigdy';
 
-/** Limity długości pól (obrona przed wklejeniem elaboratu). */
-const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80 };
+/** Limity długości pól (obrona przed wklejeniem elaboratu). MAIL — treść maila z listą (właściwość skryptu). */
+const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000 };
+
+/**
+ * Treść maila z listą spacerów dnia (schronisko chce listę psów z numerami i datą) — domyślna,
+ * dopóki prowadząca nie ustawi własnej w panelu (właściwość `mailTemplate`, Settings.gs).
+ * [DATA] — dzień (dd.mm.rrrr), [LISTA] — psy jako CSV: data, pies, numer. Po „Pozdrawiam,"
+ * zostaje pusta linia na podpis.
+ */
+const DEFAULT_MAIL_TEMPLATE = 'Dzień dobry,\nPrzesyłam listę spacerową z [DATA] z grupy G13.\n[LISTA]\nPozdrawiam,\n';
 
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';

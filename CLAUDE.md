@@ -154,6 +154,19 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   Pusty termin znikał przy KAŻDYM `endOfDay` — także tym o 20:30, zaraz po dodaniu notatki
   na jutrzejszą listę (B35). Klient pokazuje taki termin jak brak terminu (`noteDated`: bez
   odznaki, puste pole w edycji). Pusty `notatka_do` zostaje tylko w starych notatkach.
+- **Treść maila z listą spacerów** — właściwość `mailTemplate` (`mailTemplate_()`, brak =
+  `DEFAULT_MAIL_TEMPLATE` w `Config.gs`), w `getData` jako `mailTemplate`. Zmienia ją prowadząca
+  w panelu: `setMailTemplate(text, pin)` — PIN, `[LISTA]` obowiązkowa (mail bez listy psów nie ma
+  sensu), najwyżej `MAX_LEN.MAIL` znaków (limit właściwości), końce linii ujednolicone, pusta
+  treść = domyślna. Idempotentna, więc w `RETRIABLE` (B52) — a skoro kolejka ponawia raz każdy
+  nieudany zapis, przeglądarka sprawdza te same reguły przed wysłaniem (`[LISTA]`, `MAIL_MAX` =
+  `MAX_LEN.MAIL`), żeby komunikat był od razu, nie po dwóch przelotach (review PR #4, S110b).
+  Pole w panelu (`#mailTemplate`)
+  trzyma szkic w `state.mailDraft`, a `busyEditing()` łapie też fokus w TEXTAREA — inaczej
+  odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu, więc
+  **inny niż zapisana treść jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
+  zapisaną", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
+  zapisany, a historia kopiowała starą treść (decyzja właściciela, wersja (a), S110c).
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -291,6 +304,16 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   **Przy każdym psie jego numer** (`histNr`: „Draco nr 552/26 — Grzesiek", z `ident`; S108) —
   wymóg, zrzuty idą do władz schroniska. Brak numeru = brak „nr", pies bez imienia („#2077")
   nie dostaje numeru drugi raz. Nie usuwaj go przy porządkowaniu widoku.
+  **E-mail z listą dla schroniska** (1.1.2, S109–S110): schronisko chce tylko listę psów z numerami
+  i datą. Przycisk „Skopiuj e-mail z listą psów" nad listą minionego dnia (`copyMail`) kopiuje
+  treść z panelu (`state.mailTemplate` z `getData`) z podstawionym `[DATA]` (dd.mm.rrrr) i `[LISTA]`
+  (`mailList`: CSV `data,pies,numer`, **pies raz na dzień** — dwa spacery to jeden pies, po imieniu,
+  pola z przecinkiem w cudzysłowie; pies bez imienia — pusta kolumna „pies", numer raz, jak
+  w widoku; decyzja właściciela po review PR #4). Kopia najpierw `execCommand('copy')` na ukrytym polu
+  (`copyByCommand` — działa w iframie Apps Script i musi pójść w samym stuknięciu, iOS), potem
+  `navigator.clipboard` (w iframie bywa zablokowany), a gdy nic nie zadziała — mail w polu
+  `.mailbox` do ręcznego skopiowania i komunikat, **nigdy cisza**. Bez treści z serwera (starsza
+  wersja) — bez przycisku. W trybie edycji przycisku nie widać, bo tam nie ma dni (katalog).
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
@@ -331,7 +354,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1061 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1119 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -369,7 +392,9 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
   i zmienia nazwę (`setName`) — tak test odgrywa cofnięcie wdrożenia (B45). `env.failProps(f)`
   psuje usługę właściwości dla wybranych kluczy (B46). Zakładka opisana z `strictWidth: true`
   rzuca błędem na zakres poza swoją szerokością, jak Apps Script (B49) — domyślnie atrapa
-  dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny.
+  dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny. Tak samo `maxRows: N` —
+  stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
+  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -398,7 +423,10 @@ S104 opiekun (psy jednej osoby obok siebie tylko przy remisie reguł 1–4, z 40
 S105 miniony dzień po wolontariuszu, potem po godzinie (1.1.1), S106 pasek grupy po prawej (kolor `ink`, napis GRUPA,
 na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1), S107 grupy w minionym
 dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy), S108 numer psa
-w minionym dniu,
+w minionym dniu, S109 e-mail z listą psów (CSV, pies raz, schowek: execCommand → clipboard → pole
+do ręcznego skopiowania — 1.1.2), S110 treść maila w panelu (szkic, fokus, zapis z PIN-em),
+S110b treść maila sprawdzana w przeglądarce przed wysłaniem (`[LISTA]`, limit równy serwerowemu),
+S110c niezapisana treść maila oznaczona i do przywrócenia,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -415,6 +443,8 @@ układu Spacery i cofnięcie wdrożenia, B46 kolor wolontariusza nie blokuje zap
 B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem, B49 grupa w Historii
 (zapis przy czyszczeniu, odczyt, wąska stara zakładka — `strictWidth` w atrapie, `migrate()`),
 B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednoznacznie, przemianowanie),
+B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.1.2,
+B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powrót do domyślnej),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -494,6 +524,13 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
 - Ustawienie z Panelu godziny resetu, która **dziś już minęła**, od razu przełącza listę
   na kolejny dzień (to spójne z modelem, ale warto o tym wiedzieć — Panel to mówi).
 - `getRange()` poza `getMaxColumns()` rzuca błędem — `migrate()` najpierw dokłada kolumny.
+  **To samo w dół: poza `getMaxRows()`** (nowa zakładka ma 1000 wierszy i sama nie rośnie od
+  `setValues`). Historia dopisywała pod ostatni wpis i w dniu zapełnienia nocne czyszczenie
+  stawałoby — dni przestałyby się zamykać. Od 1.1.2 `histRoom_` dokłada brakujące wiersze
+  z formatem `@` (B51); **historii nie kasujemy** (decyzja właściciela — idzie do władz
+  schroniska). `appendRow` (Psy, Zadania) rośnie sam. Zakładka Spacery dopisuje nowe spacery
+  tak samo pod ostatni wiersz (`walkDay_().save`) — na produkcji czyszczona co noc, ale na teście
+  (bez wyzwalacza) rośnie bez końca.
 - Aplikacja działa w zagnieżdżonym iframie `googleusercontent.com`. Wbudowane
   przeglądarki (WhatsApp, Messenger) potrafią zablokować most `postMessage`
   i wtedy wywołania wiszą — to nie jest błąd kodu.
@@ -514,7 +551,8 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   (np. z filmikiem): 1.1 → 1.2.
 - **Y — drobne zmiany w tle**, bez ogłaszania: 1.1 → 1.1.1 → 1.1.2.
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
-  w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28).
+  w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
+  **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01).
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -582,12 +620,21 @@ autoryzacji** przy pierwszym uruchomieniu.
   w `Styles.html` (`--paper`, `--card`, `--muted`, kolory trudności). Świadomie odłożone,
   nie jest zapomniane. Przy tym temacie pamiętaj, że rozjaśnianie tła nie wystarczy —
   liczy się kontrast tekstu i to, żeby kolory trudności dało się rozróżnić w słońcu.
+- **Do sprawdzenia na telefonie (1.1.2):** czy „Skopiuj e-mail z listą psów" kopiuje w prawdziwym
+  iframie Apps Script (Android i iPhone). W jsdom i w Chromium na zwykłej stronie działa; gdy
+  w iframie schowek będzie zablokowany, pojawi się pole do ręcznego skopiowania.
 - **Do sprawdzenia na iPhonie:** po konflikcie rezerwacji pole imienia wraca z wpisanym tekstem
   (`putEntry`), ale fokus przychodzi z odpowiedzi serwera, nie ze stuknięcia — iOS raczej nie
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja 1.1 (PR #2, `ee58018`) od 2026-09-28, 20:41 — wdrożenie @17.** Poprzednia
+- **Produkcja: wersja 1.1.1 (PR #3, `985dc1a`, merge `31721b5`) od 2026-10-01, 22:50 — wdrożenie
+  @18.** Weszła pilnie przez numer psa w historii (zrzuty dla władz schroniska od 2.10). Pierwsze
+  nocne czyszczenie na 1.1.1 (2.10, 19:00) dokłada do Historii kolumny `grupa` i `identyfikator`;
+  dni do 1.10 włącznie mają numer psa tylko z katalogu po imieniu (jednoznacznym). Poprzednia
+  to 1.1 = @17 = `ee58018` (gałąź `release/1.1`) — do niej się cofa zwykłym `deploy:prod` z tej
+  gałęzi; dodatkowych kolumn Historii nie czyta i nie psuje.
+- Wersja 1.1 (PR #2, `ee58018`) od 2026-09-28, 20:41 — wdrożenie @17. Poprzednia
   to 1.0 = @16 = `0cc01e0` (sprzed dat, gałąź `release/1.0`) — do niej się cofa, według README
   („Projekt bez wersji z datami").
   Zakładka Spacery powstała przy wdrożeniu (import ze starych kolumn Psy — po czyszczeniu o 19:00
