@@ -154,19 +154,27 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   Pusty termin znikał przy KAŻDYM `endOfDay` — także tym o 20:30, zaraz po dodaniu notatki
   na jutrzejszą listę (B35). Klient pokazuje taki termin jak brak terminu (`noteDated`: bez
   odznaki, puste pole w edycji). Pusty `notatka_do` zostaje tylko w starych notatkach.
-- **Treść maila z listą spacerów** — właściwość `mailTemplate` (`mailTemplate_()`, brak =
-  `DEFAULT_MAIL_TEMPLATE` w `Config.gs`), w `getData` jako `mailTemplate`. Zmienia ją prowadząca
-  w panelu: `setMailTemplate(text, pin)` — PIN, `[LISTA]` obowiązkowa (mail bez listy psów nie ma
-  sensu), najwyżej `MAX_LEN.MAIL` znaków (limit właściwości), końce linii ujednolicone, pusta
-  treść = domyślna. Idempotentna, więc w `RETRIABLE` (B52) — a skoro kolejka ponawia raz każdy
-  nieudany zapis, przeglądarka sprawdza te same reguły przed wysłaniem (`[LISTA]`, `MAIL_MAX` =
-  `MAX_LEN.MAIL`), żeby komunikat był od razu, nie po dwóch przelotach (review PR #4, S110b).
-  Pole w panelu (`#mailTemplate`)
-  trzyma szkic w `state.mailDraft`, a `busyEditing()` łapie też fokus w TEXTAREA — inaczej
-  odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu, więc
-  **inny niż zapisana treść jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
-  zapisaną", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
-  zapisany, a historia kopiowała starą treść (decyzja właściciela, wersja (a), S110c).
+- **Mail z listą spacerów dla schroniska — trzy ustawienia** we właściwościach: `mailTo`
+  (`mailTo_()`, odbiorcy „a@b.pl, c@d.pl", brak = adres wpisuje się w poczcie), `mailSubject`
+  (`mailSubject_()`, brak = `DEFAULT_MAIL_SUBJECT`), `mailTemplate` (`mailTemplate_()`, brak =
+  `DEFAULT_MAIL_TEMPLATE`); wszystkie w `getData`. Odbiorca jest tam jawny dla każdego z linkiem —
+  to adres schroniska, nie osoby. Prowadząca zmienia je w panelu jednym zapisem:
+  `setMailSettings({to, subject, body}, pin)` (1.2, B53) — PIN; **najpierw sprawdza wszystko, potem
+  zapisuje** (zły adres nie zostawi nowej treści przy starym odbiorcy); adresy tylko zwykłe
+  (`mailAddresses_`: litery, cyfry, `._%+-` — „?", „&", „#" w adresie rozbiłyby link mailto: albo
+  dopisały ukrytego odbiorcę), temat w jednej linii do `MAX_LEN.MAIL_SUBJECT`, treść jak dotąd
+  (`mailBody_`: `[LISTA]` obowiązkowa, `MAX_LEN.MAIL`, końce linii ujednolicone); puste pola = bez
+  odbiorcy / domyślne. Stare `setMailTemplate(text, pin)` zostaje dla kart z 1.1.2 (B52). Obie
+  idempotentne, więc w `RETRIABLE` — a skoro kolejka ponawia raz każdy nieudany zapis, przeglądarka
+  sprawdza te same reguły przed wysłaniem (`mailProblem`, `MAIL_MAX` / `MAIL_TO_MAX` /
+  `MAIL_SUBJECT_MAX` = `MAX_LEN.*`), żeby komunikat był od razu, nie po dwóch przelotach (S110b).
+  Pola w panelu (`#mailTo`, `#mailSubject`, `#mailTemplate`; adres jako `type="text"
+  inputmode="email"` — `type="email"` zjada spacje i myli „niezapisane") trzymają szkic
+  w `state.mailDraft` = `{to, subject, body}`, a `busyEditing()` łapie też fokus w TEXTAREA —
+  inaczej odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu,
+  więc **inny niż zapisane jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
+  zapisane", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
+  zapisany, a historia używała starych ustawień (decyzja właściciela, wersja (a), S110c).
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -304,8 +312,17 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   **Przy każdym psie jego numer** (`histNr`: „Draco nr 552/26 — Grzesiek", z `ident`; S108) —
   wymóg, zrzuty idą do władz schroniska. Brak numeru = brak „nr", pies bez imienia („#2077")
   nie dostaje numeru drugi raz. Nie usuwaj go przy porządkowaniu widoku.
-  **E-mail z listą dla schroniska** (1.1.2, S109–S110): schronisko chce tylko listę psów z numerami
-  i datą. Przycisk „Skopiuj e-mail z listą psów" nad listą minionego dnia (`copyMail`) kopiuje
+  **E-mail z listą dla schroniska** (1.1.2 kopiowanie, 1.2 wysyłka; S109–S111): schronisko chce
+  tylko listę psów z numerami i datą. Nad listą minionego dnia **„✉️ Wyślij e-mail z listą psów"**
+  (1.2, S111) — link `mailto:` (`mailHref`, RFC 6068): adresy z panelu po przecinku (serwer
+  przepuszcza tylko zwykłe, więc „@" zostaje czytelne dla każdej poczty), temat z `[DATA]`
+  i treść zakodowane `encodeURIComponent`, końce linii w treści CRLF; `target="_top"`, bo
+  aplikacja siedzi w ramce Apps Script (dokumentacja HtmlService radzi `_top` dla linków).
+  Telefon otwiera aplikację pocztową z gotowym mailem; którą — zależy od telefonu (Android pyta,
+  gdy nie ma domyślnej; iPhone bierze domyślną). Kliknięcia nie przechwytujemy (`sendMail` →
+  zwykły link). Bez tematu z serwera (1.1.2) — bez tego przycisku. Pod nim mniejsze
+  **„📋 Skopiuj treść"** (`copyMail`) — zapas, gdy telefon poczty nie otworzy (np. przeglądarka
+  WhatsAppa): kopiuje
   treść z panelu (`state.mailTemplate` z `getData`) z podstawionym `[DATA]` (dd.mm.rrrr) i `[LISTA]`
   (`mailList`: CSV `data,pies,numer`, **pies raz na dzień** — dwa spacery to jeden pies, po imieniu,
   pola z przecinkiem w cudzysłowie; pies bez imienia — pusta kolumna „pies", numer raz, jak
@@ -313,7 +330,7 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   (`copyByCommand` — działa w iframie Apps Script i musi pójść w samym stuknięciu, iOS), potem
   `navigator.clipboard` (w iframie bywa zablokowany), a gdy nic nie zadziała — mail w polu
   `.mailbox` do ręcznego skopiowania i komunikat, **nigdy cisza**. Bez treści z serwera (starsza
-  wersja) — bez przycisku. W trybie edycji przycisku nie widać, bo tam nie ma dni (katalog).
+  wersja) — bez przycisków. W trybie edycji ich nie widać, bo tam nie ma dni (katalog).
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
@@ -354,7 +371,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1119 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1146 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -424,9 +441,11 @@ S105 miniony dzień po wolontariuszu, potem po godzinie (1.1.1), S106 pasek grup
 na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1), S107 grupy w minionym
 dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy), S108 numer psa
 w minionym dniu, S109 e-mail z listą psów (CSV, pies raz, schowek: execCommand → clipboard → pole
-do ręcznego skopiowania — 1.1.2), S110 treść maila w panelu (szkic, fokus, zapis z PIN-em),
-S110b treść maila sprawdzana w przeglądarce przed wysłaniem (`[LISTA]`, limit równy serwerowemu),
-S110c niezapisana treść maila oznaczona i do przywrócenia,
+do ręcznego skopiowania — 1.1.2), S110 ustawienia maila w panelu (odbiorca, temat, treść; szkic,
+fokus, zapis jednym przyciskiem z PIN-em — 1.2), S110b ustawienia sprawdzane w przeglądarce przed
+wysłaniem (adres, temat, `[LISTA]`, limity równe serwerowym), S110c niezapisane ustawienia oznaczone
+i do przywrócenia, S111 „Wyślij e-mail" jako link mailto: (odbiorcy, temat z datą, treść CRLF,
+kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -445,6 +464,7 @@ B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem, B49
 B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednoznacznie, przemianowanie),
 B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.1.2,
 B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powrót do domyślnej),
+B53 ustawienia maila `setMailSettings` (adresy, temat, treść; nic połowicznie; stare `setMailTemplate`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -624,6 +644,11 @@ autoryzacji** przy pierwszym uruchomieniu.
 - **Do sprawdzenia na telefonie (1.1.2):** czy „Skopiuj e-mail z listą psów" kopiuje w prawdziwym
   iframie Apps Script (Android i iPhone). W jsdom i w Chromium na zwykłej stronie działa; gdy
   w iframie schowek będzie zablokowany, pojawi się pole do ręcznego skopiowania.
+- **Do sprawdzenia na telefonie (1.2):** czy „✉️ Wyślij e-mail" otwiera pocztę z odbiorcą, tematem
+  i treścią z prawdziwego iframu Apps Script — Android (Gmail i inna poczta), iPhone, przeglądarka
+  WhatsAppa — i czy polskie znaki oraz łamania linii w treści dochodzą w całości. Link `mailto:`
+  ze strony z ramką testy sprawdzają tylko co do kształtu; to, czy telefon go przepuści, widać
+  dopiero na nim. Gdy nie przepuści — zostaje „Skopiuj treść".
 - **Do sprawdzenia na iPhonie:** po konflikcie rezerwacji pole imienia wraca z wpisanym tekstem
   (`putEntry`), ale fokus przychodzi z odpowiedzi serwera, nie ze stuknięcia — iOS raczej nie
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.

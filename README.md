@@ -509,6 +509,16 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 Wydanie z poważnymi zmianami (numer X) — wolontariusze i prowadząca dostaną wiadomość.
 Temat: panel prowadzącej.
 
+- **Mail do schroniska wysyła się z telefonu.** W minionym dniu „✉️ Wyślij e-mail z listą psów"
+  otwiera aplikację pocztową z gotowym mailem: odbiorca, temat i treść z listą psów są już
+  wpisane, zostaje stuknąć „Wyślij". Którą aplikację — zależy od telefonu (Android zapyta, jeśli
+  nie ma ustawionej domyślnej). Pod spodem „📋 Skopiuj treść" jako zapas, gdy telefon poczty nie
+  otworzy (np. w przeglądarce WhatsAppa).
+- W panelu (tryb edycji → Panel → „E-mail z listą spacerów") trzy pola: **Do** (adres schroniska,
+  kilka po przecinku), **Temat** (z `[DATA]`), **Treść** (z `[DATA]` i `[LISTA]`) i jeden przycisk
+  „Zapisz". Zły adres, za długi temat albo treść bez `[LISTA]` — komunikat od razu, nic się nie
+  zapisuje połowicznie. Niezapisane zmiany w którymkolwiek polu są oznaczone.
+
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 
 - Nocne czyszczenie dopisywało spacery pod ostatni wpis Historii, a zakładka ma stałą liczbę

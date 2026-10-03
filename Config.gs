@@ -131,8 +131,14 @@ const DIFFICULTIES = ['easy', 'med', 'hard'];
  */
 const NOTE_FOREVER = 'nigdy';
 
-/** Limity długości pól (obrona przed wklejeniem elaboratu). MAIL — treść maila z listą (właściwość skryptu). */
-const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000 };
+/**
+ * Limity długości pól (obrona przed wklejeniem elaboratu). MAIL, MAIL_TO, MAIL_SUBJECT — treść,
+ * odbiorcy i temat maila z listą (właściwości skryptu; te same liczby w Script.html).
+ */
+const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150 };
+
+/** Temat maila z listą spacerów — domyślny, dopóki prowadząca nie ustawi własnego (właściwość `mailSubject`). */
+const DEFAULT_MAIL_SUBJECT = 'Lista spacerowa G13 z [DATA]';
 
 /**
  * Treść maila z listą spacerów dnia (schronisko chce listę psów z numerami i datą) — domyślna,
