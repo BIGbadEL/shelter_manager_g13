@@ -322,6 +322,40 @@ function mailApp(o){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
+/* ---------- S110b: treść maila sprawdzana w przeglądarce przed wysłaniem ---------- */
+(()=>{
+  console.log('S110b: panel — treść bez [LISTA] albo za długa nie idzie na serwer, komunikat od razu (review PR #4)');
+  // setMailTemplate jest w RETRIABLE: odrzucenie przez serwer kolejka ponawia raz, więc komunikat
+  // przychodził dopiero po dwóch przelotach. Te same reguły co serwer — w stuknięciu.
+  const app = mailApp();
+  const w = app.window, doc = w.document;
+  app.click('#nextDay');
+  w.__setAdmin('4321');
+  app.click('[data-tab="diag"]');
+  const save = text => { const ta = doc.getElementById('mailTemplate'); ta.value = text; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
+    app.click('[data-act="saveMail"]'); };
+  const sent = () => app.shipped.filter(f => f === 'setMailTemplate').length;
+  const toastTxt = () => doc.getElementById('toast').textContent;
+  save('Dzień dobry, lista w załączniku');
+  check('bez [LISTA]: nic nie idzie na serwer', sent() === 0, app.shipped.join(','));
+  check('…a komunikat mówi od razu, czego brakuje', /\[LISTA\]/.test(toastTxt()), toastTxt());
+  save('[LISTA]' + 'x'.repeat(2100));
+  check('za długa: nic nie idzie na serwer, komunikat o długości', sent() === 0 && /2000/.test(toastTxt()), toastTxt());
+  check('pisana treść zostaje w polu do poprawienia', doc.getElementById('mailTemplate').value.length > 2000);
+  save('Witam\n[LISTA]\n');
+  check('poprawna treść idzie na serwer', sent() === 1);
+  const first = app.pending.filter(j => j.fn === 'setMailTemplate')[0];   // zapisy jednym torem, po kolei
+  app.pending.splice(app.pending.indexOf(first), 1); first.ok({mailTemplate: 'Witam\n[LISTA]\n'});
+  save('   ');
+  check('pusta treść też idzie (serwer przywraca domyślną)', sent() === 2);
+  const fs = require('fs'), path = require('path');
+  const cfg = fs.readFileSync(path.join(__dirname, '..', 'Config.gs'), 'utf8');
+  const scr = fs.readFileSync(path.join(__dirname, '..', 'Script.html'), 'utf8');
+  const srvMax = Number((cfg.match(/MAIL:\s*(\d+)/) || [])[1]), cliMax = Number((scr.match(/const MAIL_MAX = (\d+)/) || [])[1]);
+  check('limit długości ten sam w przeglądarce i na serwerze (MAIL_MAX = MAX_LEN.MAIL)', srvMax > 0 && srvMax === cliMax, srvMax + ' / ' + cliMax);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
 Promise.all(later).catch(e => { failures++; console.log('  FAIL wyjątek | ' + (e && e.stack || e)); }).then(() => {
   console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
   process.exit(failures ? 1 : 0);

@@ -158,7 +158,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `DEFAULT_MAIL_TEMPLATE` w `Config.gs`), w `getData` jako `mailTemplate`. Zmienia ją prowadząca
   w panelu: `setMailTemplate(text, pin)` — PIN, `[LISTA]` obowiązkowa (mail bez listy psów nie ma
   sensu), najwyżej `MAX_LEN.MAIL` znaków (limit właściwości), końce linii ujednolicone, pusta
-  treść = domyślna. Idempotentna, więc w `RETRIABLE` (B52). Pole w panelu (`#mailTemplate`)
+  treść = domyślna. Idempotentna, więc w `RETRIABLE` (B52) — a skoro kolejka ponawia raz każdy
+  nieudany zapis, przeglądarka sprawdza te same reguły przed wysłaniem (`[LISTA]`, `MAIL_MAX` =
+  `MAX_LEN.MAIL`), żeby komunikat był od razu, nie po dwóch przelotach (review PR #4, S110b).
+  Pole w panelu (`#mailTemplate`)
   trzyma szkic w `state.mailDraft`, a `busyEditing()` łapie też fokus w TEXTAREA — inaczej
   odświeżenie co 15 s podmieniałoby pole pod palcami.
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
@@ -347,7 +350,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1102 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1110 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -418,6 +421,7 @@ na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1)
 dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy), S108 numer psa
 w minionym dniu, S109 e-mail z listą psów (CSV, pies raz, schowek: execCommand → clipboard → pole
 do ręcznego skopiowania — 1.1.2), S110 treść maila w panelu (szkic, fokus, zapis z PIN-em),
+S110b treść maila sprawdzana w przeglądarce przed wysłaniem (`[LISTA]`, limit równy serwerowemu),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
