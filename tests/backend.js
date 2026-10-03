@@ -1508,5 +1508,37 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
     && env.api.getData().mailTemplate === def && !('mailTemplate' in env.props));
 })();
 
+/* ---------- B53: mail do schroniska — odbiorca, temat, treść ---------- */
+(()=>{
+  console.log('B53: ustawienia maila (do, temat, treść) — zapis jednym wywołaniem z PIN-em, zły adres odrzucony, nic połowicznie');
+  // 1.2: zamiast samego kopiowania przycisk otwiera aplikację pocztową z gotowym mailem (mailto:),
+  // więc odbiorca i temat też muszą być do ustawienia w panelu
+  const env = build([{id:1, name:'Borys'}]);
+  const g = env.api.getData();
+  check('getData: bez odbiorcy, domyślny temat z [DATA], domyślna treść', g.mailTo === '' && /\[DATA\]/.test(g.mailSubject) && /\[LISTA\]/.test(g.mailTemplate),
+    JSON.stringify([g.mailTo, g.mailSubject]));
+  const ok = {to: 'schronisko@example.pl; biuro@example.pl', subject: 'Spacery G13 — [DATA]', body: 'Dzień dobry,\n[LISTA]\n'};
+  check('bez PIN-u ani rusz', throws(() => env.api.setMailSettings(ok, TEST_PIN + 'x')) && env.api.getData().mailTo === '');
+  const r = env.api.setMailSettings(ok, TEST_PIN);
+  check('zapis oddaje wszystkie trzy, adresy ujednolicone („a, b")', !!r && r.mailTo === 'schronisko@example.pl, biuro@example.pl'
+    && r.mailSubject === 'Spacery G13 — [DATA]' && r.mailTemplate === 'Dzień dobry,\n[LISTA]\n', JSON.stringify(r));
+  const after = env.api.getData();
+  check('…i getData je niesie', after.mailTo === r.mailTo && after.mailSubject === r.mailSubject && after.mailTemplate === r.mailTemplate);
+  const keep = JSON.stringify([after.mailTo, after.mailSubject, after.mailTemplate]);
+  const same = () => { const x = env.api.getData(); return JSON.stringify([x.mailTo, x.mailSubject, x.mailTemplate]) === keep; };
+  check('zły adres odrzucony — i nic z reszty się nie zapisuje', throws(() => env.api.setMailSettings({to: 'schronisko.pl', subject: 'Inny', body: 'X [LISTA]'}, TEST_PIN)) && same());
+  check('adres ze znakami, które rozbiłyby link mailto (?, &), odrzucony', throws(() => env.api.setMailSettings({to: 'a@b.pl?cc=x@y.pl', subject: 'T', body: '[LISTA]'}, TEST_PIN)) && same());
+  check('treść bez [LISTA] odrzucona — reszta też nie', throws(() => env.api.setMailSettings({to: 'a@b.pl', subject: 'T', body: 'bez listy'}, TEST_PIN)) && same());
+  check('za długi temat odrzucony', throws(() => env.api.setMailSettings({to: '', subject: 'x'.repeat(200), body: '[LISTA]'}, TEST_PIN)) && same());
+  const nl = env.api.setMailSettings({to: '', subject: 'Linia 1\nLinia 2', body: '[LISTA]'}, TEST_PIN);
+  check('temat w jednej linii, pusty odbiorca dozwolony (wpisze się w poczcie)', nl.mailSubject === 'Linia 1 Linia 2' && nl.mailTo === '', JSON.stringify(nl));
+  const empty = env.api.setMailSettings({to: '', subject: ' ', body: ''}, TEST_PIN);
+  check('puste temat i treść = domyślne', empty.mailSubject === g.mailSubject && empty.mailTemplate === g.mailTemplate, JSON.stringify(empty));
+  check('stare setMailTemplate (karty z 1.1.2) dalej działa i nie rusza odbiorcy ani tematu',
+    env.api.setMailSettings({to: 'a@b.pl', subject: 'T [DATA]', body: '[LISTA]'}, TEST_PIN)
+    && env.api.setMailTemplate('Stara karta\n[LISTA]', TEST_PIN).mailTemplate === 'Stara karta\n[LISTA]'
+    && env.api.getData().mailTo === 'a@b.pl' && env.api.getData().mailSubject === 'T [DATA]');
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

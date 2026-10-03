@@ -169,7 +169,7 @@ function makeContext(opts){
                           resetHour_, installTriggers, getDiagnostics, migrate, setup,
                           reserve, markWalked, setFree, undoFirstWalk, setAllWalks,
                           readHistory_, getHistory, getHistoryDays, histCount_,
-                          checkPin, requirePin_, pin_, env_, setMailTemplate, mailTemplate_,
+                          checkPin, requirePin_, pin_, env_, setMailTemplate, mailTemplate_, setMailSettings,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_ };

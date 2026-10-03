@@ -95,6 +95,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) = `main` | @19, 2026-10-03 |
+| 1.2 | w przygotowaniu: panel prowadzącej | `release/1.2` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -502,6 +503,21 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.2 — w przygotowaniu
+
+Wydanie z poważnymi zmianami (numer X) — wolontariusze i prowadząca dostaną wiadomość.
+Temat: panel prowadzącej.
+
+- **Mail do schroniska wysyła się z telefonu.** W minionym dniu „✉️ Wyślij e-mail z listą psów"
+  otwiera aplikację pocztową z gotowym mailem: odbiorca, temat i treść z listą psów są już
+  wpisane, zostaje stuknąć „Wyślij". Którą aplikację — zależy od telefonu (Android zapyta, jeśli
+  nie ma ustawionej domyślnej). Pod spodem „📋 Skopiuj treść" jako zapas, gdy telefon poczty nie
+  otworzy (np. w przeglądarce WhatsAppa).
+- W panelu (tryb edycji → Panel → „E-mail z listą spacerów") trzy pola: **Do** (adres schroniska,
+  kilka po przecinku), **Temat** (z `[DATA]`), **Treść** (z `[DATA]` i `[LISTA]`) i jeden przycisk
+  „Zapisz". Zły adres, za długi temat albo treść bez `[LISTA]` — komunikat od razu, nic się nie
+  zapisuje połowicznie. Niezapisane zmiany w którymkolwiek polu są oznaczone.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 

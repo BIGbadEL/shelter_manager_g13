@@ -34,8 +34,10 @@
     admin:false, pin:null, loaded:false,
     editId:null,           // pies aktualnie edytowany w trybie edycji
     resetHour:22,          // godzina nocnego czyszczenia — ustawiana z panelu
-    mailTemplate:'',       // treść maila z listą spacerów dnia (z serwera, ustawiana z panelu); '' = bez przycisku
-    mailDraft:null,        // treść pisana w panelu, jeszcze niezapisana — przeżywa przerysowanie
+    mailTemplate:'',       // treść maila z listą spacerów dnia (z serwera, ustawiana z panelu); '' = bez przycisków
+    mailTo:'',             // odbiorcy tego maila, „a@b.pl, c@d.pl"; '' = adres wpisuje się w poczcie
+    mailSubject:null,      // temat z [DATA]; null = serwer sprzed 1.2 — bez „Wyślij", zostaje „Skopiuj"
+    mailDraft:null,        // {to, subject, body} pisane w panelu, jeszcze niezapisane — przeżywa przerysowanie
     mailFallback:null,     // {date, text} — schowek nie zadziałał: mail do ręcznego skopiowania
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
@@ -268,7 +270,7 @@
   function isSending(){ return inflight.size > 0; }
 
   /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate']);
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings']);
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -400,6 +402,8 @@
     else res.dogs.forEach(d=>legacySlots(d).forEach(s=>setSlot(state.bizDate, d.id, s.n, s)));
     state.volunteers = res.volunteers || {};
     if(typeof res.mailTemplate === 'string') state.mailTemplate = res.mailTemplate;
+    if(typeof res.mailTo === 'string') state.mailTo = res.mailTo;
+    if(typeof res.mailSubject === 'string') state.mailSubject = res.mailSubject;
     if(prevBiz && prevBiz !== state.bizDate) state.past = {};    // wczorajszy „bieżący" dzień jest już miniony
 
     // Kto pracował na bieżącym dniu, po resecie od razu pracuje na nowym — ale nie
@@ -1321,13 +1325,21 @@
       </div>
       <div class="panelbox">
         <h3>E-mail z listą spacerów</h3>
-        <textarea id="mailTemplate" class="mailtpl" rows="7" maxlength="${MAIL_MAX}">${esc(state.mailDraft != null ? state.mailDraft : state.mailTemplate)}</textarea>
-        <div class="maildirty${mailDirty() ? '' : ' hidden'}">Niezapisane zmiany — przycisk w historii kopiuje dalej zapisaną treść.</div>
-        <div class="adminrow"><button class="btn add-btn" data-act="saveMail">Zapisz treść</button>
-          <button class="btn ghost${mailDirty() ? '' : ' hidden'}" data-act="resetMail">Przywróć zapisaną</button></div>
-        <div class="hint">Przycisk „Skopiuj e-mail z listą psów" w minionym dniu kopiuje tę treść do schowka.
-        [DATA] zamienia się na dzień (np. 02.10.2026), [LISTA] — na listę psów: data, pies, numer,
-        każdy pies w osobnej linijce (CSV). [LISTA] musi zostać. Pusta treść przywraca domyślną.</div>
+        <label class="mailfl" for="mailTo">Do — adres schroniska (kilka: po przecinku)</label>
+        <input id="mailTo" class="mailfield" type="text" inputmode="email" autocomplete="off" autocapitalize="off"
+          spellcheck="false" maxlength="${MAIL_TO_MAX}" value="${esc(mailForm().to)}">
+        <label class="mailfl" for="mailSubject">Temat</label>
+        <input id="mailSubject" class="mailfield" type="text" maxlength="${MAIL_SUBJECT_MAX}" value="${esc(mailForm().subject)}">
+        <label class="mailfl" for="mailTemplate">Treść</label>
+        <textarea id="mailTemplate" class="mailtpl" rows="7" maxlength="${MAIL_MAX}">${esc(mailForm().body)}</textarea>
+        <div class="maildirty${mailDirty() ? '' : ' hidden'}">Niezapisane zmiany — przyciski w historii używają dalej zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="saveMail">Zapisz</button>
+          <button class="btn ghost${mailDirty() ? '' : ' hidden'}" data-act="resetMail">Przywróć zapisane</button></div>
+        <div class="hint">„✉️ Wyślij e-mail z listą psów" w minionym dniu otwiera aplikację pocztową z tym
+        odbiorcą, tematem i treścią — zostaje stuknąć „Wyślij". „📋 Skopiuj treść" obok to zapas, gdy telefon
+        nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
+        na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
+        Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
       </div>` : '';
 
     const serverRows = d ? `
@@ -1378,16 +1390,53 @@
   }
 
   /* ---------- e-mail z listą spacerów dla schroniska ----------
-     Schronisko chce tylko listę psów z numerami i datą wyprowadzenia. Przycisk w minionym dniu
-     kopiuje gotowy mail: treść z panelu (state.mailTemplate), [DATA] — dzień, [LISTA] — CSV
-     „data,pies,numer", pies raz na dzień (dwa spacery to wciąż jeden pies), po imieniu. */
+     Schronisko chce tylko listę psów z numerami i datą wyprowadzenia. W minionym dniu:
+     „✉️ Wyślij e-mail" — link mailto: (mailHref), telefon otwiera aplikację pocztową z odbiorcą,
+     tematem i treścią z panelu; „📋 Skopiuj treść" — zapas, gdy telefon poczty nie otworzy
+     (np. przeglądarka WhatsAppa). [DATA] — dzień, [LISTA] — CSV „data,pies,numer", pies raz
+     na dzień (dwa spacery to wciąż jeden pies), po imieniu. */
   const MAIL_MAX = 2000;                            // tyle, ile MAX_LEN.MAIL w Config.gs (S110b pilnuje obu)
+  const MAIL_TO_MAX = 300;                          // tyle, ile MAX_LEN.MAIL_TO
+  const MAIL_SUBJECT_MAX = 150;                     // tyle, ile MAX_LEN.MAIL_SUBJECT
+  /** Pola panelu: szkic, a bez niego zapisane ustawienia. */
+  function mailForm(){
+    return state.mailDraft || {to: state.mailTo || '', subject: state.mailSubject || '', body: state.mailTemplate || ''};
+  }
   /**
-   * Czy w panelu stoi treść inna niż zapisana. Szkic przeżywa przerysowanie i wyjście z panelu
-   * (state.mailDraft), więc bez tego napisu wyglądał jak zapisany, a historia kopiowała dalej
-   * starą treść (review PR #4). Napis i „Przywróć zapisaną" przełączamy też w trakcie pisania.
+   * Czy w panelu stoi coś innego niż zapisane. Szkic przeżywa przerysowanie i wyjście z panelu
+   * (state.mailDraft), więc bez tego napisu wyglądał jak zapisany, a historia używała dalej starych
+   * ustawień (review PR #4). Napis i „Przywróć zapisane" przełączamy też w trakcie pisania.
    */
-  function mailDirty(){ return state.mailDraft != null && state.mailDraft !== state.mailTemplate; }
+  function mailDirty(){
+    const d = state.mailDraft;
+    return !!d && (d.to !== (state.mailTo || '') || d.subject !== (state.mailSubject || '') || d.body !== (state.mailTemplate || ''));
+  }
+  /** Adres jak na serwerze (mailAddresses_): tylko zwykłe adresy — „?", „&", „#" rozbiłyby link mailto:. */
+  const MAIL_ADDR = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  /** Te same reguły co setMailSettings na serwerze — komunikat od razu, nie po dwóch przelotach. '' = w porządku. */
+  function mailProblem(f){
+    const list = String(f.to || '').split(/[\s,;]+/).filter(Boolean);
+    const bad = list.filter(a => !MAIL_ADDR.test(a))[0];
+    if(bad) return 'To nie wygląda na adres e-mail: ' + bad;
+    if(list.join(', ').length > MAIL_TO_MAX) return 'Za dużo odbiorców — najwyżej ' + MAIL_TO_MAX + ' znaków';
+    if(String(f.subject || '').replace(/[\r\n]+/g, ' ').trim().length > MAIL_SUBJECT_MAX) return 'Temat jest za długi — najwyżej ' + MAIL_SUBJECT_MAX + ' znaków';
+    const body = String(f.body || '');
+    if(body.trim()){
+      if(body.replace(/\r\n?/g, '\n').length > MAIL_MAX) return 'Treść maila jest za długa — najwyżej ' + MAIL_MAX + ' znaków';
+      if(body.indexOf('[LISTA]') < 0) return 'W treści musi zostać [LISTA] — w to miejsce trafia lista psów';
+    }
+    return '';
+  }
+  /**
+   * Link mailto: z gotowym mailem (RFC 6068): adresy po przecinku (serwer przepuszcza tylko zwykłe —
+   * „@" zostaje czytelne dla każdej poczty), temat i treść zakodowane, końce linii w treści CRLF.
+   */
+  function mailHref(date){
+    const to = String(state.mailTo || '').split(/[\s,;]+/).filter(Boolean).join(',');
+    const subject = String(state.mailSubject || '').split('[DATA]').join(plDate(date));
+    return 'mailto:' + to + '?subject=' + encodeURIComponent(subject)
+      + '&body=' + encodeURIComponent(mailText(date).replace(/\n/g, '\r\n'));
+  }
   function showMailDirty(){
     const d = mailDirty();
     viewEl.querySelectorAll('.maildirty, [data-act="resetMail"]').forEach(el => el.classList.toggle('hidden', !d));
@@ -1473,7 +1522,11 @@
     }
     if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
     if(state.mailTemplate){
-      html += `<button class="btn mailcopy" data-act="copyMail" data-date="${esc(date)}">📋 Skopiuj e-mail z listą psów</button>`;
+      // target=_top: aplikacja siedzi w ramce Apps Script — link idzie do okna nadrzędnego (tak radzi
+      // dokumentacja HtmlService), a mailto: otwiera pocztę bez opuszczania strony
+      if(typeof state.mailSubject === 'string') html += `<a class="btn mailsend" data-act="sendMail" target="_top"
+        href="${esc(mailHref(date))}">✉️ Wyślij e-mail z listą psów</a>`;
+      html += `<button class="btn ${typeof state.mailSubject === 'string' ? 'ghost ' : ''}mailcopy" data-act="copyMail" data-date="${esc(date)}">📋 Skopiuj treść</button>`;
       const fb = state.mailFallback;
       if(fb && fb.date === date) html += `<div class="hint">Nie udało się skopiować samo — zaznacz tekst poniżej i skopiuj go.</div>
         <textarea class="mailbox" readonly rows="9">${esc(fb.text)}</textarea>`;
@@ -2064,7 +2117,12 @@
   });
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
-  viewEl.addEventListener('input', e=>{ if(e.target.id==='mailTemplate'){ state.mailDraft = e.target.value; showMailDirty(); } });
+  viewEl.addEventListener('input', e=>{
+    if(!['mailTo','mailSubject','mailTemplate'].includes(e.target.id)) return;
+    const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };
+    state.mailDraft = {to: v('mailTo'), subject: v('mailSubject'), body: v('mailTemplate')};
+    showMailDirty();
+  });
 
   // przyłożenie palca do listy — do osłony stuknięć (tapRefused): czy lista albo kafelek
   // nie zmieniły się pod palcem między celowaniem a kliknięciem
@@ -2087,6 +2145,7 @@
 
     /* --- miniony dzień: mail z listą psów dla schroniska --- */
     if(act==='copyMail'){ copyMail(btn.dataset.date); return; }
+    if(act==='sendMail') return;                    // zwykły link mailto: — telefon sam otwiera pocztę
 
     /* --- wolontariusze: spacery --- */
     if(!state.admin && tapRefused(e, btn)) return;
@@ -2154,18 +2213,18 @@
     }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
-      const el = viewEl.querySelector('#mailTemplate');
-      const text = el ? el.value : (state.mailDraft || '');
-      // te same reguły co setMailTemplate na serwerze, ale od razu: zapis jest w RETRIABLE, więc
+      const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };
+      const f = {to: v('mailTo'), subject: v('mailSubject'), body: v('mailTemplate')};
+      // te same reguły co setMailSettings na serwerze, ale od razu: zapis jest w RETRIABLE, więc
       // odrzucenie przez serwer kolejka ponawia raz i komunikat szedłby dwa przeloty (review PR #4)
-      if(text.trim()){
-        if(text.replace(/\r\n?/g, '\n').length > MAIL_MAX){ toast('Treść maila jest za długa — najwyżej ' + MAIL_MAX + ' znaków'); return; }
-        if(text.indexOf('[LISTA]') < 0){ toast('W treści musi zostać [LISTA] — w to miejsce trafia lista psów'); return; }
-      }
-      enqueue('setMailTemplate',[text,state.pin],{key:'settings',reconcile:res=>{
+      const problem = mailProblem(f);
+      if(problem){ toast(problem); return; }
+      enqueue('setMailSettings',[f,state.pin],{key:'settings',reconcile:res=>{
         if(res && typeof res.mailTemplate === 'string') state.mailTemplate = res.mailTemplate;
+        if(res && typeof res.mailTo === 'string') state.mailTo = res.mailTo;
+        if(res && typeof res.mailSubject === 'string') state.mailSubject = res.mailSubject;
         state.mailDraft = null;
-        toast('Treść maila zapisana', 'ok');
+        toast('Ustawienia maila zapisane', 'ok');
         safeRender();
       }});
     }

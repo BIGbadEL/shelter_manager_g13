@@ -49,7 +49,9 @@ function include(filename) {
  *  - `volunteers` — kolory wolontariuszy dni otwartych: data -> {imię -> numer koloru},
  *  - `today` — data kalendarzowa (Europe/Warsaw) do odznak "od wczoraj" i terminów,
  *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy),
- *  - `mailTemplate` — treść maila z listą spacerów (przycisk w minionym dniu, ustawiana w panelu).
+ *  - `mailTo`, `mailSubject`, `mailTemplate` — mail z listą spacerów dla schroniska (przycisk
+ *              w minionym dniu, ustawiany w panelu). Odbiorca jest tu jawny dla każdego z linkiem,
+ *              tak jak cała lista psów — to adres schroniska, nie osoby prywatnej.
  *
  * Pole `walks` (wiersz na psa) zniknęło razem ze starym układem — karta z wersji
  * z datami, ale sprzed spacerów, bez niego wraca do stanu bieżącego dnia z `dogs`.
@@ -72,6 +74,8 @@ function getData() {
     resetHour: resetHour_(),
     env: env_(),
     mailTemplate: mailTemplate_(),
+    mailTo: mailTo_(),
+    mailSubject: mailSubject_(),
   };
 }
 

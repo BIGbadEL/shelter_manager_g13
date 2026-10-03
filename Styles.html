@@ -254,8 +254,12 @@
   .hist-item{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line);}
   .hist-item b{font-weight:700;}
   .hist-item .t{margin-left:auto;color:var(--muted);font-size:12.5px;}
-  /* „Skopiuj e-mail z listą psów" nad listą minionego dnia; pole awaryjne, gdy schowek nie zadziałał */
+  /* nad listą minionego dnia: „Wyślij e-mail" (link mailto:, główny) i „Skopiuj treść" (zapas);
+     pole awaryjne, gdy schowek nie zadziałał */
+  .mailsend{display:block;width:100%;margin-top:10px;padding:11px 14px;background:var(--forest);color:#fff;font-size:14px;
+    text-align:center;text-decoration:none;}
   .mailcopy{display:block;width:100%;margin-top:10px;padding:11px 14px;background:var(--forest);color:#fff;font-size:14px;}
+  .mailcopy.ghost{width:auto;margin:6px auto 0;padding:6px 10px;background:transparent;color:var(--forest);font-size:13px;}
   .mailbox{display:block;width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;
     background:#fff;color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.45;}
   /* numer psa przy imieniu — jak „nr 258/26" na kafelku listy dnia */
@@ -287,6 +291,9 @@
   .hint{margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted);}
   .mailtpl{display:block;width:100%;margin-bottom:8px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;
     background:#fff;color:var(--ink);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical;}
+  .mailfl{display:block;margin:2px 0 4px;font-size:12.5px;font-weight:700;color:var(--ink);}
+  .mailfield{display:block;width:100%;margin-bottom:8px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;
+    background:#fff;color:var(--ink);font-family:inherit;font-size:15px;}
   /* treść maila pisana, ale niezapisana — kolory ostrzeżenia, jak „bez spaceru od…" */
   .maildirty{margin:-2px 0 8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
     font-size:12.5px;font-weight:700;}

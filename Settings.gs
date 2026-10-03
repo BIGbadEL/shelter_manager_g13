@@ -15,6 +15,8 @@ const PROP_WALKS_IMPORTED = 'walksImported';   // data jednorazowego przeniesien
 const PROP_WALKS_LAYOUT = 'walksLayout';       // zakładka Spacery sprawdzona: '2:<id zakładki>' (patrz ensureWalksLayout_)
 const PROP_VOL_PREFIX = 'vol:';                // 'vol:2026-09-27' -> kolory wolontariuszy tego dnia (JSON)
 const PROP_MAIL_TEMPLATE = 'mailTemplate';     // treść maila z listą spacerów (panel); brak = DEFAULT_MAIL_TEMPLATE
+const PROP_MAIL_TO = 'mailTo';                 // odbiorcy tego maila, „a@b.pl, c@d.pl"; brak = wpisuje się w poczcie
+const PROP_MAIL_SUBJECT = 'mailSubject';       // temat tego maila; brak = DEFAULT_MAIL_SUBJECT
 
 /**
  * Wszystkie właściwości skryptu — czytane RAZ na wykonanie. Każde getProperty to
@@ -134,23 +136,77 @@ function mailTemplate_() {
   return t ? String(t) : DEFAULT_MAIL_TEMPLATE;
 }
 
+/** Odbiorcy maila z listą — ustawieni w panelu, „a@b.pl, c@d.pl"; '' = adres wpisuje się w poczcie. */
+function mailTo_() { return String(prop_(PROP_MAIL_TO) || ''); }
+
+/** Temat maila z listą — ustawiony w panelu albo domyślny (Config.gs). [DATA] podstawia przeglądarka. */
+function mailSubject_() {
+  const s = prop_(PROP_MAIL_SUBJECT);
+  return s ? String(s) : DEFAULT_MAIL_SUBJECT;
+}
+
+/** Wszystkie trzy ustawienia maila naraz — tak oddaje je zapis i tak niesie je getData. */
+function mailSettings_() {
+  return { mailTo: mailTo_(), mailSubject: mailSubject_(), mailTemplate: mailTemplate_() };
+}
+
 /**
- * Zapisuje treść maila z panelu. [LISTA] jest obowiązkowa — mail bez listy psów nie ma po co
- * wychodzić; pusta treść wraca do domyślnej. Długość ograniczona, bo właściwości skryptu mają
- * limit rozmiaru (patrz kolory wolontariuszy, B46). Dwa takie same wywołania dają to samo co
- * jedno, więc może być ponawiana (RETRIABLE).
+ * Treść maila z panelu: końce linii ujednolicone, [LISTA] obowiązkowa (mail bez listy psów nie
+ * ma po co wychodzić), długość ograniczona (właściwości skryptu mają limit rozmiaru, B46).
+ * '' = treść pusta, czyli domyślna.
+ */
+function mailBody_(text) {
+  const t = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  if (!t.trim()) return '';
+  if (t.length > MAX_LEN.MAIL) throw new Error('Treść maila jest za długa — najwyżej ' + MAX_LEN.MAIL + ' znaków');
+  if (t.indexOf('[LISTA]') < 0) throw new Error('W treści musi zostać [LISTA] — w to miejsce trafia lista psów');
+  return t;
+}
+
+/**
+ * Odbiorcy z panelu: przecinki, średniki i spacje rozdzielają, wynik „a@b.pl, c@d.pl". Adres
+ * idzie wprost do linku mailto:, więc dopuszczamy tylko zwykłe adresy — „?", „&", „#" czy „,"
+ * w środku rozbiłyby link albo dopisały ukrytego odbiorcę. '' = bez odbiorcy.
+ */
+function mailAddresses_(raw) {
+  const list = String(raw == null ? '' : raw).split(/[\s,;]+/).filter(Boolean);
+  const bad = list.filter(a => !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(a));
+  if (bad.length) throw new Error('To nie wygląda na adres e-mail: ' + bad[0]);
+  const s = list.join(', ');
+  if (s.length > MAX_LEN.MAIL_TO) throw new Error('Za dużo odbiorców — najwyżej ' + MAX_LEN.MAIL_TO + ' znaków');
+  return s;
+}
+
+/**
+ * Zapisuje treść maila z panelu — dla kart otwartych jeszcze na 1.1.2 (sama treść). Nowy panel
+ * zapisuje wszystko naraz przez setMailSettings. Idempotentna (RETRIABLE).
  */
 function setMailTemplate(text, pin) {
   requirePin_(pin);
-  const t = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
-  if (!t.trim()) {
-    withLock_(() => delProp_(PROP_MAIL_TEMPLATE));
-    return { mailTemplate: mailTemplate_() };
-  }
-  if (t.length > MAX_LEN.MAIL) throw new Error('Treść maila jest za długa — najwyżej ' + MAX_LEN.MAIL + ' znaków');
-  if (t.indexOf('[LISTA]') < 0) throw new Error('W treści musi zostać [LISTA] — w to miejsce trafia lista psów');
-  withLock_(() => setProp_(PROP_MAIL_TEMPLATE, t));
+  const t = mailBody_(text);
+  withLock_(() => { if (t) setProp_(PROP_MAIL_TEMPLATE, t); else delProp_(PROP_MAIL_TEMPLATE); });
   return { mailTemplate: mailTemplate_() };
+}
+
+/**
+ * Ustawienia maila do schroniska z panelu (1.2): `{to, subject, body}`. Przycisk w minionym dniu
+ * otwiera z nich aplikację pocztową (mailto:). Najpierw sprawdzamy wszystko, dopiero potem
+ * zapisujemy — zły adres nie może zostawić nowej treści przy starym odbiorcy. Pusty temat
+ * i treść = domyślne, pusty odbiorca = adres wpisuje się w poczcie. Idempotentna (RETRIABLE).
+ */
+function setMailSettings(settings, pin) {
+  requirePin_(pin);
+  const o = settings || {};
+  const to = mailAddresses_(o.to);
+  const subject = String(o.subject == null ? '' : o.subject).replace(/[\r\n]+/g, ' ').trim();
+  if (subject.length > MAX_LEN.MAIL_SUBJECT) throw new Error('Temat jest za długi — najwyżej ' + MAX_LEN.MAIL_SUBJECT + ' znaków');
+  const body = mailBody_(o.body);
+  withLock_(() => {
+    if (to) setProp_(PROP_MAIL_TO, to); else delProp_(PROP_MAIL_TO);
+    if (subject) setProp_(PROP_MAIL_SUBJECT, subject); else delProp_(PROP_MAIL_SUBJECT);
+    if (body) setProp_(PROP_MAIL_TEMPLATE, body); else delProp_(PROP_MAIL_TEMPLATE);
+  });
+  return mailSettings_();
 }
 
 /** Stan wyzwalacza do panelu diagnostycznego — czy reset w ogóle jest uzbrojony. */
