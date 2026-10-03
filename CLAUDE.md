@@ -163,7 +163,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `MAX_LEN.MAIL`), żeby komunikat był od razu, nie po dwóch przelotach (review PR #4, S110b).
   Pole w panelu (`#mailTemplate`)
   trzyma szkic w `state.mailDraft`, a `busyEditing()` łapie też fokus w TEXTAREA — inaczej
-  odświeżenie co 15 s podmieniałoby pole pod palcami.
+  odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu, więc
+  **inny niż zapisana treść jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
+  zapisaną", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
+  zapisany, a historia kopiowała starą treść (decyzja właściciela, wersja (a), S110c).
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -305,7 +308,8 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   i datą. Przycisk „Skopiuj e-mail z listą psów" nad listą minionego dnia (`copyMail`) kopiuje
   treść z panelu (`state.mailTemplate` z `getData`) z podstawionym `[DATA]` (dd.mm.rrrr) i `[LISTA]`
   (`mailList`: CSV `data,pies,numer`, **pies raz na dzień** — dwa spacery to jeden pies, po imieniu,
-  pola z przecinkiem w cudzysłowie). Kopia najpierw `execCommand('copy')` na ukrytym polu
+  pola z przecinkiem w cudzysłowie; pies bez imienia — pusta kolumna „pies", numer raz, jak
+  w widoku; decyzja właściciela po review PR #4). Kopia najpierw `execCommand('copy')` na ukrytym polu
   (`copyByCommand` — działa w iframie Apps Script i musi pójść w samym stuknięciu, iOS), potem
   `navigator.clipboard` (w iframie bywa zablokowany), a gdy nic nie zadziała — mail w polu
   `.mailbox` do ręcznego skopiowania i komunikat, **nigdy cisza**. Bez treści z serwera (starsza
@@ -350,7 +354,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1110 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1119 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -422,6 +426,7 @@ dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedy
 w minionym dniu, S109 e-mail z listą psów (CSV, pies raz, schowek: execCommand → clipboard → pole
 do ręcznego skopiowania — 1.1.2), S110 treść maila w panelu (szkic, fokus, zapis z PIN-em),
 S110b treść maila sprawdzana w przeglądarce przed wysłaniem (`[LISTA]`, limit równy serwerowemu),
+S110c niezapisana treść maila oznaczona i do przywrócenia,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,

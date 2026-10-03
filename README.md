@@ -512,8 +512,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 - Schronisko chce listy psów z numerami i datą wyprowadzenia. W minionym dniu jest przycisk
   „Skopiuj e-mail z listą psów": kopiuje do schowka gotowy mail — treść z panelu, w której
   `[DATA]` zamienia się na dzień (02.10.2026), a `[LISTA]` na listę CSV `data,pies,numer`
-  (każdy pies raz). Treść zmienia prowadząca w panelu (tryb edycji → Panel → „E-mail z listą
-  spacerów"); `[LISTA]` musi w niej zostać, pusta treść przywraca domyślną. Gdy telefon nie da
+  (każdy pies raz; pies bez imienia — sam numer). Treść zmienia prowadząca w panelu (tryb edycji
+  → Panel → „E-mail z listą spacerów"); `[LISTA]` musi w niej zostać, pusta treść przywraca
+  domyślną, a niezapisane zmiany są oznaczone („Niezapisane zmiany", „Przywróć zapisaną"). Gdy telefon nie da
   skopiować samemu, mail pojawia się na ekranie do zaznaczenia i skopiowania.
 
 ### 1.1.1 — wdrożone 2026-10-01 (@18)

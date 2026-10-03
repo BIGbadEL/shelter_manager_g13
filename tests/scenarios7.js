@@ -225,7 +225,7 @@ const DAY = [
   {date:'2026-09-23', name:'#2077',       who:'Iza', time:'11:00', ident:'2077'},
 ];
 const MAIL = 'Dzień dobry,\nPrzesyłam listę spacerową z 23.09.2026 z grupy G13.\n'
-  + 'data,pies,numer\n23.09.2026,#2077,2077\n23.09.2026,Azor,\n23.09.2026,"Borys, mały",101/26\n'
+  + 'data,pies,numer\n23.09.2026,,2077\n23.09.2026,Azor,\n23.09.2026,"Borys, mały",101/26\n'
   + '23.09.2026,Rex,303/26\n23.09.2026,Witkacy,258/26\nPozdrawiam,\n';
 /** Aplikacja na wczorajszym dniu z DAY; `copy` — co robi document.execCommand('copy'). */
 function mailApp(o){
@@ -255,6 +255,8 @@ function mailApp(o){
   check('…pies raz, choć szedł dwa razy (Witkacy)', app.copied && app.copied.split('Witkacy').length === 2);
   check('…pole z przecinkiem w cudzysłowie (CSV)', app.copied && app.copied.includes('"Borys, mały"'));
   check('…pies bez numeru z pustą kolumną, nie „undefined"', app.copied && app.copied.includes('23.09.2026,Azor,\n') && !/undefined/.test(app.copied));
+  check('…pies bez imienia: pusta kolumna „pies", numer raz (jak w widoku, review PR #4)',
+    app.copied && app.copied.includes('\n23.09.2026,,2077\n') && !app.copied.includes('#2077'), JSON.stringify(app.copied));
   check('…po „Pozdrawiam," wolna linia na podpis', app.copied && /Pozdrawiam,\n$/.test(app.copied));
   check('pomocnicze pole schowka sprzątnięte', !doc.querySelector('textarea[data-copy]'));
   check('komunikat: skopiowano', /Skopiowano/.test(doc.getElementById('toast').textContent), doc.getElementById('toast').textContent);
@@ -353,6 +355,41 @@ function mailApp(o){
   const scr = fs.readFileSync(path.join(__dirname, '..', 'Script.html'), 'utf8');
   const srvMax = Number((cfg.match(/MAIL:\s*(\d+)/) || [])[1]), cliMax = Number((scr.match(/const MAIL_MAX = (\d+)/) || [])[1]);
   check('limit długości ten sam w przeglądarce i na serwerze (MAIL_MAX = MAX_LEN.MAIL)', srvMax > 0 && srvMax === cliMax, srvMax + ' / ' + cliMax);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
+/* ---------- S110c: niezapisana treść maila widać jako niezapisaną ---------- */
+(()=>{
+  console.log('S110c: panel — niezapisane zmiany treści maila są oznaczone i da się wrócić do zapisanej (review PR #4)');
+  // prowadząca zmienia treść, nie zapisuje, wychodzi z panelu i wraca: pole pokazuje jej szkic,
+  // a przycisk w historii kopiuje dalej starą treść — bez tego napisu wyglądało to na zapisane
+  const app = mailApp();
+  const w = app.window, doc = w.document;
+  app.click('#nextDay');
+  w.__setAdmin('4321');
+  app.click('[data-tab="diag"]');
+  const dirty = () => { const el = doc.querySelector('.maildirty'); return !!el && !el.classList.contains('hidden'); };
+  const resetBtn = () => { const el = doc.querySelector('[data-act="resetMail"]'); return !!el && !el.classList.contains('hidden'); };
+  check('zapisana treść: bez napisu o zmianach', !dirty() && !resetBtn());
+  const ta = doc.getElementById('mailTemplate');
+  ta.value = 'Nowa treść [LISTA] — podpis Ania'; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
+  check('w trakcie pisania od razu „Niezapisane zmiany" i „Przywróć zapisaną"', dirty() && resetBtn()
+    && /Niezapisane/.test(doc.querySelector('.maildirty').textContent), app.html().slice(0, 200));
+  app.click('[data-tab="today"]');                             // wyjście z panelu bez zapisu…
+  app.click('[data-tab="diag"]');                              // …i powrót
+  check('po powrocie: szkic w polu, ale wyraźnie niezapisany', doc.getElementById('mailTemplate').value === 'Nowa treść [LISTA] — podpis Ania'
+    && dirty() && resetBtn());
+  check('…i nic nie poszło na serwer', !app.shipped.includes('setMailTemplate'));
+  app.click('[data-act="resetMail"]');
+  check('„Przywróć zapisaną": w polu zapisana treść, napis znika', doc.getElementById('mailTemplate').value === TPL && !dirty() && !resetBtn());
+  const ta2 = doc.getElementById('mailTemplate');
+  ta2.value = TPL; ta2.dispatchEvent(new w.Event('input', {bubbles:true}));
+  check('treść taka sama jak zapisana — bez napisu', !dirty());
+  ta2.value = 'Inna [LISTA]'; ta2.dispatchEvent(new w.Event('input', {bubbles:true}));
+  app.click('[data-act="saveMail"]');
+  const job = app.pending.filter(j => j.fn === 'setMailTemplate')[0];
+  app.pending.splice(app.pending.indexOf(job), 1); job.ok({mailTemplate: 'Inna [LISTA]'});
+  check('po zapisie napis znika', !dirty() && !resetBtn() && doc.getElementById('mailTemplate').value === 'Inna [LISTA]');
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
