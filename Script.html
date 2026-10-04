@@ -39,6 +39,8 @@
     mailSubject:null,      // temat z [DATA]; null = serwer sprzed 1.2 — bez „Wyślij", zostaje „Skopiuj"
     mailDraft:null,        // {to, subject, body} pisane w panelu, jeszcze niezapisane — przeżywa przerysowanie
     mailFallback:null,     // {date, text} — schowek nie zadziałał: mail do ręcznego skopiowania
+    form:{},               // szkice formularzy trybu edycji („Dodaj psa", „Nowe zadanie"): id pola -> wartość (formVal)
+    adding:[],             // psy w drodze na serwer: [{token, name, ident, box, dif, done}] — w katalogu jako „dodaję…"
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -158,11 +160,17 @@
     try{return new Intl.DateTimeFormat('pl-PL',{weekday:'long',day:'numeric',month:'long'}).format(new Date());}
     catch(e){return "dziś";}
   }
-  /** Komunikat na dole ekranu. `kind` 'ok' — zielony (udało się), bez niego czerwony (błąd, uwaga). */
+  /**
+   * Komunikat na dole ekranu. `kind` 'ok' — zielony (udało się), bez niego czerwony (błąd, uwaga).
+   * Każdy stoi pełne 2,6 s: zegar poprzedniego nie gasi następnego (wcześniej drugi komunikat
+   * tuż po pierwszym znikał po ułamku sekundy).
+   */
+  let toastTimer = null;
   function toast(msg, kind){
     const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
     t.classList.toggle('ok', kind==='ok');
-    setTimeout(()=>t.classList.remove('show'),2600);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>t.classList.remove('show'),2600);
   }
   /**
    * Czy ktoś właśnie coś wpisuje — wtedy nie przerysowujemy mu ekranu pod palcami.
@@ -269,8 +277,19 @@
 
   function isSending(){ return inflight.size > 0; }
 
-  /** Zapisy bezpieczne do automatycznego ponowienia (idempotentne). */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings']);
+  /**
+   * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
+   * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
+   */
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings']);
+
+  /**
+   * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
+   * wysłaniu: gdy w międzyczasie ruszył i skończył się jakiś zapis, odpowiedź jest sprzed niego
+   * i cofnęłaby go na ekranie — rezerwacja zrobiona w trakcie 15-sekundowego odświeżenia wracała
+   * do „wolny" aż do następnego (S113).
+   */
+  let writeSeq = 0;
 
   /**
    * Licznik zapisów w drodze per byt ('dog:1', 'task:3').
@@ -290,14 +309,20 @@
   function keyTask(id){ return 'task:'+id; }
   function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
 
+  /**
+   * `opts.reconcile(res)` — odpowiedź na ostatnią operację bytu; `opts.fail(msg)` — zapis
+   * ostatecznie się nie udał (już po ewentualnej powtórce), np. żeby oddać wpisane dane.
+   */
   function enqueue(fn, args, opts){
     opts = opts || {};
+    writeSeq++;
     if(opts.key) pendingKeys.set(opts.key, (pendingKeys.get(opts.key)||0)+1);
     queue.push({
       fn, args,
       key: opts.key||null,
       lane: opts.key || '_full',      // akcje edycyjne (pełny stan) trzymamy na jednym torze
       reconcile: opts.reconcile||null,
+      fail: opts.fail||null,
       attempts: 0,
     });
     pump();
@@ -348,6 +373,7 @@
         } else {
           toast(outcome.msg || 'Nie udało się zapisać — dosynchronizuję');
           needRefresh = true;                // optymistyczna zmiana mogła być błędna — skoryguje ją odświeżenie
+          if(job.fail) job.fail(outcome.msg);
           if(!isPending(job.key)) safeRender();
         }
       } catch(e){
@@ -393,6 +419,8 @@
      ========================================================= */
   function applyData(res){
     state.dogs=res.dogs; state.tasks=res.tasks; state.today=res.today; state.loaded=true;
+    // dodany pies jest już w katalogu z serwera — wiersz „dodaję…" znika dopiero teraz, bez mrugnięcia
+    state.adding = state.adding.filter(a => !a.done);
     const prevBiz = state.bizDate;
     state.bizDate = res.businessDate || res.today;
     state.slots = {};
@@ -452,9 +480,12 @@
 
   function refresh(){
     if(isSending() || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
+    const seq = writeSeq;
     google.script.run
       .withSuccessHandler(res=>{
         if(isSending() || queue.length) return;   // w międzyczasie ruszył zapis
+        // zapis ruszył i zdążył się skończyć: odczyt jest sprzed niego — pytamy jeszcze raz
+        if(seq !== writeSeq){ needRefresh = true; pump(); return; }
         applyData(res); safeRender();
       })
       .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
@@ -1050,11 +1081,12 @@
     let html = `<div class="tasksbox"><h3>Zadania</h3>`;
     if(!list.length) html += `<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
     html += list.map(t=>taskRow(t, true)).join('');
+    const day = formVal('newTaskDate'), from = state.bizDate || '';
     html += `<div class="taskform">
-        <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)">
+        <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)" value="${esc(formVal('newTask'))}">
         <div class="taskform-row">
           <label for="newTaskDate">od dnia</label>
-          <input type="date" id="newTaskDate" value="${esc(state.bizDate||'')}" min="${esc(state.bizDate||'')}">
+          <input type="date" id="newTaskDate" value="${esc(day && day >= from ? day : from)}" min="${esc(from)}">
           <button class="btn add-btn" data-act="taskAdd">Dodaj</button>
         </div>
       </div>
@@ -1220,26 +1252,90 @@
     state.dogs.forEach(dog=>{
       html += state.editId===dog.id ? renderEditForm(dog) : renderCatalogDog(dog);
     });
+    state.adding.forEach(a=>{ html += renderAddingDog(a); });
     return html + `</ul>` + renderAdminAddBox();
   }
 
+  /** Pies w drodze na serwer: na końcu katalogu, bez przycisków (nie ma jeszcze numeru), z kręciołkiem. */
+  function renderAddingDog(a){
+    const dm=DIF[a.dif]||DIF.easy;
+    return `<li class="dog adding" style="border-left-color:${dm.color}">
+      <div class="row"><span class="name">${esc(dogLabel(a))} <span class="saving" title="zapisuję…"></span></span>
+        <span class="flex"></span><span class="addnote">dodaję…</span></div></li>`;
+  }
+
+  /* ---------- szkice formularzy trybu edycji ----------
+     Wartości pól „Dodaj psa" i „Nowe zadanie" żyją w stanie (state.form), nie tylko w DOM:
+     przerysowanie katalogu (odpowiedź serwera, odświeżenie, gdy palec akurat nie jest w polu)
+     wymieniało formularz na pusty, a wybrany dzień zadania wracał po cichu na bieżący. */
+  const FORM_FIELDS = ['newName','newIdent','newBox','newDif','newTask','newTaskDate'];
+  const DOG_FORM = ['newName','newIdent','newBox','newDif'];
+  function formVal(id, def){ const v = state.form[id]; return v === undefined ? (def || '') : v; }
+
   function renderAdminAddBox(){
+    const dif = formVal('newDif', 'easy');
+    const opt = (v, label) => `<option value="${v}" ${dif===v?'selected':''}>${label}</option>`;
     return `<div class="adminbox">
       <h3>Dodaj psa</h3>
       <div class="adminrow">
-        <input type="text" id="newName" maxlength="40" placeholder="Imię (może być puste)">
-        <input type="text" id="newIdent" maxlength="20" placeholder="Nr identyfikacyjny">
+        <input type="text" id="newName" maxlength="40" placeholder="Imię (może być puste)" value="${esc(formVal('newName'))}">
+        <input type="text" id="newIdent" maxlength="20" placeholder="Nr identyfikacyjny" value="${esc(formVal('newIdent'))}">
       </div>
       <div class="adminrow" style="margin-top:7px">
-        <input type="text" id="newBox" maxlength="20" placeholder="Boks">
-        <select id="newDif">
-          <option value="easy">łatwy</option>
-          <option value="med">wymagający</option>
-          <option value="hard">b. wymagający</option>
-        </select>
+        <input type="text" id="newBox" maxlength="20" placeholder="Boks" value="${esc(formVal('newBox'))}">
+        <select id="newDif">${opt('easy','łatwy')}${opt('med','wymagający')}${opt('hard','b. wymagający')}</select>
         <button class="btn add-btn" data-act="add">Dodaj</button>
       </div>
     </div>`;
+  }
+
+  /**
+   * Token dodania psa. Jedno „Dodaj" = jeden token, także w powtórce po zaginionej odpowiedzi
+   * (addDog jest w RETRIABLE) — serwer pamięta ostatnie tokeny i psa drugi raz nie dokłada.
+   * Formularz oddany po nieudanym zapisie zachowuje token, dopóki nikt nie zmieni jego treści:
+   * te same dane = to samo dodanie (pies mógł powstać, a zaginęła tylko odpowiedź), inne = nowy pies.
+   * Zaczyna się literą — w JSON-ie na serwerze klucz z samych cyfr zmieniłby kolejność (przycinanie).
+   */
+  function dogSig(f){ return [f.name, f.ident, f.box, f.dif].join('\u0001'); }
+  function addDogToken(f){
+    const t = state.form.addToken;
+    if(t && t.sig === dogSig(f)) return t.token;
+    return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  /**
+   * „Dodaj" psa (zgłoszenie z panelu: kilka stuknięć w „Dodaj", gdy dane wciąż stały w polach,
+   * dawało kilka takich samych psów). Formularz pustoszeje od razu, a pies staje na końcu
+   * katalogu jako „dodaję…" — drugie stuknięcie nie ma już czego dodać. Gdy zapis ostatecznie
+   * się nie uda, dane wracają do pustego formularza (z tym samym tokenem).
+   */
+  function doAddDog(){
+    const v = id => document.getElementById(id).value.trim();
+    const f = {name:v('newName'), ident:v('newIdent'), box:v('newBox'), dif:document.getElementById('newDif').value};
+    if(!f.name && !f.ident){
+      // kolejne stuknięcie zaraz po „Dodaj": pies już jest w drodze („dodaję…") — nic więcej nie robimy.
+      // Fokus w polu otworzyłby klawiaturę i wstrzymał przerysowanie (busyEditing) — dodany pies by nie wskoczył
+      if(state.adding.some(x => !x.done)) return;
+      toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return;
+    }
+    const a = Object.assign({token: addDogToken(f), done:false}, f);
+    DOG_FORM.concat('addToken').forEach(id => { delete state.form[id]; });
+    state.adding.push(a);
+    render('self');
+    enqueue('addDog', [f, state.pin, a.token], {
+      reconcile: res => {
+        a.done = true;                              // wiersz „dodaję…" zniknie razem z pierwszym stanem z psem
+        applyFull_(res);
+        toast('Dodano: ' + dogLabel(a), 'ok');
+      },
+      fail: () => {
+        state.adding = state.adding.filter(x => x !== a);
+        const el = document.activeElement;
+        if(DOG_FORM.some(id => state.form[id]) || (el && DOG_FORM.indexOf(el.id) >= 0)) return;   // ktoś wpisuje już innego psa
+        Object.assign(state.form, {newName:a.name, newIdent:a.ident, newBox:a.box, newDif:a.dif,
+                                   addToken:{token:a.token, sig:dogSig(a)}});
+      },
+    });
   }
 
   /** Podsumowanie nad listą (liczone w spacerach) — osobno, bo podmieniamy je też przy patchDog(). */
@@ -1296,7 +1392,7 @@
   }
 
   function renderDiagView(){
-    const d = state.diag;
+    const d = state.diag && !state.diag.failed ? state.diag : null;
     const settings = state.admin ? `
       <div class="panelbox">
         <h3>Ustawienia</h3>
@@ -1319,9 +1415,9 @@
           <button class="btn ghost" data-act="allWalks" data-walks="1">Wszystkie po 1 spacerze</button>
         </div>
         <div class="hint">Do przestawienia całej listy naraz, gdy upał pozwala na drugi spacer.
-        Pies, który dziś już był wyprowadzony, przechodzi wtedy na „po pierwszym z dwóch"
-        i wraca na listę wolnych; przy powrocie do jednego spaceru dzieje się odwrotnie.
-        Psów, które ktoś właśnie prowadzi, to nie dotyka.</div>
+        Przy dwóch spacerach każdy pies dostaje pole 2/2 — także ten, który dziś już wyszedł (to był
+        jego spacer 1/2). Przy powrocie do jednego znikają wolne pola 2/2, a zarezerwowane i odbyte
+        zostają na liście — cudzej rezerwacji nie kasujemy.</div>
       </div>
       <div class="panelbox">
         <h3>E-mail z listą spacerów</h3>
@@ -1351,7 +1447,12 @@
       <div class="diagrow"><b>strefa</b><span>${esc(d.timezone)}</span></div>
       <div class="diagrow"><b>psy / zadania</b><span>${d.dogCount} / ${d.taskCount}</span></div>
       <div class="diagrow"><b>wpisy historii</b><span>${d.histCount}</span></div>`
-      : `<div class="diagrow"><span>${state.admin ? 'Pobieram…' : 'Dane serwera tylko w trybie edycji.'}</span></div>`;
+      : !state.admin ? `<div class="diagrow"><span>Dane serwera tylko w trybie edycji.</span></div>`
+      : state.diag && state.diag.failed ? `<div class="diagrow"><span>Nie udało się pobrać (${esc(state.diag.failed)}).</span></div>`
+      : `<div class="diagrow"><span>Pobieram…</span></div>`;
+    // pod tabelą, nie w niej — w wierszu diagnostyki przycisk wyglądał jak zwykły tekst
+    const retry = state.admin && state.diag && state.diag.failed
+      ? `<div class="adminrow"><button class="btn add-btn" data-act="diagRetry">Spróbuj jeszcze raz</button></div>` : '';
 
     const rows = callLog.map(c=>
       `<div class="diagrow"><span>${c.t}</span><b>${esc(c.fn)}</b><span>${c.ms} ms</span><span>${esc(c.outcome)}</span></div>`
@@ -1360,7 +1461,7 @@
     return `${settings}
       <div class="panelbox">
         <h3>Stan serwera</h3>
-        <div class="diag">${serverRows}</div>
+        <div class="diag">${serverRows}</div>${retry}
       </div>
       <div class="panelbox">
         <h3>Ostatnie wywołania</h3>
@@ -1371,11 +1472,15 @@
       </div>`;
   }
 
+  /** Stan serwera do panelu. Nieudane pobranie mówi o sobie — wcześniej „Pobieram…" wisiało do końca. */
   function fetchDiag(){
     if(!state.admin) return;
     google.script.run
       .withSuccessHandler(res=>{ state.diag = res; if(state.view==='diag') safeRender(); })
-      .withFailureHandler(()=>{})
+      .withFailureHandler(err=>{
+        state.diag = {failed: (err && err.message ? err.message.replace(/^Error:\s*/,'') : '') || 'brak połączenia'};
+        if(state.view==='diag') safeRender();
+      })
       .getDiagnostics(state.pin);
   }
 
@@ -2067,14 +2172,20 @@
   });
   document.getElementById('pinOk').addEventListener('click',tryPin);
   document.getElementById('pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') tryPin(); });
+  /** Sprawdzenie PIN-u. Brak odpowiedzi to nie cisza — bez tego „OK" przy słabym zasięgu nic nie robiło. */
   function tryPin(){
     const pin=document.getElementById('pinInput').value.trim();
     google.script.run.withSuccessHandler(ok=>{
       if(ok){ state.admin=true; state.pin=pin;
+        // schowane pole PIN-u oddaje fokus: inaczej busyEditing() uznaje, że ktoś pisze, i panel
+        // nie przerysowuje się po odpowiedzi serwera (nie każda przeglądarka sama zdejmuje fokus ze schowanego pola)
+        document.getElementById('pinInput').blur();
         document.getElementById('pinrow').classList.add('hidden');
         document.getElementById('pinErr').classList.add('hidden'); render('nav');
         if(state.view==='diag') fetchDiag();
       } else { document.getElementById('pinErr').classList.remove('hidden'); }
+    }).withFailureHandler(()=>{
+      toast('Nie udało się sprawdzić PIN-u — brak połączenia, spróbuj jeszcze raz');
     }).checkPin(pin);
   }
 
@@ -2115,6 +2226,12 @@
       fetchDiag();                                  // wyzwalacz mógł się przełożyć
     }});
   });
+
+  // formularze trybu edycji („Dodaj psa", „Nowe zadanie") — szkic w stanie, patrz formVal;
+  // 'change' dla listy trudności i daty (starsze przeglądarki nie dają przy nich 'input')
+  const keepForm = e => { if(FORM_FIELDS.indexOf(e.target.id) >= 0) state.form[e.target.id] = e.target.value; };
+  viewEl.addEventListener('input', keepForm);
+  viewEl.addEventListener('change', keepForm);
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -2191,14 +2308,7 @@
       render('self');
       enqueue('removeDog',[id,state.pin],{reconcile:applyFull_});
     }
-    if(act==='add'){
-      const name=document.getElementById('newName').value.trim();
-      const ident=document.getElementById('newIdent').value.trim();
-      const box=document.getElementById('newBox').value.trim();
-      const dif=document.getElementById('newDif').value;
-      if(!name && !ident){ toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return; }
-      enqueue('addDog',[{name,ident,box,dif},state.pin],{reconcile:applyFull_});
-    }
+    if(act==='add') doAddDog();
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }
@@ -2206,11 +2316,13 @@
       const date=(dateEl && dateEl.value) || state.bizDate;
       if(state.bizDate && date < state.bizDate){ toast('Zadanie nie może być na dzień, który już minął'); return; }
       el.value='';
+      delete state.form.newTask; delete state.form.newTaskDate;
       enqueue('addTask',[text,state.pin,date],{reconcile:res=>{
         applyFull_(res);
         if(isFuture(date)) toast('Zaplanowane ' + taskPlanned({date}));
       }});
     }
+    if(act==='diagRetry'){ state.diag = null; render('nav'); fetchDiag(); }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
       const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };

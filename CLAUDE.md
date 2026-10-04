@@ -44,6 +44,9 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
   Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
+  `identyfikator` (numer psa) to **tekst `@`** — od 1.2 ustawiany przy każdym dodaniu i edycji
+  PRZED wartością (`setIdent_`, dlatego numer nie jedzie w `appendRow`) i przez `migrate()` na całej
+  kolumnie; „1/26" arkusz potrafi zamienić na datę, a numer idzie do Historii i władz schroniska (B55).
 - **Spacery** — stan KONKRETNEGO SPACERU psa danego dnia: `data | pies_id | spacer | status | kto | godzina | grupa`.
   Wiersz na trójkę (dzień, pies, numer spaceru), brak wiersza = spacer wolny i bez grupy.
   Pies na dwa spacery ma spacery 1 i 2 — każdy z własną rezerwacją, stanem i grupą. Tylko dni
@@ -97,6 +100,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   **`setGroup` niesie `walks` nadal** (`legacyWalks_`): applyGroups tamtej karty czyta tylko je
   i bez niego zerował u siebie grupy dnia do najbliższego odświeżenia (review PR #2, B47).
 - Akcje edycyjne wymagają PIN-u przez `requirePin_(pin)`.
+- **`addDog(data, pin, token)`** — token = jedno stuknięcie „Dodaj" (1.2): ten sam token drugi raz
+  niczego nie dodaje, tylko oddaje stan (`dogAdds_` / `noteDogAdd_`, ostatnie `DOG_ADDS_KEEP`,
+  tokeny od litery — klucz z samych cyfr przestawiłby kolejność w JSON-ie). Brak tokenu = karta
+  sprzed 1.2, dodanie jak dawniej. Błąd właściwości nie blokuje dodania psa (bug nr 15, B54).
 - **PIN nie istnieje w kodzie.** Siedzi we właściwości skryptu `pin` (`pin_()` w `Settings.gs`),
   bez wartości domyślnej: nieustawiony = tryb edycji zamknięty. Nigdy nie wpisuj PIN-u
   do pliku „na chwilę" — pierwszy commit czyni go publicznym na zawsze, a `git rm`
@@ -290,6 +297,16 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
 - **`pendingKeys`** liczy zapisy w drodze per byt. Odpowiedź serwera stosujemy tylko
   wtedy, gdy dotyczy **ostatniej** operacji dla tego bytu — inaczej szybkie sekwencje
   (rezerwuj → zwolnij) cofałyby się same.
+- **`writeSeq`** liczy zapisy wpuszczone do kolejki (`enqueue`). `refresh()` zapamiętuje go przy
+  wysłaniu i odpowiedź sprzed zapisu pomija (pyta od nowa) — bug nr 14. `enqueue(fn, args,
+  {key, reconcile, fail})`: `fail(msg)` woła się, gdy zapis ostatecznie się nie udał (po powtórce).
+- **Szkice formularzy trybu edycji** — „Dodaj psa" i „Nowe zadanie" (z dniem) trzymają wartości
+  w `state.form` (`formVal`, `FORM_FIELDS`, zapis na `input`/`change`), jak mail w `mailDraft`:
+  przerysowanie katalogu, gdy palec akurat nie jest w polu, wymieniało formularz na pusty.
+  Pies w drodze na serwer stoi na końcu katalogu jako „dodaję…" (`state.adding`, bez przycisków —
+  nie ma jeszcze numeru) do pierwszego pełnego stanu po odpowiedzi (`applyData` zdejmuje `done`),
+  więc nie mruga, gdy `applyFull_` odkłada stan. Kolejne stuknięcie w pusty formularz, gdy pies
+  jest w drodze, nic nie robi — fokus w polu wstrzymałby przerysowanie (busyEditing).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -371,7 +388,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1146 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1210 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -385,9 +402,15 @@ psa na 25.09). Gdy błąd może siedzieć w stanie, wymuś przerysowanie ze stan
 grupy przed odświeżeniem nie chroni zaznaczeń (te trzyma stan), tylko dnia przed przeskokiem
 po resecie — pierwsza wersja S76 sprawdzała zaznaczenia i przechodziła bez tej ochrony.
 
-Zestawy `scenarios12.js`–`scenarios14.js` są **asynchroniczne**: przytrzymanie kafelka mierzy
+Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymanie kafelka mierzy
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
-ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`).
+ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
+`scenarios15` czeka na zegar komunikatu (~3 s).
+
+**`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
+w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
+S8 przez lata miał sprawdzać spóźniony `getData` po rezerwacji, a odpowiadał w odwrotnej kolejności
+i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przegląd 1.2, S113).
 
 - `tests/harness.js` — ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, klika jak
   człowiek, pozwala sterować tym **kiedy i czy w ogóle** odpowie „serwer"
@@ -445,7 +468,10 @@ do ręcznego skopiowania — 1.1.2), S110 ustawienia maila w panelu (odbiorca, t
 fokus, zapis jednym przyciskiem z PIN-em — 1.2), S110b ustawienia sprawdzane w przeglądarce przed
 wysłaniem (adres, temat, `[LISTA]`, limity równe serwerowym), S110c niezapisane ustawienia oznaczone
 i do przywrócenia, S111 „Wyślij e-mail" jako link mailto: (odbiorcy, temat z datą, treść CRLF,
-kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2),
+kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2), S112–S112e „Dodaj" psa (kilka stuknięć = jeden
+pies, „dodaję…", powtórka z tym samym tokenem, dane wracają po nieudanym zapisie, szkice formularzy
+trybu edycji), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
+za komunikatem (przegląd 1.2),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -465,6 +491,8 @@ B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednozn
 B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.1.2,
 B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powrót do domyślnej),
 B53 ustawienia maila `setMailSettings` (adresy, temat, treść; nic połowicznie; stare `setMailTemplate`),
+B54 `addDog` z tokenem (powtórka nie dokłada psa, sufit pamięci, świeży odczyt, awaria właściwości),
+B55 numer psa w Psy jako tekst (format przed wartością, `migrate()`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -519,6 +547,18 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
     listy jest zapowiadany dymkiem „Aktualizuję…" (`decideOrder`), a stuknięcie w zmienioną
     pod palcem listę albo kafelek nie liczy się (`tapRefused`, S93, S96).
     **Nie dokładaj ruchu listy bez zapowiedzi ani nowej akcji spoza `GUARDED` bez przemyślenia.**
+14. **Spóźniony odczyt cofał świeży zapis** (przegląd 1.2). `refresh()` sprawdzał tylko, czy zapis
+    jest W DRODZE w chwili odpowiedzi — a odświeżenie co 15 s wysłane tuż przed stuknięciem wracało
+    już po zapisie, z odczytem sprzed niego: rezerwacja „odskakiwała" do wolnej do następnego
+    odświeżenia, usunięty pies wracał. Teraz `writeSeq` (licznik zapisów wpuszczonych do kolejki):
+    odczyt sprzed zapisu jest pomijany i idzie nowy (S113, S8). **Każdy nowy odczyt pełnego stanu
+    poza `refresh()` musi tak samo pilnować `writeSeq`.**
+15. **Kilka stuknięć w „Dodaj" = kilka takich samych psów** (zgłoszenie z panelu). `addDog` nie był
+    idempotentny, a dane stały w formularzu do odpowiedzi serwera. Teraz formularz pustoszeje od
+    razu, pies stoi w katalogu jako „dodaję…" (`state.adding`), a każde „Dodaj" niesie token
+    (`addDogToken`): serwer pamięta ostatnie `DOG_ADDS_KEEP` (właściwość `dogAdds`, świeży odczyt pod
+    blokadą) i powtórki psa nie dokłada — dzięki temu `addDog` jest w `RETRIABLE` (S112, B54).
+    Nieudany zapis oddaje dane do pustego formularza z tym samym tokenem, dopóki treść się nie zmieni.
 
 ## Pułapki Apps Script
 

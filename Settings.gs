@@ -17,6 +17,7 @@ const PROP_VOL_PREFIX = 'vol:';                // 'vol:2026-09-27' -> kolory wol
 const PROP_MAIL_TEMPLATE = 'mailTemplate';     // treść maila z listą spacerów (panel); brak = DEFAULT_MAIL_TEMPLATE
 const PROP_MAIL_TO = 'mailTo';                 // odbiorcy tego maila, „a@b.pl, c@d.pl"; brak = wpisuje się w poczcie
 const PROP_MAIL_SUBJECT = 'mailSubject';       // temat tego maila; brak = DEFAULT_MAIL_SUBJECT
+const PROP_DOG_ADDS = 'dogAdds';               // ostatnie dodania psów z panelu {token: id} — patrz dogAdds_ w Dogs.gs
 
 /**
  * Wszystkie właściwości skryptu — czytane RAZ na wykonanie. Każde getProperty to

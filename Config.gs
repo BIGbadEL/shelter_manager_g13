@@ -104,6 +104,13 @@ const VOLUNTEER_COLORS = 10;
 const VOLUNTEER_MAX = 60;
 const VOLUNTEER_DAYS = 31;
 
+/**
+ * Ile ostatnich dodań psa pamięta serwer (token -> id, właściwość `dogAdds`). Powtórka tego
+ * samego „Dodaj" przychodzi w ciągu sekund, więc dwadzieścia z dużym zapasem pokrywa nawet
+ * dodawanie całej grupy psów pod rząd.
+ */
+const DOG_ADDS_KEEP = 20;
+
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
 const TASK_HEADERS = ['id', 'tresc', 'data', 'status'];

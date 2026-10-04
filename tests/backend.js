@@ -1540,5 +1540,76 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
     && env.api.getData().mailTo === 'a@b.pl' && env.api.getData().mailSubject === 'T [DATA]');
 })();
 
+/* ---------- B54: „Dodaj" z tokenem — powtórka nie dokłada psa ---------- */
+(()=>{
+  console.log('B54: dodanie psa z tokenem — ten sam token dodaje psa raz (kilka stuknięć, powtórka po zaginionej odpowiedzi)');
+  // zgłoszenie z panelu (1.2): kilka stuknięć w „Dodaj" dawało kilka takich samych psów
+  const env = build([{id:1, name:'Borys'}]);
+  const count = n => env.api.readDogCatalog_().filter(d => d.name === n).length;
+  const T1 = 'dabc12345xyz';
+  const r1 = env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, T1);
+  const r2 = env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, T1);
+  check('ten sam token dwa razy: jeden Rex', count('Rex') === 1, JSON.stringify(env.api.readDogCatalog_().map(d => d.name)));
+  check('powtórka oddaje ten sam stan co pierwsze wywołanie', JSON.stringify(r1.dogs) === JSON.stringify(r2.dogs) && r2.dogs.some(d => d.name === 'Rex'));
+  env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, 'dother000001');
+  check('inny token = drugi pies (dwa psy o tym samym imieniu to osobna decyzja)', count('Rex') === 2);
+  env.api.addDog({name:'Kora'}, TEST_PIN); env.api.addDog({name:'Kora'}, TEST_PIN);
+  check('bez tokenu (karty sprzed 1.2) — jak dawniej', count('Kora') === 2);
+  env.api.addDog({name:'Fado'}, TEST_PIN, '12345678'); env.api.addDog({name:'Fado'}, TEST_PIN, '12345678');
+  check('token nie od litery pomijany (klucz z cyfr przestawiłby kolejność w JSON-ie i przycinanie)', count('Fado') === 2);
+  check('bez PIN-u token nic nie daje', throws(() => env.api.addDog({name:'Zły'}, TEST_PIN + 'x', 'dzzzzzzzz01')) && count('Zły') === 0);
+
+  for(let i = 0; i < 25; i++) env.api.addDog({name:'P' + i}, TEST_PIN, 'dseq' + String(i).padStart(6, '0'));
+  const adds = JSON.parse(env.props.dogAdds);
+  check('pamięta najwyżej 20 ostatnich (właściwości mają limit)', Object.keys(adds).length === 20
+    && adds.dseq000024 && !adds.dseq000004 && !adds[T1], Object.keys(adds).length + ' ' + Object.keys(adds)[0]);
+
+  // świeży odczyt pod blokadą: inne wykonanie zapisało token już po tym, jak to wczytało właściwości
+  const n0 = env.api.readDogCatalog_().length;
+  env.newExecution();
+  env.ctx.__api.getData();                                    // pamięć wykonania wczytana
+  env.props.dogAdds = JSON.stringify(Object.assign(JSON.parse(env.props.dogAdds), {dlate0000001: 99}));
+  env.ctx.__api.addDog({name:'Późny'}, TEST_PIN, 'dlate0000001');
+  check('token zapisany przez inne wykonanie też chroni (odczyt świeży, nie z pamięci)', env.api.readDogCatalog_().length === n0);
+
+  env.failProps(k => k === 'dogAdds');
+  check('właściwości padły: pies i tak się dodaje', !throws(() => env.api.addDog({name:'Awaria'}, TEST_PIN, 'dfail0000001')) && count('Awaria') === 1);
+  env.failProps(null);
+})();
+
+/* ---------- B55: numer psa w zakładce Psy jako tekst ---------- */
+(()=>{
+  console.log('B55: numer psa w Psy jako tekst („1/26" to nie data) — format przed wartością, dodanie, edycja, setup/migrate');
+  // numer idzie do Historii i maila dla władz schroniska; w Historii jest '@' od 1.1.1, w Psy nie było
+  const env = build([{id:1, name:'Borys'}]);
+  const P = env.sheets['Psy'];
+  const ops = [];                                             // kolejność: format, potem wartość w kolumnie numeru
+  const getRange = P.getRange.bind(P);
+  P.getRange = (r, c, nr, nc) => {
+    const g = getRange(r, c, nr, nc), w = nc || 1;
+    const hits = c <= 3 && 3 < c + w;
+    const sv = g.setValues, s1 = g.setValue, sf = g.setNumberFormat;
+    g.setValues = v => { if(hits) ops.push('wartość ' + r); return sv.call(g, v); };
+    g.setValue = v => { if(hits) ops.push('wartość ' + r); return s1.call(g, v); };
+    g.setNumberFormat = f => { if(hits) ops.push('format ' + r); sf.call(g, f); return g; };
+    return g;
+  };
+  let appended = null;
+  const appendRow = P.appendRow.bind(P);
+  P.appendRow = r => { appended = r.slice(); appendRow(r); };
+
+  env.api.addDog({name:'Rex', ident:'1/26'}, TEST_PIN, 'dident000001');
+  const row = P._data.findIndex(r => r[1] === 'Rex') + 1;
+  check('dodanie: numer nie jedzie w appendRow (arkusz sparsowałby go przed formatem)', !!appended && appended[2] === '', JSON.stringify(appended));
+  check('...format tekstowy, potem numer', JSON.stringify(ops) === JSON.stringify(['format ' + row, 'wartość ' + row]) && P._data[row - 1][2] === '1/26',
+    JSON.stringify(ops));
+  ops.length = 0;
+  env.api.updateDog(1, {name:'Borys', ident:'2/26'}, TEST_PIN);
+  check('edycja: format, potem wartości', JSON.stringify(ops) === JSON.stringify(['format 2', 'wartość 2']) && P._data[1][2] === '2/26', JSON.stringify(ops));
+  P._formats = {};
+  env.api.migrate();
+  check('migrate()/setup(): cała kolumna numeru jako tekst', P._formats[3] === '@', JSON.stringify(P._formats));
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

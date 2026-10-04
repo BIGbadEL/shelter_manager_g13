@@ -92,11 +92,12 @@ function migrate() {
 /**
  * Format tekstowy ('@') na kolumnach dat i godzin — arkusz przestaje
  * zamieniać "17:21" na datę z 1899 r., a "2026-07-07" na obiekt daty.
+ * Także numer psa (Psy, Historia): „1/26" arkusz potrafi wziąć za datę.
  */
 function applyTextFormats_() {
   const s = ss_();
   const textCols = [
-    [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],
+    [SHEETS.DOGS,  [DOG.IDENT, DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],   // numer psa: „1/26" to nie data
     [SHEETS.WALKS, [WALK.DATE, WALK.TIME]],
     [SHEETS.HIST,  [HIST.DATE, HIST.TIME, HIST.IDENT]],
     [SHEETS.TASKS, [TASK.DATE]],

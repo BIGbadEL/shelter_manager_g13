@@ -18,7 +18,7 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios14`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios15`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -518,6 +518,27 @@ Temat: panel prowadzącej.
   kilka po przecinku), **Temat** (z `[DATA]`), **Treść** (z `[DATA]` i `[LISTA]`) i jeden przycisk
   „Zapisz". Zły adres, za długi temat albo treść bez `[LISTA]` — komunikat od razu, nic się nie
   zapisuje połowicznie. Niezapisane zmiany w którymkolwiek polu są oznaczone.
+
+Przegląd kodu przed dalszą pracą nad panelem — poprawki:
+
+- **Kilka stuknięć w „Dodaj" dawało kilka takich samych psów** (zgłoszenie z panelu). Dane stały
+  w polach do odpowiedzi serwera, więc nic nie mówiło, że coś się dzieje. Teraz formularz pustoszeje
+  od razu, a pies staje na końcu katalogu jako „dodaję…"; kolejne stuknięcie nic nie robi. Każde
+  „Dodaj" niesie też token: przy zaginionej odpowiedzi aplikacja sama ponawia zapis, a serwer
+  z tym samym tokenem psa drugi raz nie doda. Gdy zapis się nie uda, wpisane dane wracają do formularza.
+- **Rezerwacja potrafiła na chwilę „odskoczyć" do wolnej.** Odświeżenie co 15 s, które wyruszyło tuż
+  przed stuknięciem, wracało z odczytem sprzed zapisu i cofało go na ekranie — do następnego
+  odświeżenia. Teraz taki odczyt jest pomijany i aplikacja pyta jeszcze raz. To samo dotyczyło
+  trybu edycji (usunięty pies wracał na chwilę).
+- Formularze trybu edycji („Dodaj psa", „Nowe zadanie" z dniem) nie czyszczą się już przy
+  przerysowaniu — wybrany dzień zadania potrafił wrócić po cichu na dzisiejszy.
+- Sprawdzanie PIN-u bez połączenia nie kończy się ciszą, tylko komunikatem; panel, który nie pobrał
+  stanu serwera, mówi o tym i ma „Spróbuj jeszcze raz" (wcześniej wisiało „Pobieram…").
+- Numer psa w zakładce Psy zapisuje się jako tekst (jak w Historii od 1.1.1) — „1/26" arkusz
+  potrafi zamienić na datę, a ten numer idzie do władz schroniska. Dotyczy psów dodanych
+  i poprawionych od tej wersji; `migrate()` z edytora ustawia format na całej kolumnie (opcjonalnie).
+- Opis „Spacery dla wszystkich psów" w panelu mówił jeszcze o modelu sprzed pól 1/2, 2/2.
+- Drugi komunikat zaraz po pierwszym znikał po ułamku sekundy.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 
