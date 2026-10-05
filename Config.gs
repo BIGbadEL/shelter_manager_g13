@@ -155,6 +155,34 @@ const DEFAULT_MAIL_SUBJECT = 'Lista spacerowa G13 z [DATA]';
  */
 const DEFAULT_MAIL_TEMPLATE = 'Dzień dobry,\nPrzesyłam listę spacerową z [DATA] z grupy G13.\n[LISTA]\nPozdrawiam,\n';
 
+/**
+ * Ankieta tygodniowa na WhatsAppie (1.2, Poll.gs) — „Grafik" w grupie wolontariuszy: raz w tygodniu,
+ * w ustawionym dniu i godzinie, z wybranymi odpowiedziami. Domyślne ustawienia odwzorowują ankiety,
+ * które prowadzący robił ręcznie (zrzuty z 27.09 i 5.10.2026): pytanie z tygodniem, dni tygodnia
+ * i „Nie mogę", kilka odpowiedzi naraz. Wysyłanie wyłączone, dopóki prowadząca go nie włączy.
+ * [TYDZIEŃ] — tydzień od poniedziałku do niedzieli, „28.09-04.10" albo „05-11.10" (pollWeekLabel_).
+ * day: 0 = niedziela … 6 = sobota (jak getDay), hour: 0–23 (ankieta idzie między hour:00 a hour:30).
+ */
+const DEFAULT_POLL = {
+  question: 'Grafik [TYDZIEŃ]',
+  options: ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela', 'Nie mogę'],
+  multi: true, day: 0, hour: 12, enabled: false, chatId: '', chatName: '',
+};
+
+/**
+ * Limity ankiety. OPTION i OPTIONS_MAX — tyle przyjmuje bramka (Green API sendPoll: 2–12 odpowiedzi,
+ * każda do 100 znaków, pytanie do 255). QUESTION z zapasem na rozwinięte [TYDZIEŃ]. Te same liczby
+ * w Script.html — pilnuje tego test.
+ */
+const POLL_LIMITS = { QUESTION: 200, OPTION: 100, OPTIONS_MIN: 2, OPTIONS_MAX: 12 };
+
+/**
+ * Ile godzin po ustawionej godzinie ankieta tygodnia jeszcze idzie sama (wyzwalacz bywa spóźniony).
+ * Później — już nie: ankieta w środę na „ten" tydzień nikomu się nie przyda, a sendWeeklyPoll jest
+ * publiczne (wyzwalacz musi wołać funkcję bez „_") — poza tym oknem nikt nie wyśle nią niczego.
+ */
+const POLL_WINDOW_H = 3;
+
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
 

@@ -41,6 +41,9 @@
     mailFallback:null,     // {date, text} — schowek nie zadziałał: mail do ręcznego skopiowania
     form:{},               // szkice formularzy trybu edycji („Dodaj psa", „Nowe zadanie"): id pola -> wartość (formVal)
     adding:[],             // psy w drodze na serwer: [{token, name, ident, box, dif, done}] — w katalogu jako „dodaję…"
+    pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
+    pollChats:null,        // grupy konta bota z bramki („Pobierz grupy"): [{id, name}]; null = jeszcze nie pobrane
+    pollChatsLoading:false,
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -281,7 +284,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -1489,7 +1492,7 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>` : '';
+      </div>${d && d.poll ? renderPollBox(d.poll) : ''}` : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -1651,6 +1654,143 @@
     const clip = navigator.clipboard;
     if(clip && clip.writeText) clip.writeText(text).then(() => done(true), () => done(false));
     else done(false);
+  }
+
+  /* ---------- ankieta tygodniowa na WhatsAppie (Poll.gs) ----------
+     Raz w tygodniu w ustawionym dniu i godzinie bot wysyła do grupy (np. „Grafik" w społeczności)
+     ankietę „Grafik [TYDZIEŃ]" z dniami tygodnia. Ustawienia w panelu, jak mail: szkic w stanie
+     (state.pollDraft — panel przerysowuje się po każdym wywołaniu serwera), „Niezapisane zmiany",
+     te same reguły co serwer przed wysłaniem (pollProblem). Token bramki nigdy tu nie dociera. */
+  const POLL_Q_MAX = 200;                           // tyle, ile POLL_LIMITS.QUESTION w Config.gs (test pilnuje)
+  const POLL_OPT_MAX = 100;                         // POLL_LIMITS.OPTION
+  const POLL_OPTS_MIN = 2;                          // POLL_LIMITS.OPTIONS_MIN
+  const POLL_OPTS_MAX = 12;                         // POLL_LIMITS.OPTIONS_MAX
+  const POLL_DAYS = ['niedziela','poniedziałek','wtorek','środa','czwartek','piątek','sobota'];
+  const POLL_FIELDS = ['pollChat','pollDay','pollHour','pollQuestion','pollOptions','pollMulti','pollEnabled'];
+  function hh(h){ return String(h).padStart(2,'0'); }
+
+  /** Zapisane ustawienia w kształcie formularza (odpowiedzi jako linijki tekstu). */
+  function pollSaved(){
+    const s = (state.diag && state.diag.poll && state.diag.poll.settings) || {};
+    return {chatId: s.chatId || '', chatName: s.chatName || '', day: Number(s.day) || 0, hour: Number(s.hour) || 0,
+            question: s.question || '', options: (s.options || []).join('\n'), multi: !!s.multi, enabled: !!s.enabled};
+  }
+  function pollForm(){ return state.pollDraft || pollSaved(); }
+  /** Odpowiedzi z pola: linijki bez pustych i bez spacji na brzegach — tak, jak przytnie je serwer. */
+  function pollOptionList(text){ return String(text || '').split('\n').map(x => x.trim()).filter(Boolean); }
+  /** Formularz w kształcie dla setPollSettings. */
+  function pollPayload(f){
+    return {chatId: f.chatId, chatName: f.chatName, day: Number(f.day), hour: Number(f.hour),
+            question: String(f.question || '').trim(), options: pollOptionList(f.options), multi: !!f.multi, enabled: !!f.enabled};
+  }
+  function pollDirty(){ return !!state.pollDraft && JSON.stringify(pollPayload(state.pollDraft)) !== JSON.stringify(pollPayload(pollSaved())); }
+  /** Te same reguły co pollValid_ / setPollSettings na serwerze — komunikat od razu. '' = w porządku. */
+  function pollProblem(f, configured){
+    const q = String(f.question || '').replace(/[\r\n]+/g, ' ').trim();
+    if(!q) return 'Wpisz pytanie ankiety';
+    if(q.length > POLL_Q_MAX) return 'Pytanie jest za długie — najwyżej ' + POLL_Q_MAX + ' znaków';
+    const opts = pollOptionList(f.options), seen = {};
+    for(const o of opts){
+      if(o.length > POLL_OPT_MAX) return 'Odpowiedź „' + o.slice(0, 20) + '…" jest za długa — najwyżej ' + POLL_OPT_MAX + ' znaków';
+      if(seen[o.toLowerCase()]) return 'Odpowiedź „' + o + '" jest dwa razy';
+      seen[o.toLowerCase()] = true;
+    }
+    if(opts.length < POLL_OPTS_MIN) return 'Ankieta potrzebuje co najmniej ' + POLL_OPTS_MIN + ' odpowiedzi';
+    if(opts.length > POLL_OPTS_MAX) return 'Najwyżej ' + POLL_OPTS_MAX + ' odpowiedzi — tyle przyjmuje WhatsApp';
+    if(f.enabled && !f.chatId) return 'Wybierz grupę, zanim włączysz wysyłanie';
+    if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis wyżej)';
+    return '';
+  }
+  /** Pola panelu -> szkic. Nazwa grupy z wybranej pozycji listy (serwer zapisuje ją do opisu w panelu). */
+  function readPollForm(){
+    const el = id => viewEl.querySelector('#' + id);
+    const chat = el('pollChat'), opt = chat && chat.selectedIndex >= 0 ? chat.options[chat.selectedIndex] : null;
+    return {chatId: chat ? chat.value : '', chatName: opt && chat.value ? opt.textContent : '',
+            day: Number(el('pollDay') ? el('pollDay').value : 0), hour: Number(el('pollHour') ? el('pollHour').value : 0),
+            question: el('pollQuestion') ? el('pollQuestion').value : '', options: el('pollOptions') ? el('pollOptions').value : '',
+            multi: !!(el('pollMulti') && el('pollMulti').checked), enabled: !!(el('pollEnabled') && el('pollEnabled').checked)};
+  }
+  /** Napis „Niezapisane zmiany" i podgląd pytania — w trakcie pisania, bez przerysowania pod palcami. */
+  function showPollDirty(){
+    const d = pollDirty(), p = state.diag && state.diag.poll;
+    viewEl.querySelectorAll('.polldirty, [data-act="pollReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    const pv = viewEl.querySelector('[data-poll-preview]');
+    if(pv && p) pv.textContent = '„' + String(pollForm().question || '').split('[TYDZIEŃ]').join(p.next.label) + '"';
+    invalidateHtml();
+  }
+
+  function renderPollBox(p){
+    const f = pollForm(), s = p.settings;
+    const acct = !p.configured
+      ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona. W Apps Script: Ustawienia projektu → Właściwości skryptu
+         dodaj <b>greenApiUrl</b>, <b>greenApiInstance</b> i <b>greenApiToken</b> (apiUrl, idInstance i apiTokenInstance z konsoli Green API).</div>`
+      : `<div class="pollstate${p.state && p.state.code==='authorized' ? ' ok' : ''}">Konto WhatsApp bota: ${esc(p.state ? p.state.text : 'stan nieznany')}</div>`;
+    const chats = (state.pollChats || []).slice();
+    if(f.chatId && !chats.some(c => c.id === f.chatId)) chats.unshift({id: f.chatId, name: f.chatName || f.chatId});
+    const chatOpts = (f.chatId ? '' : `<option value="">— wybierz grupę —</option>`)
+      + chats.map(c => `<option value="${esc(c.id)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const dayOpts = [1,2,3,4,5,6,0].map(n => `<option value="${n}"${n===f.day ? ' selected' : ''}>${POLL_DAYS[n]}</option>`).join('');
+    const dirty = pollDirty();
+    const next = s.enabled && s.chatId
+      ? `Następna: ${POLL_DAYS[s.day]} ${esc(plDate(p.next.day).slice(0, 5))} między ${hh(s.hour)}:00 a ${hh(s.hour)}:30 —
+         „${esc(String(s.question).split('[TYDZIEŃ]').join(p.next.label))}" do grupy ${esc(s.chatName || s.chatId)}.`
+      : 'Wysyłanie co tydzień jest wyłączone.';
+    const last = !p.last ? ''
+      : p.last.ok ? `<div class="hint">Ostatnia: ${esc(p.last.at)} — wysłana „${esc(p.last.question)}"${p.last.chatName ? ' do grupy ' + esc(p.last.chatName) : ''}${p.last.manual ? ' (ręcznie)' : ''}.</div>`
+      : `<div class="hint pollerr">Ostatnia próba: ${esc(p.last.at)} — ankieta NIE WYSZŁA: ${esc(p.last.msg)}</div>`;
+    return `
+      <div class="panelbox">
+        <h3>Ankieta tygodniowa na WhatsAppie</h3>
+        ${acct}
+        <label class="mailfl" for="pollChat">Grupa (bot musi do niej należeć)</label>
+        <div class="pollchat"><select id="pollChat">${chatOpts}</select>
+          <button class="btn outline" data-act="pollChats"${state.pollChatsLoading ? ' disabled' : ''}>${state.pollChatsLoading ? 'Pobieram…' : 'Pobierz grupy'}</button></div>
+        <div class="pollwhen"><label for="pollDay">Co tydzień w</label><select id="pollDay">${dayOpts}</select>
+          <label for="pollHour">o</label><select id="pollHour">${hourOptions(f.hour)}</select></div>
+        <label class="mailfl" for="pollQuestion">Pytanie — [TYDZIEŃ] zamienia się na tydzień od poniedziałku</label>
+        <input id="pollQuestion" class="mailfield" type="text" maxlength="${POLL_Q_MAX}" value="${esc(f.question)}">
+        <div class="hint" style="margin:-4px 0 8px">Podgląd: <span data-poll-preview>„${esc(String(f.question || '').split('[TYDZIEŃ]').join(p.next.label))}"</span></div>
+        <label class="mailfl" for="pollOptions">Odpowiedzi — każda w osobnej linijce (${POLL_OPTS_MIN}–${POLL_OPTS_MAX})</label>
+        <textarea id="pollOptions" class="mailtpl" rows="8">${esc(f.options)}</textarea>
+        <div class="pollchecks">
+          <label class="check"><input type="checkbox" id="pollMulti"${f.multi ? ' checked' : ''}> można zaznaczyć kilka odpowiedzi</label>
+          <label class="check"><input type="checkbox" id="pollEnabled"${f.enabled ? ' checked' : ''}> wysyłaj co tydzień</label>
+        </div>
+        <div class="polldirty${dirty ? '' : ' hidden'}">Niezapisane zmiany — wysyłka idzie według zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="pollSave">Zapisz</button>
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="pollReset">Przywróć zapisane</button></div>
+        <div class="hint">${next}</div>
+        ${last}
+        <div class="adminrow" style="margin-top:8px"><button class="btn outline" data-act="pollSend">Wyślij teraz</button></div>
+        <div class="hint">„Wyślij teraz" — ankieta na najbliższy tydzień (${esc(p.now.label)}) do zapisanej grupy. Ta sama ankieta
+        nie pójdzie do tej grupy drugi raz, także z wyzwalacza. Ankieta wychodzi z konta bota przez nieoficjalną bramkę —
+        WhatsApp może to konto zablokować; przypięcie ankiety zostaje ręczne.</div>
+      </div>`;
+  }
+
+  /** „Pobierz grupy": lista grup konta bota z bramki (czytanie, nie zapis — bez kolejki). */
+  function loadPollChats(){
+    if(state.pollChatsLoading) return;
+    state.pollChatsLoading = true;
+    render('nav');
+    const done = () => { state.pollChatsLoading = false; if(state.view==='diag') safeRender('nav'); };
+    google.script.run
+      .withSuccessHandler(list => {
+        state.pollChats = Array.isArray(list) ? list : [];
+        if(!state.pollChats.length) toast('Konto bota nie należy do żadnej grupy — dodaj je do grupy „Grafik"');
+        done();
+      })
+      .withFailureHandler(err => {
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się pobrać grup');
+        done();
+      })
+      .getPollChats(state.pin);
+  }
+  /** Odpowiedź serwera z panelem ankiety — stan konta bota zostaje z ostatniego sprawdzenia, gdy go w niej nie ma. */
+  function applyPollPanel(panel){
+    if(!panel || !state.diag || state.diag.failed) return;
+    const prev = state.diag.poll;
+    state.diag.poll = Object.assign({}, panel, {state: panel.state || (prev && prev.state) || null});
   }
 
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
@@ -2286,6 +2426,11 @@
   viewEl.addEventListener('input', keepForm);
   viewEl.addEventListener('change', keepForm);
 
+  // ankieta tygodniowa — szkic w stanie, jak mail (panel przerysowuje się po każdym wywołaniu serwera)
+  const keepPoll = e => { if(POLL_FIELDS.indexOf(e.target.id) < 0) return; state.pollDraft = readPollForm(); showPollDirty(); };
+  viewEl.addEventListener('input', keepPoll);
+  viewEl.addEventListener('change', keepPoll);
+
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
     if(!['mailTo','mailSubject','mailTemplate'].includes(e.target.id)) return;
@@ -2377,6 +2522,34 @@
       }});
     }
     if(act==='diagRetry'){ state.diag = null; render('nav'); fetchDiag(); }
+    if(act==='pollChats') loadPollChats();
+    if(act==='pollReset'){ state.pollDraft = null; render('nav'); }
+    if(act==='pollSave'){
+      const p = state.diag && state.diag.poll;
+      if(!p) return;
+      const f = readPollForm();
+      // te same reguły co serwer, od razu — zapis jest w RETRIABLE (odrzucenie szłoby dwa przeloty, jak przy mailu)
+      const problem = pollProblem(f, p.configured);
+      if(problem){ toast(problem); return; }
+      enqueue('setPollSettings',[pollPayload(f),state.pin],{key:'poll',reconcile:res=>{
+        applyPollPanel(res);
+        state.pollDraft = null;
+        toast(res && res.settings && res.settings.enabled ? 'Ankieta zapisana — wysyłka co tydzień włączona' : 'Ankieta zapisana', 'ok');
+        safeRender();
+      }});
+    }
+    if(act==='pollSend'){
+      const p = state.diag && state.diag.poll;
+      if(!p) return;
+      if(pollDirty()){ toast('Najpierw zapisz zmiany — „Wyślij teraz" wysyła według zapisanych ustawień'); return; }
+      if(!p.settings.chatId){ toast('Najpierw wybierz i zapisz grupę'); return; }
+      if(!p.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
+      if(!confirm('Wysłać teraz ankietę „' + p.now.question + '" do grupy ' + (p.settings.chatName || p.settings.chatId) + '?')) return;
+      // nie w RETRIABLE: powtórka po zaginionej odpowiedzi trafiłaby w „już poszła" — serwer i tak nie wyśle drugi raz
+      enqueue('sendPollNow',[state.pin],{key:'poll',
+        reconcile:res=>{ applyPollPanel(res && res.panel); toast('Ankieta wysłana: „' + (res && res.sent ? res.sent.question : '') + '"', 'ok'); safeRender(); },
+        fail:()=>{ fetchDiag(); }});                  // panel pokaże, co się stało (ostatnia próba)
+    }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
       const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };

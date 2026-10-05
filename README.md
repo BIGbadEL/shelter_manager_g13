@@ -15,10 +15,11 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Dogs.gs` | katalog psów + dzień psa (zakładka Spacery) + akcje wolontariuszy i prowadzącej |
 | `Tasks.gs` | zadania na dziś: odczyt + akcje |
 | `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
+| `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios15`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios16`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -445,6 +446,43 @@ tak samo, w tym samym kolorze.
 
 Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, a przede wszystkim **czasy przelotu ostatnich 30 wywołań**. To jedyny sposób, żeby na telefonie rozstrzygnąć, czy wisi Apps Script, czy przeglądarka.
 
+## Ankieta tygodniowa na WhatsAppie
+
+Raz w tygodniu, w ustawionym dniu i godzinie, konto bota wysyła do wybranej grupy (np. „Grafik"
+w społeczności G13) ankietę „Grafik [TYDZIEŃ]" — tę samą, którą prowadzący robił ręcznie: dni
+tygodnia i „Nie mogę", kilka odpowiedzi naraz. [TYDZIEŃ] to tydzień od poniedziałku do niedzieli
+(„28.09-04.10", „05-11.10"): ankieta wysłana w niedzielę idzie na tydzień od jutra, w poniedziałek —
+na ten tydzień, w inny dzień — na następny. Ankieta idzie między ustawioną godziną a pół godziny
+później (wyzwalacze Google nie są co do minuty).
+
+**To droga nieoficjalna.** Oficjalne API WhatsAppa (Meta) nie wysyła ankiet do zwykłych grup, więc
+ankietę wysyła bramka [Green API](https://green-api.com), do której konto bota jest podłączone jak
+„połączone urządzenie". Regulamin WhatsAppa zabrania automatyzacji konta — numer bota może zostać
+zablokowany (decyzja właściciela 2026-10-05: osobny numer, ryzyko przyjęte). Nigdy nie podłączaj
+prywatnego numeru. Bramka ma dostęp do wszystkich czatów konta bota.
+
+Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własnymi właściwościami):
+1. Konto bota: osobny numer z WhatsApp (Business). **Dodaj go do społeczności i do samej grupy
+   „Grafik"** — do grupy nadrzędnej społeczności i do „Ogłoszeń" bramka nie wyśle.
+2. W konsoli Green API załóż instancję (plan Developer wystarcza: 3 czaty, ankiety bez limitu)
+   i połącz ją z telefonem bota: WhatsApp → Połączone urządzenia → Połącz urządzenie → kod QR
+   z konsoli. Telefon bota musi co jakiś czas być włączony z internetem.
+3. W Apps Script: *Ustawienia projektu → Właściwości skryptu* dodaj `greenApiUrl` (apiUrl z konsoli),
+   `greenApiInstance` (idInstance) i `greenApiToken` (apiTokenInstance). **Token daje pełny dostęp
+   do konta bota** — trzymaj go tylko tam: nie w kodzie, nie w czacie, nie na WhatsAppie. Aplikacja
+   nigdy nie wysyła go do przeglądarki.
+4. Po wdrożeniu wersji z ankietą uruchom raz z edytora `installTriggers()` i zatwierdź nowe
+   uprawnienie (połączenie z zewnętrzną usługą). Do tego czasu aplikacja może pokazywać błąd
+   autoryzacji — dlatego zaraz po wdrożeniu.
+5. Panel → „Ankieta tygodniowa na WhatsAppie": „Pobierz grupy", wybierz grupę, dzień i godzinę,
+   sprawdź pytanie i odpowiedzi, zaznacz „wysyłaj co tydzień", „Zapisz". Do próby: wybierz grupę
+   tylko z sobą, „Wyślij teraz", potem wróć do „Grafiku".
+
+W panelu widać stan konta bota (połączone / telefon wyłączony / zablokowane…), najbliższą ankietę
+i ostatnią próbę — także nieudaną, z powodem. Nieudaną wysyłkę z wyzwalacza Google zgłasza też
+mailem właścicielowi skryptu. Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
+i „Wyślij teraz" się nie dublują. Przypięcie ankiety w grupie zostaje ręczne.
+
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
 ## Kolejność psów na liście
@@ -518,6 +556,12 @@ Temat: panel prowadzącej.
   kilka po przecinku), **Temat** (z `[DATA]`), **Treść** (z `[DATA]` i `[LISTA]`) i jeden przycisk
   „Zapisz". Zły adres, za długi temat albo treść bez `[LISTA]` — komunikat od razu, nic się nie
   zapisuje połowicznie. Niezapisane zmiany w którymkolwiek polu są oznaczone.
+
+- **Ankieta „Grafik" na WhatsAppie sama, raz w tygodniu** — konto bota wysyła do grupy ankietę
+  z dniami tygodnia (jak dotąd ręcznie), w ustawionym dniu i godzinie. Ustawienia w panelu (grupa,
+  dzień, godzina, pytanie z [TYDZIEŃ], odpowiedzi, „wysyłaj co tydzień", „Wyślij teraz"). Droga
+  nieoficjalna (bramka Green API) — opis, ryzyko i uruchomienie: rozdział „Ankieta tygodniowa
+  na WhatsAppie". **Po wdrożeniu: `installTriggers()` z edytora** (nowe uprawnienie).
 
 Przegląd kodu przed dalszą pracą nad panelem — poprawki:
 

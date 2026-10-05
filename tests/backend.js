@@ -1618,5 +1618,220 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   check('migrate()/setup(): całe kolumny numeru i boksu jako tekst', P._formats[3] === '@' && P._formats[4] === '@', JSON.stringify(P._formats));
 })();
 
+/* ---------- ankieta tygodniowa na WhatsAppie (Poll.gs, 1.2) ---------- */
+// Bramka Green API na niby: adresy jak w konsoli, token tylko testowy. Ankieta „Grafik" w grupie
+// społeczności — jak na zrzutach prowadzącego z 27.09 i 5.10.2026.
+const GREEN = { greenApiUrl: 'https://7103.api.greenapi.com/', greenApiInstance: '7103123456', greenApiToken: 'tok3n5ecret' };
+const GRAFIK = '120363000000000001@g.us';
+function gateway(env, o){
+  o = o || {};
+  env.http.handler = (url, opts) => {
+    if(/\/sendPoll\//.test(url)) return o.send ? o.send(url, opts) : { code: 200, body: JSON.stringify({ idMessage: 'BAE5F0A1' }) };
+    if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(o.contacts || []) };
+    if(/\/getStateInstance\//.test(url)){
+      if(o.stateError) throw new Error('Address unavailable: ' + url);
+      return { code: 200, body: JSON.stringify({ stateInstance: o.state || 'authorized' }) };
+    }
+    return { code: 404, body: '' };
+  };
+}
+const sends   = env => env.http.calls.filter(c => /\/sendPoll\//.test(c.url));
+const pollOn  = (env, extra) => env.api.setPollSettings(Object.assign({}, env.conf.DEFAULT_POLL,
+                  { chatId: GRAFIK, chatName: 'Grafik', enabled: true, day: 0, hour: 12 }, extra), TEST_PIN);
+const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Object.assign({ now, props: Object.assign({}, GREEN) }, extra)); gateway(env); return env; };
+
+/* ---------- B56: tydzień ankiety ---------- */
+(()=>{
+  console.log('B56: ankieta — tydzień od poniedziałku do niedzieli, jak w ręcznych ankietach („28.09-04.10", „05-11.10")');
+  const env = pollEnv('2026-10-11T10:00:00+02:00');
+  const week = d => { const m = env.api.pollMonday_(d); return m + ' ' + env.api.pollWeekLabel_(m); };
+  check('niedziela 27.09 → tydzień od jutra: „28.09-04.10" (zrzut z 27.09)', week('2026-09-27') === '2026-09-28 28.09-04.10', week('2026-09-27'));
+  check('poniedziałek 5.10 → ten sam tydzień: „05-11.10"', week('2026-10-05') === '2026-10-05 05-11.10', week('2026-10-05'));
+  check('środa → następny tydzień', week('2026-10-07') === '2026-10-12 12-18.10', week('2026-10-07'));
+  check('sobota → poniedziałek za dwa dni', week('2026-10-10') === '2026-10-12 12-18.10');
+  check('przełom roku: „28.12-03.01"', week('2026-12-27') === '2026-12-28 28.12-03.01', week('2026-12-27'));
+  check('zmiana czasu (25.10) nie przesuwa dni', week('2026-10-25') === '2026-10-26 26.10-01.11', week('2026-10-25'));
+})();
+
+/* ---------- B57: ustawienia ankiety i wyzwalacz ---------- */
+(()=>{
+  console.log('B57: ankieta — ustawienia z PIN-em, sprawdzone; wyzwalacz co tydzień; token nigdy nie wychodzi do przeglądarki');
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  const d = env.api.pollSettings_();
+  check('domyślnie jak ręczne ankiety: „Grafik [TYDZIEŃ]", dni tygodnia + „Nie mogę", kilka odpowiedzi, wyłączona',
+    d.question === 'Grafik [TYDZIEŃ]' && d.options.length === 8 && d.options[0] === 'Poniedziałek' && d.options[7] === 'Nie mogę'
+    && d.multi === true && d.enabled === false, JSON.stringify(d));
+  const base = Object.assign({}, env.conf.DEFAULT_POLL, { chatId: GRAFIK, chatName: 'Grafik' });
+  const bad = (extra, why) => check('odrzucone: ' + why, throws(() => env.api.setPollSettings(Object.assign({}, base, extra), TEST_PIN)));
+  check('bez PIN-u ani rusz', throws(() => env.api.setPollSettings(base, TEST_PIN + 'x')));
+  bad({ question: '  ' }, 'puste pytanie');
+  bad({ question: 'x'.repeat(201) }, 'za długie pytanie');
+  bad({ options: ['Tak'] }, 'jedna odpowiedź');
+  bad({ options: Array.from({length: 13}, (_, i) => 'O' + i) }, '13 odpowiedzi (WhatsApp: najwyżej 12)');
+  bad({ options: ['Środa', 'środa '] }, 'ta sama odpowiedź dwa razy');
+  bad({ options: ['A', 'x'.repeat(101)] }, 'za długa odpowiedź');
+  bad({ day: 7 }, 'dzień spoza tygodnia');
+  bad({ hour: 24 }, 'godzina 24');
+  bad({ chatId: '48600100200@c.us' }, 'czat prywatny zamiast grupy');
+  bad({ chatId: '', enabled: true }, 'włączona bez grupy');
+  const noGw = build([{id:1, name:'Borys'}], { now: '2026-10-07T10:00:00+02:00' });
+  let msg = '';
+  try { noGw.api.setPollSettings(Object.assign({}, base, { enabled: true }), TEST_PIN); } catch(e){ msg = e.message; }
+  check('włączona bez bramki — komunikat mówi, które właściwości ustawić', /greenApiUrl/.test(msg) && /greenApiToken/.test(msg), msg);
+  check('...a wyłączoną (szkic) bez bramki zapisać można', !throws(() => noGw.api.setPollSettings(base, TEST_PIN)));
+
+  const r = env.api.setPollSettings(Object.assign({}, base, { options: [' Poniedziałek ', '', 'Wtorek', 'Nie mogę'], day: 0, hour: 18, enabled: true }), TEST_PIN);
+  check('zapis: puste linie i spacje wycięte, oddaje stan panelu', JSON.stringify(r.settings.options) === '["Poniedziałek","Wtorek","Nie mogę"]'
+    && r.settings.enabled && r.settings.chatName === 'Grafik' && r.next.day === '2026-10-11' && r.next.label === '12-18.10', JSON.stringify(r));
+  const pt = () => env.triggers.filter(t => t._fn === 'sendWeeklyPoll');
+  const t = pt()[0];
+  check('wyzwalacz: co tydzień, w niedzielę, 18:00–18:30, strefa Warszawa', pt().length === 1 && t._everyWeeks === 1 && t._weekDay === 'SUNDAY'
+    && t._hour === 18 && t._nearMinute === 15 && t._tz === 'Europe/Warsaw', JSON.stringify(t));
+  env.api.setPollSettings(Object.assign({}, base, { enabled: true, day: 6, hour: 9 }), TEST_PIN);
+  check('zmiana terminu: dalej jeden wyzwalacz, w nowym terminie', pt().length === 1 && pt()[0]._weekDay === 'SATURDAY' && pt()[0]._hour === 9);
+  env.triggers.splice(env.triggers.indexOf(pt()[0]), 1);                // wyzwalacz ankiety zniknął (ręcznie skasowany)
+  env.api.installTriggers();
+  check('installTriggers() z edytora przywraca też ankietę (sobota 9), bez dubli', pt().length === 1 && pt()[0]._weekDay === 'SATURDAY'
+    && env.triggers.filter(x => x._fn === 'endOfDay').length === 1, JSON.stringify(env.triggers.map(x => x._fn)));
+  env.api.installTriggers();
+  check('...drugi raz — dalej po jednym', pt().length === 1 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+  env.api.setResetHour(19, TEST_PIN);
+  check('zmiana godziny czyszczenia nie gubi ankiety', pt().length === 1 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+  env.api.setPollSettings(Object.assign({}, base, { enabled: false }), TEST_PIN);
+  check('wyłączenie zdejmuje wyzwalacz ankiety (czyszczenie zostaje)', pt().length === 0 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+
+  const leaks = s => /tok3n5ecret/.test(s);
+  check('getData i stan wpisany w stronę: ani tokenu, ani ankiety', !leaks(JSON.stringify(env.api.getData())) && !/greenApi|chatId/.test(JSON.stringify(env.api.getData()))
+    && !leaks(env.api.bootJson_()));
+  const diag = env.api.getDiagnostics(TEST_PIN);
+  check('panel: ankieta i stan konta bota, bez tokenu', !!diag.poll && diag.poll.configured && diag.poll.state.code === 'authorized'
+    && /połączone/.test(diag.poll.state.text) && !leaks(JSON.stringify(diag)), JSON.stringify(diag.poll));
+  gateway(env, { stateError: true });
+  const down = env.api.getDiagnostics(TEST_PIN);
+  check('bramka nie odpowiada: panel działa, stan „nie udało się", token wycięty z błędu (adres go zawiera)',
+    !!down.poll && down.poll.state.code === 'error' && !leaks(JSON.stringify(down)) && /nie udało się/.test(down.poll.state.text), JSON.stringify(down.poll.state));
+})();
+
+/* ---------- B58: wysyłka ankiety ---------- */
+(()=>{
+  console.log('B58: ankieta — idzie w swoim terminie, raz na grupę i tydzień; błąd widać w panelu, bez tokenu');
+  const env = pollEnv('2026-10-11T11:50:00+02:00');                    // niedziela, przed 12:00
+  pollOn(env);
+  env.api.sendWeeklyPoll();
+  check('przed godziną — nic', sends(env).length === 0);
+  env.setNow('2026-10-11T12:10:00+02:00');
+  const r = env.api.sendWeeklyPoll();
+  const c = sends(env)[0], body = c ? JSON.parse(c.opts.payload) : {};
+  check('w terminie — jedna ankieta', sends(env).length === 1 && r && r.question === 'Grafik 12-18.10', JSON.stringify(r));
+  check('adres bramki z konsoli (bez ukośnika na końcu), POST z JSON-em', c.url === 'https://7103.api.greenapi.com/waInstance7103123456/sendPoll/tok3n5ecret'
+    && c.opts.method === 'post' && c.opts.contentType === 'application/json', c.url);
+  check('treść: grupa, „Grafik 12-18.10", dni tygodnia + „Nie mogę", kilka odpowiedzi', body.chatId === GRAFIK && body.message === 'Grafik 12-18.10'
+    && body.options.length === 8 && body.options[2].optionName === 'Środa' && body.options[7].optionName === 'Nie mogę' && body.multipleAnswers === true,
+    JSON.stringify(body));
+  env.setNow('2026-10-11T12:25:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('drugi raz w tym samym terminie — nic (wyzwalacz, wywołanie z zewnątrz)', sends(env).length === 1);
+  let msg = '';
+  try { env.api.sendPollNow(TEST_PIN); } catch(e){ msg = e.message; }
+  check('„Wyślij teraz" po wysłanej — odmowa z godziną wysłania', /już poszła/.test(msg) && /12:10/.test(msg) && sends(env).length === 1, msg);
+  check('panel: ostatnia ankieta wysłana', env.api.getDiagnostics(TEST_PIN).poll.last.ok === true);
+  env.setNow('2026-10-11T15:05:00+02:00');
+  env.api.sendWeeklyPoll({ chatId: '1@g.us' });                       // argumenty z przeglądarki nic nie znaczą
+  check('po oknie (3 h) — nic, także wywołane z zewnątrz', sends(env).length === 1);
+  env.setNow('2026-10-18T14:59:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('kolejna niedziela, spóźniony wyzwalacz (14:59) — ankieta na następny tydzień', sends(env).length === 2
+    && JSON.parse(sends(env)[1].opts.payload).message === 'Grafik 19-25.10');
+  env.api.setPollSettings(Object.assign({}, env.conf.DEFAULT_POLL, { chatId: '120363000000000002@g.us', chatName: 'Test', day: 0, hour: 12 }), TEST_PIN);
+  const other = env.api.sendPollNow(TEST_PIN);
+  check('„Wyślij teraz" do innej grupy (np. próbnej) — idzie, choć „Grafik" już ma tę ankietę', sends(env).length === 3 && other.sent.question === 'Grafik 19-25.10');
+  env.setNow('2026-10-25T12:10:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('wyłączona — wyzwalacz nic nie wysyła', sends(env).length === 3);
+
+  // przez północ: niedziela 23:00, wyzwalacz przychodzi w poniedziałek 0:30 — to wciąż ankieta z niedzieli
+  const late = pollEnv('2026-10-12T00:30:00+02:00');
+  pollOn(late, { hour: 23 });
+  late.api.sendWeeklyPoll();
+  check('termin 23:00, wyzwalacz po północy — ankieta na tydzień od tego poniedziałku', sends(late).length === 1
+    && JSON.parse(sends(late)[0].opts.payload).message === 'Grafik 12-18.10');
+
+  // błąd sieci z adresem (i tokenem) w treści
+  const bad = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(bad);
+  gateway(bad, { send: url => { throw new Error('Address unavailable: ' + url); } });
+  let e1 = '';
+  try { bad.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
+  const last = bad.api.getDiagnostics(TEST_PIN).poll.last;
+  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /nie odpowiada/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('panel: ostatnia próba nieudana, z powodem, bez tokenu', last && last.ok === false && /nie odpowiada/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)),
+    JSON.stringify(last));
+  gateway(bad);
+  bad.setNow('2026-10-11T12:40:00+02:00');
+  bad.api.sendWeeklyPoll();
+  check('po błędzie znacznik zdjęty — kolejne wywołanie w oknie wysyła', sends(bad).length === 2);
+  gateway(bad, { send: () => ({ code: 466, body: '{"message":"limit"}' }) });
+  let e2 = '';
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('„Wyślij teraz" po wysłanej — odmowa, zanim zapyta bramkę', /już poszła/.test(e2) && sends(bad).length === 2, e2);
+  bad.api.setPollSettings(Object.assign({}, bad.conf.DEFAULT_POLL, { chatId: '120363000000000003@g.us', chatName: 'Inna' }), TEST_PIN);
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('kod błędu bramki w komunikacie', /466/.test(e2), e2);
+  gateway(bad, { send: () => ({ code: 200, body: '{}' }) });
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('bramka nie potwierdziła (brak idMessage) — błąd, nie „wysłana"', /nie potwierdziła/.test(e2), e2);
+
+  // „w toku": inna wysyłka trwa (bramka bywa wolna — wywołanie idzie bez blokady)
+  const busy = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(busy);
+  busy.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:09', t: Date.parse('2026-10-11T12:09:00+02:00'), pending: true } });
+  busy.api.sendWeeklyPoll();
+  let e3 = '';
+  try { busy.api.sendPollNow(TEST_PIN); } catch(e){ e3 = e.message; }
+  check('wysyłka w toku — wyzwalacz nic, „Wyślij teraz" mówi, że się wysyła', sends(busy).length === 0 && /właśnie się wysyła/.test(e3), e3);
+  busy.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 11:00', t: Date.parse('2026-10-11T11:00:00+02:00'), pending: true } });
+  busy.api.sendWeeklyPoll();
+  check('przerwana wysyłka (znacznik sprzed godziny) — wyzwalacz dalej nic (mogła dojść)', sends(busy).length === 0);
+  busy.api.sendPollNow(TEST_PIN);
+  check('...a „Wyślij teraz" ją ponawia', sends(busy).length === 1);
+  // świeży odczyt pod blokadą: w tym samym czasie ankietę wysłało inne wykonanie (np. „Wyślij teraz"
+  // i wyzwalacz naraz) — to wykonanie wczytało właściwości wcześniej i z pamięci by tego nie wiedziało
+  const race = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(race);
+  race.newExecution();
+  race.ctx.__api.getData();                                           // pamięć wykonania wczytana
+  race.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:10' } });
+  race.ctx.__api.sendWeeklyPoll();
+  check('ankieta wysłana przez inne wykonanie — ta nie idzie drugi raz (odczyt świeży, nie z pamięci)', sends(race).length === 0);
+  const many = {};
+  for(let i = 0; i < 25; i++) many['1203630000000000' + String(i).padStart(2, '0') + '@g.us|2026-10-05'] = { at: 'x' };
+  busy.props.pollSent = JSON.stringify(many);
+  busy.api.setPollSettings(Object.assign({}, busy.conf.DEFAULT_POLL, { chatId: '120363000000000099@g.us', chatName: 'X' }), TEST_PIN);
+  busy.api.sendPollNow(TEST_PIN);
+  check('pamięć wysłanych ma sufit (20)', Object.keys(JSON.parse(busy.props.pollSent)).length === 20);
+})();
+
+/* ---------- B59: lista grup bota ---------- */
+(()=>{
+  console.log('B59: ankieta — grupy, w których jest bot (z PIN-em), do wyboru w panelu');
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  gateway(env, { contacts: [
+    { id: '48600100200@c.us', name: 'Ola', type: 'user' },
+    { id: GRAFIK, name: 'Grafik', type: 'group' },
+    { id: '120363000000000005@g.us', name: '', contactName: 'Ogłoszenia G13', type: 'group' },
+    { id: 'zlyid', name: 'Śmieć', type: 'group' },
+    { id: '120363000000000002@g.us', name: 'Bieganie', type: 'group' },
+  ] });
+  check('bez PIN-u ani rusz', throws(() => env.api.getPollChats(TEST_PIN + 'x')));
+  const list = env.api.getPollChats(TEST_PIN);
+  check('same grupy, po nazwie, nazwa z książki adresowej, gdy brak własnej', JSON.stringify(list.map(g => g.name)) === '["Bieganie","Grafik","Ogłoszenia G13"]'
+    && list[1].id === GRAFIK, JSON.stringify(list));
+  check('pyta bramkę tylko o grupy', /\/getContacts\/tok3n5ecret\?group=true$/.test(env.http.calls.slice(-1)[0].url), env.http.calls.slice(-1)[0].url);
+  const noGw = build([{id:1, name:'Borys'}]);
+  let msg = '';
+  try { noGw.api.getPollChats(TEST_PIN); } catch(e){ msg = e.message; }
+  check('bez bramki — komunikat, co ustawić', /greenApiInstance/.test(msg), msg);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

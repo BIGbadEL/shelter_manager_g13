@@ -18,6 +18,14 @@ const PROP_MAIL_TEMPLATE = 'mailTemplate';     // treść maila z listą spacer�
 const PROP_MAIL_TO = 'mailTo';                 // odbiorcy tego maila, „a@b.pl, c@d.pl"; brak = wpisuje się w poczcie
 const PROP_MAIL_SUBJECT = 'mailSubject';       // temat tego maila; brak = DEFAULT_MAIL_SUBJECT
 const PROP_DOG_ADDS = 'dogAdds';               // ostatnie dodania psów z panelu {token: id} — patrz dogAdds_ w Dogs.gs
+const PROP_POLL = 'poll';                      // ankieta tygodniowa (JSON, panel) — patrz Poll.gs
+const PROP_POLL_SENT = 'pollSent';             // wysłane ankiety {'<grupa>|<poniedziałek>': {at, pending}} — każda raz
+const PROP_POLL_LAST = 'pollLast';             // ostatnia próba wysłania (JSON) — do panelu
+// Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:
+// nigdy w kodzie, nigdy w getData ani w odpowiedzi do przeglądarki (token daje pełny dostęp do konta).
+const PROP_GREEN_URL = 'greenApiUrl';          // apiUrl instancji, np. https://7103.api.greenapi.com
+const PROP_GREEN_ID = 'greenApiInstance';      // idInstance
+const PROP_GREEN_TOKEN = 'greenApiToken';      // apiTokenInstance
 
 /**
  * Wszystkie właściwości skryptu — czytane RAZ na wykonanie. Każde getProperty to

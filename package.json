@@ -4,7 +4,7 @@
   "private": true,
   "description": "Testy i wdrażanie aplikacji G13 Spacery. Sam kod aplikacji mieszka w Apps Script — npm służy tu wyłącznie do uruchamiania harnessów i wysyłki przez clasp.",
   "scripts": {
-    "test": "node tests/scenarios.js && node tests/scenarios2.js && node tests/scenarios3.js && node tests/scenarios4.js && node tests/scenarios5.js && node tests/scenarios6.js && node tests/scenarios7.js && node tests/scenarios8.js && node tests/scenarios9.js && node tests/scenarios10.js && node tests/scenarios11.js && node tests/scenarios12.js && node tests/scenarios13.js && node tests/scenarios14.js && node tests/scenarios15.js && node tests/backend.js && node tests/tooling.js",
+    "test": "node tests/scenarios.js && node tests/scenarios2.js && node tests/scenarios3.js && node tests/scenarios4.js && node tests/scenarios5.js && node tests/scenarios6.js && node tests/scenarios7.js && node tests/scenarios8.js && node tests/scenarios9.js && node tests/scenarios10.js && node tests/scenarios11.js && node tests/scenarios12.js && node tests/scenarios13.js && node tests/scenarios14.js && node tests/scenarios15.js && node tests/scenarios16.js && node tests/backend.js && node tests/tooling.js",
     "files": "clasp status",
     "push": "clasp push -f",
     "deployments": "clasp list-deployments",

@@ -6,7 +6,7 @@ const vm = require('vm');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs'];
+const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs'];
 
 /* ---------- atrapa arkusza ---------- */
 let sheetSeq = 0;
@@ -100,6 +100,9 @@ function makeContext(opts){
     if(s.maxRows) sh._maxRows = s.maxRows;
   });
   const triggers = [];
+  // UrlFetchApp: każde wywołanie trafia do `http.calls`, a odpowiada `http.handler(url, opts)` —
+  // {code, body} albo wyjątek (awaria sieci). Bez handlera: 500, żeby niezamierzone wywołanie było widać.
+  const http = { calls: [], handler: null };
 
   class FrozenDate extends Date {
     constructor(...a){ if(a.length===0) super(nowMs); else super(...a); }
@@ -145,16 +148,31 @@ function makeContext(opts){
       deleteProperty: k => { delete props[k]; },
     })},
     ScriptApp: {
+      WeekDay: { SUNDAY:'SUNDAY', MONDAY:'MONDAY', TUESDAY:'TUESDAY', WEDNESDAY:'WEDNESDAY',
+                 THURSDAY:'THURSDAY', FRIDAY:'FRIDAY', SATURDAY:'SATURDAY' },
       getProjectTriggers: ()=>triggers.slice(),
       deleteTrigger: t => { const i = triggers.indexOf(t); if(i>=0) triggers.splice(i,1); },
       newTrigger(fn){
-        const t = { _fn: fn, _hour: null, getHandlerFunction: ()=>fn };
+        const t = { _fn: fn, _hour: null, _weekDay: null, _everyWeeks: null, _everyDays: null, _nearMinute: null, _tz: null,
+                    getHandlerFunction: ()=>fn };
         const b = {
-          timeBased: ()=>b, everyDays: ()=>b, inTimezone: ()=>b,
+          timeBased: ()=>b,
+          everyDays(n){ t._everyDays = n; return b; },
+          everyWeeks(n){ t._everyWeeks = n; return b; },
+          onWeekDay(d){ t._weekDay = d; return b; },
+          nearMinute(m){ t._nearMinute = m; return b; },
+          inTimezone(z){ t._tz = z; return b; },
           atHour(h){ t._hour = h; return b; },
           create(){ triggers.push(t); return t; },
         };
         return b;
+      },
+    },
+    UrlFetchApp: {
+      fetch(url, opts){
+        http.calls.push({ url, opts: opts || {} });
+        const r = http.handler ? http.handler(url, opts || {}) : { code: 500, body: '' };
+        return { getResponseCode: () => r.code, getContentText: () => r.body };
       },
     },
   };
@@ -172,9 +190,11 @@ function makeContext(opts){
                           checkPin, requirePin_, pin_, env_, setMailTemplate, mailTemplate_, setMailSettings,
                           businessDate_, addDays_, readDogCatalog_, withLock_,
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
-                          isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_ };
+                          isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_,
+                          pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
+                          sendWeeklyPoll, pollPanel_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
-                           VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP };
+                           VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0; };
   `;
@@ -185,7 +205,7 @@ function makeContext(opts){
   // przez cały scenariusz i testy nie widziałyby tego, co widzi prawdziwy serwer.
   const api = {};
   Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
-  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, setNow, newExecution: ctx.__newExecution,
+  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, setNow, newExecution: ctx.__newExecution,
            propReads: () => propReads, failProps: f => { propFail = f || null; } };
 }
 

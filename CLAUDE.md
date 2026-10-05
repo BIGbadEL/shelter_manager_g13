@@ -30,6 +30,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `Dogs.gs` | katalog psów + spacery (zakładka Spacery, przepisanie starego układu, jednorazowy import) + akcje na spacerach + kolory wolontariuszy |
 | `Tasks.gs` | zadania |
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
+| `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
@@ -185,6 +186,30 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   więc **inny niż zapisane jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
   zapisane", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
   zapisany, a historia używała starych ustawień (decyzja właściciela, wersja (a), S110c).
+- **Ankieta tygodniowa na WhatsAppie** (1.2, `Poll.gs`, B56–B59, S116–S119): konto bota (osobny
+  numer — decyzja właściciela 2026-10-05, ryzyko blokady przyjęte) przez **nieoficjalną bramkę Green
+  API** wysyła raz w tygodniu do grupy (np. „Grafik" w społeczności) ankietę „Grafik [TYDZIEŃ]"
+  z dniami tygodnia — odwzorowanie ręcznych ankiet prowadzącego (`DEFAULT_POLL`). Oficjalne API
+  Meta ankiet do zwykłych grup nie wysyła (grupy do 8 osób, tylko własne, bez ankiet — research
+  2026-10-05). [TYDZIEŃ] = tydzień od `pollMonday_` (najbliższy poniedziałek, dziś włącznie)
+  w formacie ręcznych ankiet (`pollWeekLabel_`: „05-11.10", „28.09-04.10").
+  **Dostęp do bramki to sekret jak PIN**: właściwości `greenApiUrl`, `greenApiInstance`,
+  `greenApiToken`, ustawiane ręcznie; nigdy w kodzie, w `getData`, w odpowiedzi ani w błędzie —
+  token jest w adresie, więc `greenCall_` wycina go z każdego komunikatu (także błędu sieci
+  z UrlFetchApp). Ustawienia (`poll`, JSON) z panelu: `setPollSettings(settings, pin)` (sprawdza
+  `pollValid_`; przeglądarka te same reguły w `pollProblem`, limity `POLL_LIMITS` = `POLL_*_MAX`;
+  RETRIABLE), lista grup `getPollChats(pin)`, „Wyślij teraz" `sendPollNow(pin)` (NIE RETRIABLE),
+  stan w `getDiagnostics().poll` (`pollPanel_`, stan konta bota z bramki; awaria → `null`, panel żyje).
+  Wyzwalacz co tydzień `onWeekDay` + `atHour` + `nearMinute(15)` = między h:00 a h:30
+  (`installPollTrigger_`, też z `installTriggers()`). **`sendWeeklyPoll` musi być publiczna**
+  (wyzwalacz nie woła funkcji z „_"), więc niczego nie przyjmuje i sama pilnuje terminu: wysyła
+  tylko w oknie `POLL_WINDOW_H` godzin od ustawionej godziny (`pollDueDay_`, także przez północ).
+  **Każda ankieta (grupa + tydzień) najwyżej raz** (`pollSent`, świeży odczyt pod blokadą), a wywołanie
+  bramki idzie BEZ blokady (potrafi trwać do minuty, a rezerwacje czekają na blokadę 20 s): znacznik
+  „w toku" pod blokadą → wysyłka → wynik pod blokadą (`sendPoll_`). Błąd zdejmuje znacznik, zostaje
+  w `pollLast` (panel) i leci dalej — wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi.
+  Przerwana wysyłka („w toku" starsze niż `POLL_PENDING_MIN`) — wyzwalacz nie ponawia (mogła dojść),
+  „Wyślij teraz" tak. Przypięcie ankiety zostaje ręczne.
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -399,7 +424,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1227 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1327 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -445,7 +470,9 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   rzuca błędem na zakres poza swoją szerokością, jak Apps Script (B49) — domyślnie atrapa
   dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny. Tak samo `maxRows: N` —
   stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
-  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51).
+  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51). `env.http` to
+  `UrlFetchApp` na niby: `http.calls` (adres, opcje) i `http.handler(url, opts)` → `{code, body}`
+  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_nearMinute`, `_tz` (B57).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -483,7 +510,8 @@ kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2), S112–S112e „Dodaj" 
 pies, „dodaję…", powtórka z tym samym tokenem, dane wracają po nieudanym zapisie, szkice formularzy
 trybu edycji), S112f–S112g „Dodaj", gdy prowadząca wpisuje już następnego psa („nie dodano"
 w katalogu, lista podmieniana bez formularzy — review PR #5), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
-za komunikatem (przegląd 1.2),
+za komunikatem (przegląd 1.2), S116–S119 ankieta tygodniowa w panelu (domyślne ustawienia, „Pobierz
+grupy", zapis, te same reguły co serwer, szkic przeżywa przerysowanie, „Wyślij teraz" z potwierdzeniem),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -505,6 +533,9 @@ B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powr�
 B53 ustawienia maila `setMailSettings` (adresy, temat, treść; nic połowicznie; stare `setMailTemplate`),
 B54 `addDog` z tokenem (powtórka nie dokłada psa, sufit pamięci, świeży odczyt, awaria właściwości),
 B55 numer psa i boks w Psy jako tekst (format przed wartością, `migrate()`),
+B56 tydzień ankiety (`pollMonday_`, `pollWeekLabel_`), B57 ustawienia ankiety i wyzwalacz (PIN, reguły,
+`installTriggers()`, token nigdy do przeglądarki), B58 wysyłka (termin i okno, raz na grupę i tydzień,
+przez północ, błąd bez tokenu, „w toku", świeży odczyt), B59 grupy bota (`getPollChats`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -680,7 +711,11 @@ Pułapki clasp:
 - clasp nie odpala funkcji: `migrate()` / `installTriggers()` nadal ręcznie z edytora.
 
 Nowy plik `.gs` albo nowe uprawnienie (np. tworzenie wyzwalaczy) wymaga **ponownej
-autoryzacji** przy pierwszym uruchomieniu.
+autoryzacji** przy pierwszym uruchomieniu. **1.2 dokłada uprawnienie połączenia z zewnętrzną
+usługą** (`UrlFetchApp` w `Poll.gs`, bramka WhatsAppa): zaraz po `deploy:test` i po `deploy:prod`
+uruchom z edytora `installTriggers()` i zatwierdź zgodę — web app wykonywana „jako ja" bez zgody
+właściciela na nowe uprawnienie potrafi pokazywać wszystkim błąd autoryzacji (sprawdzić na teście,
+jak długo i czy w ogóle).
 
 ## Stan i rzeczy otwarte
 
@@ -707,6 +742,13 @@ autoryzacji** przy pierwszym uruchomieniu.
   ≈ 2600 — część aplikacji przycina długie linki), i w WhatsAppie/Messengerze, gdy poczta się NIE
   otworzy — czy `target="_top"` nie zostawia strony błędu zamiast aplikacji (a jeśli tak — czy
   „wstecz" do niej wraca).
+- **Ankieta tygodniowa (1.2) — do uruchomienia przez właściciela** (README, „Ankieta tygodniowa na
+  WhatsAppie"): konto bota (osobny numer z WhatsApp Business — jest) w społeczności i w grupie
+  „Grafik", instancja Green API połączona kodem QR, trzy właściwości skryptu (osobno test i produkcja),
+  `installTriggers()` z edytora po wdrożeniu (nowe uprawnienie), w panelu grupa / dzień / godzina /
+  „wysyłaj co tydzień". Tokenów nie przekazuje się w czacie — tylko we właściwościach skryptu.
+  Nie sprawdzone na prawdziwej bramce (testy znają ją tylko z dokumentacji): pierwsza próba
+  „Wyślij teraz" do grupy z samym sobą.
 - **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
   (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
   `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —

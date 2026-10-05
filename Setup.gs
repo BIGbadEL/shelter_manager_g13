@@ -118,6 +118,10 @@ function applyTextFormats_() {
  *
  * Uwaga Apps Script: `atHour(h)` to okno h:00–h:59, nie punkt czasowy.
  * Wywoływana ponownie przy każdej zmianie godziny z panelu.
+ *
+ * Przy okazji przywraca wyzwalacz ankiety tygodniowej z zapisanych ustawień (Poll.gs) — po tej
+ * jednej funkcji z edytora wszystkie wyzwalacze są na miejscu. Uruchomienie jej z edytora po
+ * wdrożeniu 1.2 to też zgoda na nowe uprawnienie (połączenie z bramką WhatsAppa, UrlFetchApp).
  */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
@@ -130,4 +134,6 @@ function installTriggers() {
     .atHour(resetHour_())
     .inTimezone(TIMEZONE)
     .create();
+
+  installPollTrigger_(pollSettings_());
 }
