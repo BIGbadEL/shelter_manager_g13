@@ -713,9 +713,10 @@ Pułapki clasp:
 Nowy plik `.gs` albo nowe uprawnienie (np. tworzenie wyzwalaczy) wymaga **ponownej
 autoryzacji** przy pierwszym uruchomieniu. **1.2 dokłada uprawnienie połączenia z zewnętrzną
 usługą** (`UrlFetchApp` w `Poll.gs`, bramka WhatsAppa): zaraz po `deploy:test` i po `deploy:prod`
-uruchom z edytora `installTriggers()` i zatwierdź zgodę — web app wykonywana „jako ja" bez zgody
-właściciela na nowe uprawnienie potrafi pokazywać wszystkim błąd autoryzacji (sprawdzić na teście,
-jak długo i czy w ogóle).
+uruchom z edytora `installTriggers()` i zatwierdź zgodę. Sprawdzone na teście (@21, 2026-10-05):
+bez tej zgody strona i `getData` działają normalnie — zgody wymaga dopiero samo wywołanie bramki
+(`UrlFetchApp`), więc bez niej panel pokazuje stan konta bota „nie udało się sprawdzić", a ankieta
+nie wychodzi (wyzwalacz rzuca błędem — mail od Google).
 
 ## Stan i rzeczy otwarte
 

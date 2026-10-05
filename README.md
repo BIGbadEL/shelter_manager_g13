@@ -472,8 +472,8 @@ Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własn
    do konta bota** — trzymaj go tylko tam: nie w kodzie, nie w czacie, nie na WhatsAppie. Aplikacja
    nigdy nie wysyła go do przeglądarki.
 4. Po wdrożeniu wersji z ankietą uruchom raz z edytora `installTriggers()` i zatwierdź nowe
-   uprawnienie (połączenie z zewnętrzną usługą). Do tego czasu aplikacja może pokazywać błąd
-   autoryzacji — dlatego zaraz po wdrożeniu.
+   uprawnienie (połączenie z zewnętrzną usługą). Bez tej zgody sama aplikacja działa (sprawdzone
+   na teście, @21), ale bramka nie: panel pokaże „nie udało się sprawdzić", a ankieta nie wyjdzie.
 5. Panel → „Ankieta tygodniowa na WhatsAppie": „Pobierz grupy", wybierz grupę, dzień i godzinę,
    sprawdź pytanie i odpowiedzi, zaznacz „wysyłaj co tydzień", „Zapisz". Do próby: wybierz grupę
    tylko z sobą, „Wyślij teraz", potem wróć do „Grafiku".
