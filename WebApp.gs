@@ -81,13 +81,14 @@ function getData() {
 
 /**
  * Dane do panelu diagnostycznego (tylko tryb edycji — stąd PIN). `poll` — ankieta tygodniowa
- * (Poll.gs, bez tokenu bramki); jej awaria nie może zabrać panelu, więc wtedy `null`.
+ * (Poll.gs, bez tokenu bramki i bez pytania bramki — stan konta bota idzie osobno, getPollState);
+ * jej awaria nie może zabrać panelu, więc wtedy `null`.
  */
 function getDiagnostics(pin) {
   requirePin_(pin);
   const t = triggerInfo_();
   let poll = null;
-  try { poll = pollPanel_(true); } catch (e) { poll = null; }
+  try { poll = pollPanel_(); } catch (e) { poll = null; }
   return {
     poll: poll,
     resetHour: resetHour_(),

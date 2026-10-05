@@ -41,15 +41,21 @@ function set(app, id, v){
   if(e.type === 'checkbox') e.checked = !!v; else e.value = v;
   e.dispatchEvent(new app.window.Event(e.tagName==='SELECT' || e.type==='checkbox' ? 'change' : 'input', {bubbles:true}));
 }
-/** Tryb edycji, zakładka Panel, odpowiedź getDiagnostics z ankietą. */
-function panel(poll){
-  const app = buildApp();
+/**
+ * Tryb edycji, zakładka Panel, odpowiedź getDiagnostics z ankietą, potem (osobno) stan konta bota —
+ * `botState` false = zostaw pytanie bez odpowiedzi.
+ */
+function panel(poll, opts){
+  opts = opts || {};
+  const app = buildApp(opts.timing ? {timing: opts.timing} : undefined);
   app.seed(base());
   app.window.__setAdmin('1234');
   app.click('.tab[data-tab="diag"]');
   respondTo(app, 'getDiagnostics', DIAG(poll === undefined ? PANEL() : poll));
+  if(opts.botState !== false && calls(app, 'getPollState').length) respondTo(app, 'getPollState', opts.botState || {code:'authorized', text:'połączone'});
   return app;
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------- S116: ustawienia ankiety ---------- */
 function S116(){
@@ -185,6 +191,7 @@ function S119(){
   check('...a panel dociąga stan (ostatnia próba)', calls(app, 'getDiagnostics').length===1);
   respondTo(app, 'getDiagnostics', DIAG(PANEL({last:{at:'2026-10-07 10:05', ok:false, msg:'Bramka WhatsAppa: błąd 466'}},
                                                 {chatId:GRAFIK, chatName:'Grafik', day:0, hour:18, enabled:true})));
+  respondTo(app, 'getPollState', {code:'authorized', text:'połączone'});
   check('panel: ostatnia próba NIE WYSZŁA, z powodem', /NIE WYSZŁA: Bramka WhatsAppa: błąd 466/.test(app.html()));
   const none = panel();
   none.click('[data-act="pollSend"]');
@@ -193,9 +200,74 @@ function S119(){
   check('bez błędów', app.errors.length===0 && none.errors.length===0, app.errors.concat(none.errors).join('; '));
 }
 
-for(const s of [S116, S117, S118, S119]){
-  try{ s(); }
-  catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
+/* ---------- S120: stan konta bota osobno ---------- */
+async function S120(){
+  console.log('S120: panel — stan konta bota osobnym pytaniem: panel nie czeka na bramkę (review PR #5, runda 2)');
+  const app = panel(undefined, {botState:false, timing:{pollState:60}});
+  check('panel stoi od razu, stan bota „sprawdzam…"', /Ankieta tygodniowa/.test(app.html()) && /Konto WhatsApp bota: sprawdzam…/.test(app.html())
+    && /wyzwalacz resetu/.test(app.html()));
+  check('pytanie o stan bota z PIN-em', calls(app, 'getPollState').length===1 && calls(app, 'getPollState')[0].args[0]==='1234');
+  respondTo(app, 'getPollState', {code:'sleepMode', text:'telefon bota wyłączony albo bez internetu'});
+  check('odpowiedź bramki trafia do panelu', /Konto WhatsApp bota: telefon bota wyłączony/.test(app.html()));
+  const slow = panel(undefined, {botState:false, timing:{pollState:60}});
+  await sleep(120);
+  check('bramka nie odpowiada — po czasie mówi o tym, nie „sprawdzam…" w nieskończoność', /bramka długo nie odpowiada/.test(slow.html()), slow.html().match(/Konto WhatsApp bota:[^<]*/));
+  respondTo(slow, 'getPollState', {code:'authorized', text:'połączone'});
+  check('...spóźniona odpowiedź i tak go poprawia', /Konto WhatsApp bota: połączone/.test(slow.html()));
+  const err = panel(undefined, {botState:false});
+  failTo(err, 'getPollState', 'Brak połączenia');
+  check('błąd pytania — powód w panelu', /nie udało się sprawdzić \(Brak połączenia\)/.test(err.html()));
+  const bare = panel(PANEL({configured:false, state:null}));
+  check('bez bramki — nie pyta', calls(bare, 'getPollState').length===0 && bare.shipped.indexOf('getPollState') < 0);
+  check('bez błędów', app.errors.length===0 && slow.errors.length===0 && err.errors.length===0, app.errors.concat(slow.errors, err.errors).join('; '));
 }
-console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
-process.exit(failures ? 1 : 0);
+
+/* ---------- S121: nie wiadomo, czy ankieta wyszła ---------- */
+async function S121(){
+  console.log('S121: panel — „nie wiadomo, czy wyszła": sprawdź w grupie, wysłać mimo to; wysyłka dłuższa niż watchdog (review PR #5, runda 2)');
+  const s = {chatId:GRAFIK, chatName:'Grafik', day:0, hour:18, enabled:true};
+  const unk = panel(PANEL({last:{at:'2026-10-07 10:01', ok:false, unknown:true, question:'Grafik 12-18.10', msg:'Bramka WhatsAppa nie odpowiada: Timeout'},
+                           now:{label:'12-18.10', question:'Grafik 12-18.10', status:'unknown', at:'2026-10-07 10:01'}}, s));
+  const html = unk.html();
+  check('ostatnia próba: „nie wiadomo, czy wyszła" (nie „NIE WYSZŁA")', /nie wiadomo, czy ankieta „Grafik 12-18\.10" wyszła/.test(html) && !/NIE WYSZŁA/.test(html));
+  check('przy „Wyślij teraz": sprawdź w grupie', /Nie wiadomo, czy ankieta na ten tydzień \(12-18\.10\) wyszła \(próba 2026-10-07 10:01\)/.test(html));
+  let asked = null;
+  unk.window.confirm = m => { asked = m; return false; };
+  unk.click('[data-act="pollSend"]');
+  check('pyta: „Nie wiadomo… Sprawdź w grupie… Wysłać mimo to?"', /Nie wiadomo/.test(asked) && /Sprawdź w grupie/.test(asked) && /Wysłać mimo to\?/.test(asked), asked);
+  check('„Nie" — nic nie idzie', shipped(unk, 'sendPollNow')===0);
+  unk.window.confirm = () => true;
+  unk.click('[data-act="pollSend"]');
+  check('„Tak" — sendPollNow z potwierdzeniem (force)', JSON.stringify(calls(unk, 'sendPollNow')[0].args) === '["1234",true]', JSON.stringify(calls(unk, 'sendPollNow')[0].args));
+
+  const sent = panel(PANEL({now:{label:'12-18.10', question:'Grafik 12-18.10', status:'sent', at:'2026-10-07 10:01'}}, s));
+  sent.click('[data-act="pollSend"]');
+  check('już poszła — komunikat, bez pytania serwera', shipped(sent, 'sendPollNow')===0 && /już poszła do tej grupy \(2026-10-07 10:01\)/.test(toastOf(sent)), toastOf(sent));
+  const pend = panel(PANEL({now:{label:'12-18.10', question:'Grafik 12-18.10', status:'pending', at:'2026-10-07 10:01'}}, s));
+  pend.click('[data-act="pollSend"]');
+  check('właśnie się wysyła — komunikat, bez pytania serwera', shipped(pend, 'sendPollNow')===0 && /właśnie się wysyła/.test(toastOf(pend))
+    && /właśnie się wysyła \(od 2026-10-07 10:01\)/.test(pend.html()), toastOf(pend));
+
+  const slow = panel(PANEL({}, s), {timing:{pollRecheck:60}});
+  slow.click('[data-act="pollSend"]');
+  slow.window.__force(); slow.window.eval('checkStuck()');            // watchdog: odpowiedź nie przyszła
+  check('bez odpowiedzi w czasie watchdoga — „trwa dłużej", nie „zerwane"', /Wysyłka trwa dłużej — sprawdzę za chwilę/.test(toastOf(slow)), toastOf(slow));
+  check('nie ponawia (nie w RETRIABLE)', shipped(slow, 'sendPollNow')===1);
+  check('panel pyta o stan od razu', calls(slow, 'getDiagnostics').length===1);
+  respondTo(slow, 'getDiagnostics', DIAG(PANEL({now:{label:'12-18.10', question:'Grafik 12-18.10', status:'pending', at:'2026-10-07 10:01'}}, s)));
+  check('...i pokazuje „wysyła się od…"', /właśnie się wysyła \(od 2026-10-07 10:01\)/.test(slow.html()));
+  await sleep(120);
+  check('...a po chwili pyta jeszcze raz', calls(slow, 'getDiagnostics').length===1 && slow.shipped.filter(f => f==='getDiagnostics').length===3,
+    slow.shipped.join(','));
+  check('bez błędów', unk.errors.length===0 && sent.errors.length===0 && pend.errors.length===0 && slow.errors.length===0,
+    unk.errors.concat(sent.errors, pend.errors, slow.errors).join('; '));
+}
+
+(async ()=>{
+  for(const s of [S116, S117, S118, S119, S120, S121]){
+    try{ await s(); }
+    catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
+  }
+  console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
+  process.exit(failures ? 1 : 0);
+})();

@@ -18,6 +18,9 @@
  * i publiczne sendWeeklyPoll się nie dublują. Wywołanie bramki NIE trzyma blokady — potrafi trwać
  * do minuty, a pod blokadą stałyby wtedy wszystkie rezerwacje (blokada czeka 20 s). Dlatego dwa kroki:
  * pod blokadą znacznik „w toku", bez blokady wysyłka, pod blokadą wynik (sendPoll_).
+ * Bramka, która nie odpowiedziała, mogła ankietę wysłać: wynik „nie wiadomo" (znacznik zostaje,
+ * wyzwalacz nie ponawia, „Wyślij teraz" — po potwierdzeniu prowadzącej). Druga ankieta w grupie
+ * rozbiłaby głosy (review PR #5, runda 2). Stan konta bota panel bierze osobno (getPollState).
  */
 
 /* ---------- tydzień ankiety ---------- */
@@ -117,7 +120,7 @@ function setPollSettings(settings, pin) {
     setProp_(PROP_POLL, JSON.stringify(s));
     installPollTrigger_(s);
   });
-  return pollPanel_(false);
+  return pollPanel_();
 }
 
 /* ---------- bramka WhatsAppa (Green API) ---------- */
@@ -154,6 +157,8 @@ function greenApi_() {
  * Wywołanie bramki: `method` (sendPoll, getContacts…), `body` — POST z JSON-em, bez niego GET,
  * `query` — dopisek do adresu. Token jest w samym adresie, więc żaden komunikat błędu (także błąd
  * sieci z UrlFetchApp, który potrafi zacytować adres) nie wychodzi z niego nietknięty.
+ * Błąd bez odpowiedzi bramki (timeout, zerwane połączenie) ma `unknown = true`: żądanie mogło
+ * dojść i zostać wykonane — dla wysyłki to „nie wiadomo", nie „nie wyszła" (review PR #5, runda 2).
  */
 function greenCall_(method, body, query) {
   const g = greenApi_();
@@ -169,8 +174,10 @@ function greenCall_(method, body, query) {
   } catch (e) {
     const m = String(e && e.message || e);
     // brak zgody właściciela na UrlFetchApp (po wdrożeniu 1.2) — po ludzku, co zrobić, zamiast komunikatu Google
-    if (/script\.external_request|UrlFetchApp\.fetch/.test(m)) throw new Error(GREEN_CONSENT);
-    throw new Error('Bramka WhatsAppa nie odpowiada: ' + hide(m));
+    if (/script\.external_request|UrlFetchApp\.fetch/.test(m)) throw new Error(GREEN_CONSENT);   // nic nie wyszło
+    const err = new Error('Bramka WhatsAppa nie odpowiada: ' + hide(m));
+    err.unknown = true;
+    throw err;
   }
   const code = res.getResponseCode(), text = String(res.getContentText() || '');
   if (code !== 200) throw new Error('Bramka WhatsAppa: błąd ' + code + (text ? ' (' + hide(text).slice(0, 150) + ')' : ''));
@@ -211,23 +218,41 @@ function savePollSent_(m) {
 
 function stamp_() { return today_() + ' ' + now_(); }
 
-/** Znacznik „w toku" starszy niż tyle minut = wysyłka przerwana (wykonanie ubite); „Wyślij teraz" może ponowić. */
+/** Znacznik „w toku" starszy niż tyle minut = wysyłka przerwana (wykonanie ubite) — wynik nieznany. */
 const POLL_PENDING_MIN = 5;
 
 /**
- * Wysyła ankietę na tydzień od `monday` do grupy z ustawień — najwyżej raz (grupa + tydzień).
- * `manual` — „Wyślij teraz" z panelu: już wysłana ankieta to błąd z komunikatem (wyzwalacz po cichu
- * nic nie robi). Zwraca {week, question, at} albo null (wyzwalacz, ankieta już poszła albo idzie).
- * Wynik — także błąd — zostaje w PROP_POLL_LAST do panelu; błąd idzie dalej (wyzwalacz, który
- * rzuca, Google zgłasza mailem właścicielowi skryptu).
+ * Stan ankiety (grupa + tydzień) ze znacznika: 'sent' — poszła, 'pending' — właśnie się wysyła,
+ * 'unknown' — nie wiadomo, czy wyszła (bramka nie odpowiedziała albo wysyłka urwała się w połowie),
+ * '' — nie było próby. Przy 'unknown' ankieta MOGŁA dojść: wyzwalacz jej nie ponawia, a „Wyślij
+ * teraz" tylko po potwierdzeniu prowadzącej, że w grupie jej nie ma (druga ankieta rozbiłaby głosy).
  */
-function sendPoll_(s, monday, manual) {
+function pollMarkState_(m) {
+  if (!m) return '';
+  if (m.unknown) return 'unknown';
+  if (m.pending) return Date.now() - (m.t || 0) > POLL_PENDING_MIN * 60000 ? 'unknown' : 'pending';
+  return 'sent';
+}
+
+/**
+ * Wysyła ankietę na tydzień od `monday` do grupy z ustawień — najwyżej raz (grupa + tydzień).
+ * `manual` — „Wyślij teraz" z panelu: ankieta już wysłana albo w drodze to błąd z komunikatem
+ * (wyzwalacz po cichu nic nie robi). `force` — „Wyślij teraz" po potwierdzeniu prowadzącej przy
+ * wyniku nieznanym (pollMarkState_); niczego innego nie przełamuje. Zwraca {week, question, at}
+ * albo null (wyzwalacz, ankieta już poszła, idzie albo nie wiadomo).
+ * Wynik zostaje w PROP_POLL_LAST do panelu: wysłana / nie wyszła (błąd bramki z kodem, brak zgody —
+ * znacznik zdjęty, można ponowić) / nie wiadomo (bramka nie odpowiedziała — znacznik zostaje).
+ * Błąd idzie dalej (wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi skryptu).
+ */
+function sendPoll_(s, monday, manual, force) {
   const key = s.chatId + '|' + monday;
   const question = pollQuestion_(s, monday);
   const busy = withLock_(() => {
-    const sent = pollSent_(), m = sent[key];
-    if (m && !m.pending) return 'Ankieta na ten tydzień już poszła do tej grupy (' + m.at + ')';
-    if (m && m.pending && !(manual && Date.now() - (m.t || 0) > POLL_PENDING_MIN * 60000)) return 'Ankieta na ten tydzień właśnie się wysyła';
+    const sent = pollSent_(), m = sent[key], st = pollMarkState_(m);
+    if (st === 'sent') return 'Ankieta na ten tydzień już poszła do tej grupy (' + m.at + ')';
+    if (st === 'pending') return 'Ankieta na ten tydzień właśnie się wysyła (od ' + m.at + ')';
+    if (st === 'unknown' && !(manual && force)) return 'Nie wiadomo, czy ankieta na ten tydzień wyszła (próba ' + m.at
+      + ') — sprawdź w grupie; jeśli jej tam nie ma, „Wyślij teraz" zapyta, czy wysłać mimo to';
     sent[key] = { at: stamp_(), t: Date.now(), pending: true };
     savePollSent_(sent);
     return '';
@@ -245,11 +270,15 @@ function sendPoll_(s, monday, manual) {
   } catch (e) {
     err = e;
   }
+  const unknown = !!(err && err.unknown);
   withLock_(() => {
     const sent = pollSent_();
-    if (err) delete sent[key]; else sent[key] = { at: last.at };
+    if (!err) sent[key] = { at: last.at };
+    else if (unknown) sent[key] = { at: last.at, t: Date.now(), unknown: true };
+    else delete sent[key];
     savePollSent_(sent);
-    setProp_(PROP_POLL_LAST, JSON.stringify(Object.assign(last, err ? { ok: false, msg: String(err.message || err) } : { ok: true })));
+    setProp_(PROP_POLL_LAST, JSON.stringify(Object.assign(last, !err ? { ok: true }
+      : { ok: false, unknown, msg: String(err.message || err) })));
   });
   if (err) throw err;
   return { week: monday, question, at: last.at };
@@ -282,13 +311,16 @@ function sendWeeklyPoll() {
   return sendPoll_(s, pollMonday_(day), false);
 }
 
-/** „Wyślij teraz" z panelu (PIN): ankieta na najbliższy tydzień (dziś włącznie), do grupy z zapisanych ustawień. */
-function sendPollNow(pin) {
+/**
+ * „Wyślij teraz" z panelu (PIN): ankieta na najbliższy tydzień (dziś włącznie), do grupy z zapisanych
+ * ustawień. `force` = prowadząca sprawdziła w grupie, że ankiety z próby o nieznanym wyniku tam nie ma.
+ */
+function sendPollNow(pin, force) {
   requirePin_(pin);
   const s = pollSettings_();
   if (!s.chatId) throw new Error('Wybierz i zapisz grupę, zanim wyślesz ankietę');
-  const sent = sendPoll_(s, pollMonday_(today_()), true);
-  return { sent, panel: pollPanel_(false) };
+  const sent = sendPoll_(s, pollMonday_(today_()), true, force === true);
+  return { sent, panel: pollPanel_() };
 }
 
 /* ---------- panel ---------- */
@@ -314,28 +346,39 @@ function pollNextDay_(s) {
 }
 
 /**
- * Wszystko, co panel pokazuje o ankiecie — bez tokenu. `withState` — zapytać bramkę o stan konta
- * bota (jeden przelot; błąd bramki nie psuje panelu, tylko staje się stanem).
+ * Wszystko, co panel pokazuje o ankiecie — bez tokenu i BEZ pytania bramki: idzie w getDiagnostics,
+ * a bramka potrafi odpowiadać do minuty — cały „Stan serwera" czekałby na nią (review PR #5, runda 2).
+ * Stan konta bota przeglądarka bierze osobno (getPollState). `now.status` — stan ankiety na
+ * najbliższy tydzień w zapisanej grupie (pollMarkState_), `now.at` — kiedy była próba.
  */
-function pollPanel_(withState) {
+function pollPanel_() {
   const s = pollSettings_();
-  const configured = !!greenApi_();
-  let state = null;
-  if (withState && configured) {
-    try {
-      const r = greenCall_('getStateInstance');
-      const v = String(r && r.stateInstance || '');
-      state = { code: v, text: POLL_STATES[v] || ('nieznany stan: ' + v) };
-    } catch (e) {
-      state = { code: 'error', text: 'nie udało się sprawdzić (' + String(e.message || e) + ')' };
-    }
-  }
   let last = null;
   try { last = JSON.parse(prop_(PROP_POLL_LAST) || 'null'); } catch (e) { last = null; }
+  let sent = {};
+  try { sent = JSON.parse(prop_(PROP_POLL_SENT) || '{}') || {}; } catch (e) { sent = {}; }
   const next = pollNextDay_(s), now = pollMonday_(today_());
+  const mark = s.chatId ? sent[s.chatId + '|' + now] : null;
   return {
-    settings: s, configured, state, last,
+    settings: s, configured: !!greenApi_(), state: null, last,
     next: { day: next, label: pollWeekLabel_(pollMonday_(next)) },
-    now: { label: pollWeekLabel_(now), question: pollQuestion_(s, now) },
+    now: { label: pollWeekLabel_(now), question: pollQuestion_(s, now), status: pollMarkState_(mark), at: mark ? mark.at : '' },
   };
+}
+
+/**
+ * Stan konta bota z bramki (PIN) — osobno od panelu, żeby panel nie czekał na bramkę. Błąd bramki
+ * to też stan ('error' z powodem), nie wyjątek: w panelu ma stać, co jest nie tak.
+ */
+function getPollState(pin) {
+  requirePin_(pin);
+  if (!greenApi_()) return { code: 'missing', text: GREEN_MISSING };
+  try {
+    const r = greenCall_('getStateInstance');
+    const v = String(r && r.stateInstance || '');
+    return { code: v, text: POLL_STATES[v] || ('nieznany stan: ' + v) };
+  } catch (e) {
+    const m = String(e.message || e);
+    return { code: 'error', text: m === GREEN_CONSENT ? m : 'nie udało się sprawdzić (' + m + ')' };
+  }
 }

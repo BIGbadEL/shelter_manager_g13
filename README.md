@@ -483,7 +483,9 @@ Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własn
 
 W panelu widać stan konta bota (połączone / telefon wyłączony / zablokowane…), najbliższą ankietę
 i ostatnią próbę — także nieudaną, z powodem. Nieudaną wysyłkę z wyzwalacza Google zgłasza też
-mailem właścicielowi skryptu. Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
+mailem właścicielowi skryptu. Gdy bramka nie odpowiedziała, panel mówi „nie wiadomo, czy wyszła —
+sprawdź w grupie": ankieta mogła dojść, więc wyzwalacz jej nie ponawia, a „Wyślij teraz" najpierw
+pyta, czy w grupie jej nie ma (druga ankieta rozbiłaby głosy). Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
 i „Wyślij teraz" się nie dublują. Przypięcie ankiety w grupie zostaje ręczne.
 
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.

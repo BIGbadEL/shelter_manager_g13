@@ -201,7 +201,7 @@ function makeContext(opts){
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_,
                           pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
-                          sendWeeklyPoll, pollPanel_, authorizeWhatsApp };
+                          sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera

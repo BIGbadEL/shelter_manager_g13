@@ -15,9 +15,12 @@
    *   quiet    — cisza po ostatnim dotknięciu, zanim lista może się przestawić,
    *   announce — tyle wisi dymek „Aktualizuję…", zanim kafelki faktycznie się przesuną,
    *   tapGuard — stuknięcie tuż po ruchu listy albo zmianie kafelka nie liczy się (patrz tapRefused),
-   *   busyMin  — najkrótszy czas pokazania dymka, żeby w ogóle dało się go zobaczyć.
+   *   busyMin  — najkrótszy czas pokazania dymka, żeby w ogóle dało się go zobaczyć,
+   *   pollRecheck — po „Wyślij teraz" bez odpowiedzi: tyle później panel pyta, czy ankieta wyszła
+   *              (bramka potrafi odpowiadać do minuty, dłużej niż watchdog),
+   *   pollState — tyle czekamy na stan konta bota z bramki, zanim panel powie, że nie odpowiada.
    */
-  const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600 }, window.__G13_TIMING || {});
+  const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -313,8 +316,10 @@
   function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
 
   /**
-   * `opts.reconcile(res)` — odpowiedź na ostatnią operację bytu; `opts.fail(msg)` — zapis
-   * ostatecznie się nie udał (już po ewentualnej powtórce), np. żeby oddać wpisane dane.
+   * `opts.reconcile(res)` — odpowiedź na ostatnią operację bytu; `opts.fail(msg, lost)` — zapis
+   * ostatecznie się nie udał (już po ewentualnej powtórce), np. żeby oddać wpisane dane. `lost` —
+   * odpowiedź nie przyszła (watchdog, zerwane połączenie): serwer mógł zapis wykonać, w odróżnieniu
+   * od odmowy serwera z komunikatem.
    */
   function enqueue(fn, args, opts){
     opts = opts || {};
@@ -376,7 +381,7 @@
         } else {
           toast(outcome.msg || 'Nie udało się zapisać — dosynchronizuję');
           needRefresh = true;                // optymistyczna zmiana mogła być błędna — skoryguje ją odświeżenie
-          if(job.fail) job.fail(outcome.msg);
+          if(job.fail) job.fail(outcome.msg, !!outcome.lost);
           if(!isPending(job.key)) safeRender();
         }
       } catch(e){
@@ -387,7 +392,7 @@
     slot.settle = settle;
 
     const watchdog = setTimeout(()=>{
-      settle({ok:false, msg:'Serwer długo nie odpowiada — dosynchronizuję'});
+      settle({ok:false, lost:true, msg:'Serwer długo nie odpowiada — dosynchronizuję'});
     }, WATCHDOG_MS);
 
     try{
@@ -398,7 +403,7 @@
         })
         [job.fn](...job.args);   // wywołanie NA skonfigurowanym runnerze (bez .apply z podmianą this)
     } catch(e){
-      settle({ok:false, msg:'Błąd połączenia — dosynchronizuję'});
+      settle({ok:false, lost:true, msg:'Błąd połączenia — dosynchronizuję'});
     }
   }
 
@@ -412,7 +417,7 @@
     const now = Date.now();
     [...inflight.values()].forEach(slot=>{
       if(slot.settle && now - slot.at > WATCHDOG_MS + 3000){
-        slot.settle({ok:false, msg:'Połączenie zerwane — dosynchronizuję'});
+        slot.settle({ok:false, lost:true, msg:'Połączenie zerwane — dosynchronizuję'});
       }
     });
   }
@@ -1532,7 +1537,12 @@
   function fetchDiag(){
     if(!state.admin) return;
     google.script.run
-      .withSuccessHandler(res=>{ state.diag = res; if(state.view==='diag') safeRender(); })
+      .withSuccessHandler(res=>{
+        state.diag = res;
+        if(res && res.poll) res.poll.state = null;           // „sprawdzam…" — stan konta bota przyjdzie osobno
+        if(state.view==='diag') safeRender();
+        if(res && res.poll && res.poll.configured) fetchPollState();
+      })
       .withFailureHandler(err=>{
         state.diag = {failed: (err && err.message ? err.message.replace(/^Error:\s*/,'') : '') || 'brak połączenia'};
         if(state.view==='diag') safeRender();
@@ -1724,7 +1734,7 @@
     const acct = !p.configured
       ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona. W Apps Script: Ustawienia projektu → Właściwości skryptu
          dodaj <b>greenApiUrl</b>, <b>greenApiInstance</b> i <b>greenApiToken</b> (apiUrl, idInstance i apiTokenInstance z konsoli Green API).</div>`
-      : `<div class="pollstate${p.state && p.state.code==='authorized' ? ' ok' : ''}">Konto WhatsApp bota: ${esc(p.state ? p.state.text : 'stan nieznany')}</div>`;
+      : `<div class="pollstate${p.state && p.state.code==='authorized' ? ' ok' : ''}">Konto WhatsApp bota: ${esc(p.state ? p.state.text : 'sprawdzam…')}</div>`;
     const chats = (state.pollChats || []).slice();
     if(f.chatId && !chats.some(c => c.id === f.chatId)) chats.unshift({id: f.chatId, name: f.chatName || f.chatId});
     const chatOpts = (f.chatId ? '' : `<option value="">— wybierz grupę —</option>`)
@@ -1737,7 +1747,16 @@
       : 'Wysyłanie co tydzień jest wyłączone.';
     const last = !p.last ? ''
       : p.last.ok ? `<div class="hint">Ostatnia: ${esc(p.last.at)} — wysłana „${esc(p.last.question)}"${p.last.chatName ? ' do grupy ' + esc(p.last.chatName) : ''}${p.last.manual ? ' (ręcznie)' : ''}.</div>`
+      // bramka nie odpowiedziała — ankieta mogła dojść (review PR #5, runda 2): nie „nie wyszła", tylko „sprawdź"
+      : p.last.unknown ? `<div class="hint pollerr">Ostatnia próba: ${esc(p.last.at)} — nie wiadomo, czy ankieta „${esc(p.last.question)}" wyszła
+          (bramka nie odpowiedziała). Sprawdź w grupie.</div>`
       : `<div class="hint pollerr">Ostatnia próba: ${esc(p.last.at)} — ankieta NIE WYSZŁA: ${esc(p.last.msg)}</div>`;
+    // ankieta na najbliższy tydzień w zapisanej grupie — to, czego dotyczy „Wyślij teraz"
+    const ns = p.now.status, nat = esc(p.now.at || '');
+    const nowLine = ns === 'sent' ? `<div class="hint">Ankieta na ten tydzień (${esc(p.now.label)}) już poszła do tej grupy (${nat}).</div>`
+      : ns === 'pending' ? `<div class="hint">Ankieta na ten tydzień (${esc(p.now.label)}) właśnie się wysyła (od ${nat}).</div>`
+      : ns === 'unknown' ? `<div class="hint pollerr">Nie wiadomo, czy ankieta na ten tydzień (${esc(p.now.label)}) wyszła (próba ${nat}) —
+          sprawdź w grupie. Jeśli jej tam nie ma, „Wyślij teraz" zapyta, czy wysłać mimo to.</div>` : '';
     return `
       <div class="panelbox">
         <h3>Ankieta tygodniowa na WhatsAppie</h3>
@@ -1760,12 +1779,34 @@
         <div class="adminrow"><button class="btn add-btn" data-act="pollSave">Zapisz</button>
           <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="pollReset">Przywróć zapisane</button></div>
         <div class="hint">${next}</div>
-        ${last}
+        ${last}${nowLine}
         <div class="adminrow" style="margin-top:8px"><button class="btn outline" data-act="pollSend">Wyślij teraz</button></div>
         <div class="hint">„Wyślij teraz" — ankieta na najbliższy tydzień (${esc(p.now.label)}) do zapisanej grupy. Ta sama ankieta
         nie pójdzie do tej grupy drugi raz, także z wyzwalacza. Ankieta wychodzi z konta bota przez nieoficjalną bramkę —
         WhatsApp może to konto zablokować; przypięcie ankiety zostaje ręczne.</div>
       </div>`;
+  }
+
+  /**
+   * Stan konta bota z bramki — osobno od getDiagnostics: bramka potrafi odpowiadać do minuty, a cały
+   * „Stan serwera" czekał na nią (review PR #5, runda 2). Do odpowiedzi „sprawdzam…"; po T.pollState
+   * bez odpowiedzi — że bramka nie odpowiada (spóźniona odpowiedź i tak go poprawi).
+   */
+  let pollStateAsk = 0;
+  function fetchPollState(){
+    const ask = ++pollStateAsk;
+    const put = st => {
+      if(!state.diag || !state.diag.poll) return;
+      state.diag.poll.state = st;
+      if(state.view==='diag') safeRender();
+    };
+    const timer = setTimeout(()=>{ if(ask === pollStateAsk && !(state.diag && state.diag.poll && state.diag.poll.state))
+      put({code:'error', text:'bramka długo nie odpowiada — otwórz Panel jeszcze raz'}); }, T.pollState);
+    google.script.run
+      .withSuccessHandler(st => { clearTimeout(timer); if(ask === pollStateAsk) put(st); })
+      .withFailureHandler(err => { clearTimeout(timer);
+        if(ask === pollStateAsk) put({code:'error', text:'nie udało się sprawdzić (' + (err && err.message ? err.message.replace(/^Error:\s*/,'') : 'brak połączenia') + ')'}); })
+      .getPollState(state.pin);
   }
 
   /** „Pobierz grupy": lista grup konta bota z bramki (czytanie, nie zapis — bez kolejki). */
@@ -2544,11 +2585,26 @@
       if(pollDirty()){ toast('Najpierw zapisz zmiany — „Wyślij teraz" wysyła według zapisanych ustawień'); return; }
       if(!p.settings.chatId){ toast('Najpierw wybierz i zapisz grupę'); return; }
       if(!p.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
-      if(!confirm('Wysłać teraz ankietę „' + p.now.question + '" do grupy ' + (p.settings.chatName || p.settings.chatId) + '?')) return;
-      // nie w RETRIABLE: powtórka po zaginionej odpowiedzi trafiłaby w „już poszła" — serwer i tak nie wyśle drugi raz
-      enqueue('sendPollNow',[state.pin],{key:'poll',
+      const group = p.settings.chatName || p.settings.chatId, ns = p.now.status;
+      // stan ze znacznika na serwerze (serwer i tak sprawdzi go jeszcze raz, pod blokadą)
+      if(ns === 'sent'){ toast('Ankieta na ten tydzień już poszła do tej grupy (' + p.now.at + ')'); return; }
+      if(ns === 'pending'){ toast('Ankieta na ten tydzień właśnie się wysyła (od ' + p.now.at + ')'); return; }
+      // nie wiadomo, czy wyszła (review PR #5, runda 2): druga ankieta w grupie rozbiłaby głosy — najpierw sprawdzić
+      const force = ns === 'unknown';
+      if(!confirm(force
+        ? 'Nie wiadomo, czy ankieta „' + p.now.question + '" wyszła do grupy ' + group + ' (próba ' + p.now.at + ').\n'
+          + 'Sprawdź w grupie, czy jej tam nie ma. Wysłać mimo to?'
+        : 'Wysłać teraz ankietę „' + p.now.question + '" do grupy ' + group + '?')) return;
+      // nie w RETRIABLE: powtórka po zaginionej odpowiedzi trafiłaby w „właśnie się wysyła" — serwer i tak nie wyśle drugi raz
+      enqueue('sendPollNow', force ? [state.pin, true] : [state.pin], {key:'poll',
         reconcile:res=>{ applyPollPanel(res && res.panel); toast('Ankieta wysłana: „' + (res && res.sent ? res.sent.question : '') + '"', 'ok'); safeRender(); },
-        fail:()=>{ fetchDiag(); }});                  // panel pokaże, co się stało (ostatnia próba)
+        fail:(msg, lost)=>{
+          fetchDiag();                                // panel pokaże, co się stało (ostatnia próba, „wysyła się od…")
+          if(!lost) return;
+          // odpowiedź nie przyszła w czasie watchdoga — bramka bywa wolniejsza; ankieta mogła właśnie wyjść
+          toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
+          setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
+        }});
     }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){

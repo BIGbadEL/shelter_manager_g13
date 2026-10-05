@@ -1703,13 +1703,19 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   const leaks = s => /tok3n5ecret/.test(s);
   check('getData i stan wpisany w stronę: ani tokenu, ani ankiety', !leaks(JSON.stringify(env.api.getData())) && !/greenApi|chatId/.test(JSON.stringify(env.api.getData()))
     && !leaks(env.api.bootJson_()));
+  const before = env.http.calls.length;
   const diag = env.api.getDiagnostics(TEST_PIN);
-  check('panel: ankieta i stan konta bota, bez tokenu', !!diag.poll && diag.poll.configured && diag.poll.state.code === 'authorized'
-    && /połączone/.test(diag.poll.state.text) && !leaks(JSON.stringify(diag)), JSON.stringify(diag.poll));
+  check('panel: ankieta bez tokenu i BEZ pytania bramki (bramka potrafi odpowiadać do minuty — review PR #5, runda 2)',
+    !!diag.poll && diag.poll.configured && diag.poll.state === null && env.http.calls.length === before && !leaks(JSON.stringify(diag)),
+    JSON.stringify(diag.poll));
+  check('stan konta bota osobno (getPollState, PIN)', throws(() => env.api.getPollState(TEST_PIN + 'x'))
+    && env.api.getPollState(TEST_PIN).code === 'authorized' && /połączone/.test(env.api.getPollState(TEST_PIN).text));
   gateway(env, { stateError: true });
-  const down = env.api.getDiagnostics(TEST_PIN);
-  check('bramka nie odpowiada: panel działa, stan „nie udało się", token wycięty z błędu (adres go zawiera)',
-    !!down.poll && down.poll.state.code === 'error' && !leaks(JSON.stringify(down)) && /nie udało się/.test(down.poll.state.text), JSON.stringify(down.poll.state));
+  const down = env.api.getPollState(TEST_PIN);
+  check('bramka nie odpowiada: stan „nie udało się" zamiast wyjątku, token wycięty z błędu (adres go zawiera)',
+    down.code === 'error' && !leaks(JSON.stringify(down)) && /nie udało się/.test(down.text), JSON.stringify(down));
+  check('...a panel działa jak działał', !!env.api.getDiagnostics(TEST_PIN).poll);
+  check('bez bramki: stan „missing", bez wywołania', noGw.api.getPollState(TEST_PIN).code === 'missing' && noGw.http.calls.length === 0);
 })();
 
 /* ---------- B58: wysyłka ankiety ---------- */
@@ -1756,20 +1762,20 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   check('termin 23:00, wyzwalacz po północy — ankieta na tydzień od tego poniedziałku', sends(late).length === 1
     && JSON.parse(sends(late)[0].opts.payload).message === 'Grafik 12-18.10');
 
-  // błąd sieci z adresem (i tokenem) w treści
+  // bramka odpowiedziała błędem (kod HTTP) — ankieta na pewno nie wyszła; treść błędu z adresem (i tokenem)
   const bad = pollEnv('2026-10-11T12:10:00+02:00');
   pollOn(bad);
-  gateway(bad, { send: url => { throw new Error('Address unavailable: ' + url); } });
+  gateway(bad, { send: url => ({ code: 500, body: 'Internal error at ' + url }) });
   let e1 = '';
   try { bad.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
   const last = bad.api.getDiagnostics(TEST_PIN).poll.last;
-  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /nie odpowiada/.test(e1) && !/tok3n5ecret/.test(e1), e1);
-  check('panel: ostatnia próba nieudana, z powodem, bez tokenu', last && last.ok === false && /nie odpowiada/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)),
-    JSON.stringify(last));
+  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /błąd 500/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('panel: ostatnia próba nieudana (nie „nie wiadomo"), z powodem, bez tokenu', last && last.ok === false && !last.unknown
+    && /500/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)), JSON.stringify(last));
   gateway(bad);
   bad.setNow('2026-10-11T12:40:00+02:00');
   bad.api.sendWeeklyPoll();
-  check('po błędzie znacznik zdjęty — kolejne wywołanie w oknie wysyła', sends(bad).length === 2);
+  check('po pewnym błędzie znacznik zdjęty — kolejne wywołanie w oknie wysyła', sends(bad).length === 2);
   gateway(bad, { send: () => ({ code: 466, body: '{"message":"limit"}' }) });
   let e2 = '';
   try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
@@ -1792,8 +1798,11 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   busy.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 11:00', t: Date.parse('2026-10-11T11:00:00+02:00'), pending: true } });
   busy.api.sendWeeklyPoll();
   check('przerwana wysyłka (znacznik sprzed godziny) — wyzwalacz dalej nic (mogła dojść)', sends(busy).length === 0);
-  busy.api.sendPollNow(TEST_PIN);
-  check('...a „Wyślij teraz" ją ponawia', sends(busy).length === 1);
+  check('...w panelu „nie wiadomo"', busy.api.getDiagnostics(TEST_PIN).poll.now.status === 'unknown');
+  check('...„Wyślij teraz" bez potwierdzenia jej nie ponawia (mogła dojść — review PR #5, runda 2)',
+    throws(() => busy.api.sendPollNow(TEST_PIN)) && sends(busy).length === 0);
+  busy.api.sendPollNow(TEST_PIN, true);
+  check('...po potwierdzeniu prowadzącej („sprawdziłam w grupie") — ponawia', sends(busy).length === 1);
   // świeży odczyt pod blokadą: w tym samym czasie ankietę wysłało inne wykonanie (np. „Wyślij teraz"
   // i wyzwalacz naraz) — to wykonanie wczytało właściwości wcześniej i z pamięci by tego nie wiedziało
   const race = pollEnv('2026-10-11T12:10:00+02:00');
@@ -1854,10 +1863,57 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   ['Nie masz uprawnień do wywołania funkcji UrlFetchApp.fetch. Wymagane uprawnienia: ' + SCOPE,
    'You do not have permission to call UrlFetchApp.fetch. Required permissions: ' + SCOPE].forEach((g, i) => {
     env.http.handler = () => { throw new Error(g); };
-    const st = env.api.getDiagnostics(TEST_PIN).poll.state;
+    const st = env.api.getPollState(TEST_PIN);
     check('brak zgody (' + (i ? 'en' : 'pl') + '): panel mówi, co uruchomić, bez adresów Google', /authorizeWhatsApp\(\)/.test(st.text)
       && !/googleapis/.test(st.text), st.text);
   });
+})();
+
+/* ---------- B61: nieznany wynik wysyłki ---------- */
+(()=>{
+  console.log('B61: ankieta — bramka przyjęła, odpowiedź nie wróciła: „nie wiadomo", bez drugiej ankiety w grupie (review PR #5, runda 2)');
+  // review: każdy wyjątek był „nie wyszła" — znacznik zdejmowany, „Wyślij teraz" wysyłało drugi raz, głosy na dwie ankiety
+  const env = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(env);
+  let delivered = 0;
+  gateway(env, { send: url => { delivered++; throw new Error('Timeout: ' + url); } });   // doszła, odpowiedź zginęła
+  let e1 = '';
+  try { env.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
+  const p = env.api.getDiagnostics(TEST_PIN).poll;
+  check('błąd idzie dalej (mail od Google), bez tokenu', /nie odpowiada/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('panel: „nie wiadomo" (nie „nie wyszła"), stan ankiety na ten tydzień „unknown"', p.last && p.last.ok === false && p.last.unknown === true
+    && p.now.status === 'unknown' && p.now.at === '2026-10-11 12:10', JSON.stringify([p.last, p.now]));
+  gateway(env);
+  env.setNow('2026-10-11T12:40:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('wyzwalacz w oknie nie ponawia (mogła dojść)', delivered === 1 && sends(env).length === 1);
+  let e2 = '';
+  try { env.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('„Wyślij teraz" bez potwierdzenia — odmowa „sprawdź w grupie", nic nie idzie', /Nie wiadomo/.test(e2) && /sprawdź w grupie/.test(e2)
+    && sends(env).length === 1, e2);
+  check('force tylko jako true (nie „1", nie obiekt z przeglądarki)', throws(() => env.api.sendPollNow(TEST_PIN, 'true')) && sends(env).length === 1);
+  const r = env.api.sendPollNow(TEST_PIN, true);
+  check('po potwierdzeniu prowadzącej — idzie, panel: wysłana', sends(env).length === 2 && r.sent.question === 'Grafik 12-18.10'
+    && r.panel.now.status === 'sent' && r.panel.last.ok === true, JSON.stringify(r.panel.now));
+  let e3 = '';
+  try { env.api.sendPollNow(TEST_PIN, true); } catch(e){ e3 = e.message; }
+  check('force nie przełamuje ankiety, która na pewno poszła', /już poszła/.test(e3) && sends(env).length === 2, e3);
+  env.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:39', t: Date.parse('2026-10-11T12:39:00+02:00'), pending: true } });
+  try { env.api.sendPollNow(TEST_PIN, true); } catch(e){ e3 = e.message; }
+  check('...ani wysyłki, która właśnie trwa', /właśnie się wysyła/.test(e3) && sends(env).length === 2, e3);
+
+  // pewne „nie wyszło": brak zgody na UrlFetchApp (zapytanie nie poszło) i kod błędu bramki — znacznik zdjęty
+  const nc = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(nc);
+  nc.http.handler = () => { throw new Error('You do not have permission to call UrlFetchApp.fetch. Required permissions: https://www.googleapis.com/auth/script.external_request'); };
+  try { nc.api.sendWeeklyPoll(); } catch(e){}
+  const q = nc.api.getDiagnostics(TEST_PIN).poll;
+  check('brak zgody: „nie wyszła" (z tym, co uruchomić), znacznik zdjęty', q.last.ok === false && !q.last.unknown && /authorizeWhatsApp/.test(q.last.msg)
+    && q.now.status === '', JSON.stringify(q.last));
+  gateway(nc);
+  nc.api.sendWeeklyPoll();
+  const r2 = nc.api.getDiagnostics(TEST_PIN).poll.now.status;
+  check('...po zgodzie wyzwalacz w oknie wysyła normalnie (drugie wywołanie bramki, pierwsze bez zgody)', sends(nc).length === 2 && r2 === 'sent', r2);
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

@@ -206,10 +206,20 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   tylko w oknie `POLL_WINDOW_H` godzin od ustawionej godziny (`pollDueDay_`, także przez północ).
   **Każda ankieta (grupa + tydzień) najwyżej raz** (`pollSent`, świeży odczyt pod blokadą), a wywołanie
   bramki idzie BEZ blokady (potrafi trwać do minuty, a rezerwacje czekają na blokadę 20 s): znacznik
-  „w toku" pod blokadą → wysyłka → wynik pod blokadą (`sendPoll_`). Błąd zdejmuje znacznik, zostaje
-  w `pollLast` (panel) i leci dalej — wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi.
-  Przerwana wysyłka („w toku" starsze niż `POLL_PENDING_MIN`) — wyzwalacz nie ponawia (mogła dojść),
-  „Wyślij teraz" tak. Przypięcie ankiety zostaje ręczne.
+  „w toku" pod blokadą → wysyłka → wynik pod blokadą (`sendPoll_`). Wynik zostaje w `pollLast`
+  (panel), błąd leci dalej — wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi. **Trzy
+  rodzaje wyniku** (`pollMarkState_`, review PR #5, runda 2): wysłana; **nie wyszła** — bramka
+  odpowiedziała błędem albo brak zgody na `UrlFetchApp` (znacznik zdjęty, można ponowić); **nie
+  wiadomo** — bramka nie odpowiedziała (`err.unknown` z `greenCall_`) albo „w toku" starsze niż
+  `POLL_PENDING_MIN`: ankieta MOGŁA dojść, a druga w grupie rozbiłaby głosy — znacznik zostaje,
+  wyzwalacz nie ponawia, „Wyślij teraz" dopiero z `force === true` (prowadząca potwierdza, że
+  sprawdziła w grupie); `force` niczego innego nie przełamuje. Panel: `now.status`/`now.at` (stan
+  ankiety na najbliższy tydzień w zapisanej grupie). **Stan konta bota NIE idzie w `getDiagnostics`**
+  (bramka potrafi odpowiadać do minuty, cały panel czekał) — osobno `getPollState(pin)` (błąd bramki
+  to stan `error`, nie wyjątek), w przeglądarce `fetchPollState` po panelu, „sprawdzam…", po
+  `T.pollState` bez odpowiedzi — „bramka długo nie odpowiada". „Wyślij teraz" bez odpowiedzi w czasie
+  watchdoga (`fail(msg, lost)`) — „Wysyłka trwa dłużej", panel od razu i po `T.pollRecheck` jeszcze raz.
+  Przypięcie ankiety zostaje ręczne.
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -327,7 +337,9 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   (rezerwuj → zwolnij) cofałyby się same.
 - **`writeSeq`** liczy zapisy wpuszczone do kolejki (`enqueue`). `refresh()` zapamiętuje go przy
   wysłaniu i odpowiedź sprzed zapisu pomija (pyta od nowa) — bug nr 14. `enqueue(fn, args,
-  {key, reconcile, fail})`: `fail(msg)` woła się, gdy zapis ostatecznie się nie udał (po powtórce).
+  {key, reconcile, fail})`: `fail(msg, lost)` woła się, gdy zapis ostatecznie się nie udał (po
+  powtórce); `lost` — odpowiedź nie przyszła (watchdog, zerwane połączenie), więc serwer MÓGŁ zapis
+  wykonać — w odróżnieniu od odmowy serwera z komunikatem.
 - **Szkice formularzy trybu edycji** — „Dodaj psa" i „Nowe zadanie" (z dniem) trzymają wartości
   w `state.form` (`formVal`, `FORM_FIELDS`, zapis na `input`/`change`), jak mail w `mailDraft`:
   przerysowanie katalogu, gdy palec akurat nie jest w polu, wymieniało formularz na pusty.
@@ -424,7 +436,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1332 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1368 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -512,6 +524,9 @@ trybu edycji), S112f–S112g „Dodaj", gdy prowadząca wpisuje już następnego
 w katalogu, lista podmieniana bez formularzy — review PR #5), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
 za komunikatem (przegląd 1.2), S116–S119 ankieta tygodniowa w panelu (domyślne ustawienia, „Pobierz
 grupy", zapis, te same reguły co serwer, szkic przeżywa przerysowanie, „Wyślij teraz" z potwierdzeniem),
+S120 stan konta bota osobnym pytaniem (panel nie czeka, „sprawdzam…", bramka nie odpowiada), S121 „nie wiadomo,
+czy wyszła" (sprawdź w grupie, wysłać mimo to — `force`; „trwa dłużej" po watchdogu i ponowne sprawdzenie) —
+review PR #5, runda 2,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -537,6 +552,8 @@ B56 tydzień ankiety (`pollMonday_`, `pollWeekLabel_`), B57 ustawienia ankiety i
 `installTriggers()`, token nigdy do przeglądarki), B58 wysyłka (termin i okno, raz na grupę i tydzień,
 przez północ, błąd bez tokenu, „w toku", świeży odczyt), B59 grupy bota (`getPollChats`),
 B60 zgoda na bramkę (`authorizeWhatsApp` + `requireScopes`, komunikat przy braku zgody — `env.consent` w atrapie),
+B61 nieznany wynik wysyłki (bramka przyjęła, odpowiedź zginęła: „nie wiadomo", bez drugiej ankiety; `force`;
+pewne „nie wyszło" przy braku zgody),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -635,8 +652,8 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
   stawałoby — dni przestałyby się zamykać. Od 1.1.2 `histRoom_` dokłada brakujące wiersze
   z formatem `@` (B51); **historii nie kasujemy** (decyzja właściciela — idzie do władz
   schroniska). `appendRow` (Psy, Zadania) rośnie sam. Zakładka Spacery dopisuje nowe spacery
-  tak samo pod ostatni wiersz (`walkDay_().save`) — na produkcji czyszczona co noc, ale na teście
-  (bez wyzwalacza) rośnie bez końca.
+  tak samo pod ostatni wiersz (`walkDay_().save`) — czyszczona co noc (na teście dopiero od
+  2026-10-05, wcześniej bez wyzwalacza rosła bez końca).
 - Aplikacja działa w zagnieżdżonym iframie `googleusercontent.com`. Wbudowane
   przeglądarki (WhatsApp, Messenger) potrafią zablokować most `postMessage`
   i wtedy wywołania wiszą — to nie jest błąd kodu.
@@ -785,10 +802,12 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   pustych). Czyszczenie na produkcji było wtedy o 19:00 (od 2026-10-03 — 18:00). Przed wdrożeniem
   zrobiona próba generalna: kod @16 i nowy na jednym arkuszu (dzień, noc, cofnięcie, ponowne
   wdrożenie) oraz stara karta @16 z nowym serwerem — wszystko zielone.
-- **Projekt testowy nie ma wyzwalacza `endOfDay`** (wyzwalacze nie kopiują się z projektem).
-  Dzień przełącza tam zegar, ale nic nie trafia do Historii i Spacery puchnie. Nocne czyszczenie
-  nowego kodu sprawdzone raz ręcznie z edytora 28.09. Stary układ Spacery testu przepisał się
-  przy @8 jeszcze bez kopii — jest tylko w historii wersji arkusza.
+- **Projekt testowy ma wyzwalacz `endOfDay` od 2026-10-05** — założył go `installTriggers()`
+  uruchomione z edytora testu przy konfiguracji ankiety; właściciel zdecydował, że zostaje (review
+  PR #5, runda 2). Wcześniej go nie było (wyzwalacze nie kopiują się z projektem): nic nie trafiało
+  do Historii, a Spacery puchło — pierwsze czyszczenie (5.10, godzina resetu testu) domyka wszystkie
+  zaległe dni naraz; sprawdzić w Wykonaniach i w Historii testu. Stary układ Spacery testu przepisał
+  się przy @8 jeszcze bez kopii — jest tylko w historii wersji arkusza.
 
 ## Jak ze mną pracować
 
