@@ -313,7 +313,7 @@
     font-size:12.5px;font-weight:700;}
   .polldirty.hidden{display:none;}
   .pollstate{margin-bottom:9px;padding:6px 10px;border-radius:8px;font-size:12.5px;font-weight:700;
-    background:var(--warn-bg);color:var(--warn-ink);}
+    background:var(--warn-bg);color:var(--warn-ink);overflow-wrap:anywhere;}   /* długi adres z błędu nie wychodzi z ramki */
   .pollstate.ok{background:#e2ebe3;color:var(--forest);}
   .pollwhen{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12.5px;font-weight:700;}
   .pollwhen select{min-width:0;font-family:inherit;font-size:13px;padding:9px 8px;border:1px solid #bcccbc;border-radius:9px;background:#fff;}
@@ -324,7 +324,7 @@
   .pollchat select{flex:1;min-width:0;font-family:inherit;font-size:14px;padding:9px 8px;border:1px solid #bcccbc;border-radius:9px;background:#fff;}
   .pollchecks{display:flex;flex-direction:column;gap:8px;margin:2px 0 10px;}
   .pollchecks input{width:18px;height:18px;margin:0;accent-color:var(--forest);}
-  .hint.pollerr{color:var(--warn-ink);font-weight:700;}
+  .hint.pollerr{color:var(--warn-ink);font-weight:700;overflow-wrap:anywhere;}
   .diag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
   .diagrow{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--line);}
   .diagrow:last-child{border-bottom:0;}

@@ -471,9 +471,12 @@ Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własn
    `greenApiInstance` (idInstance) i `greenApiToken` (apiTokenInstance). **Token daje pełny dostęp
    do konta bota** — trzymaj go tylko tam: nie w kodzie, nie w czacie, nie na WhatsAppie. Aplikacja
    nigdy nie wysyła go do przeglądarki.
-4. Po wdrożeniu wersji z ankietą uruchom raz z edytora `installTriggers()` i zatwierdź nowe
-   uprawnienie (połączenie z zewnętrzną usługą). Bez tej zgody sama aplikacja działa (sprawdzone
-   na teście, @21), ale bramka nie: panel pokaże „nie udało się sprawdzić", a ankieta nie wyjdzie.
+4. Po wdrożeniu wersji z ankietą uruchom raz z edytora **`authorizeWhatsApp()`** i zatwierdź
+   nowe uprawnienie (połączenie z zewnętrzną usługą; przy własnym skrypcie Google ostrzega
+   „aplikacja niezweryfikowana" → „Zaawansowane" → „Przejdź do…" → „Zezwól"). Dziennik wykonania
+   pokaże stan konta bota. `installTriggers()` tej zgody nie daje — od 2025 edytor pyta tylko
+   o uprawnienia, których uruchomiona funkcja faktycznie użyje (sprawdzone na teście). Bez zgody
+   sama aplikacja działa, ale bramka nie: panel mówi wtedy, co uruchomić, a ankieta nie wyjdzie.
 5. Panel → „Ankieta tygodniowa na WhatsAppie": „Pobierz grupy", wybierz grupę, dzień i godzinę,
    sprawdź pytanie i odpowiedzi, zaznacz „wysyłaj co tydzień", „Zapisz". Do próby: wybierz grupę
    tylko z sobą, „Wyślij teraz", potem wróć do „Grafiku".
@@ -561,7 +564,7 @@ Temat: panel prowadzącej.
   z dniami tygodnia (jak dotąd ręcznie), w ustawionym dniu i godzinie. Ustawienia w panelu (grupa,
   dzień, godzina, pytanie z [TYDZIEŃ], odpowiedzi, „wysyłaj co tydzień", „Wyślij teraz"). Droga
   nieoficjalna (bramka Green API) — opis, ryzyko i uruchomienie: rozdział „Ankieta tygodniowa
-  na WhatsAppie". **Po wdrożeniu: `installTriggers()` z edytora** (nowe uprawnienie).
+  na WhatsAppie". **Po wdrożeniu: `authorizeWhatsApp()` z edytora** (nowe uprawnienie).
 
 Przegląd kodu przed dalszą pracą nad panelem — poprawki:
 

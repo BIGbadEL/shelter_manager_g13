@@ -1833,5 +1833,32 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   check('bez bramki — komunikat, co ustawić', /greenApiInstance/.test(msg), msg);
 })();
 
+/* ---------- B60: zgoda na połączenie z bramką ---------- */
+(()=>{
+  console.log('B60: ankieta — zgoda właściciela na połączenie z bramką (authorizeWhatsApp) i komunikat, gdy jej brak');
+  // test 2026-10-05: installTriggers() i sendWeeklyPoll() z edytora o zgodę nie zapytały — edytor pyta
+  // tylko o to, czego wykonanie faktycznie potrzebuje, a żadna z nich nie doszła do UrlFetchApp
+  const SCOPE = 'https://www.googleapis.com/auth/script.external_request';
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  check('bez zgody: authorizeWhatsApp prosi o zgodę na UrlFetchApp i kończy wykonanie (bramki nie rusza)',
+    throws(() => env.api.authorizeWhatsApp()) && env.consent.asked.length === 1 && env.consent.asked[0].mode === 'FULL'
+    && JSON.stringify(env.consent.asked[0].scopes) === JSON.stringify([SCOPE]) && env.http.calls.length === 0, JSON.stringify(env.consent.asked));
+  env.consent.granted.push(SCOPE);
+  check('ze zgodą: od razu sprawdza połączenie z bramką', !throws(() => env.api.authorizeWhatsApp())
+    && /\/getStateInstance\//.test((env.http.calls.slice(-1)[0] || {}).url), JSON.stringify(env.http.calls.map(c => c.url)));
+  const bare = build([{id:1, name:'Borys'}]);
+  bare.consent.granted.push(SCOPE);
+  check('ze zgodą, bez bramki: nie rzuca (mówi w dzienniku, co ustawić)', !throws(() => bare.api.authorizeWhatsApp()) && bare.http.calls.length === 0);
+
+  // UrlFetchApp bez zgody rzuca komunikatem Google (po polsku albo po angielsku) — w panelu ma być, co zrobić
+  ['Nie masz uprawnień do wywołania funkcji UrlFetchApp.fetch. Wymagane uprawnienia: ' + SCOPE,
+   'You do not have permission to call UrlFetchApp.fetch. Required permissions: ' + SCOPE].forEach((g, i) => {
+    env.http.handler = () => { throw new Error(g); };
+    const st = env.api.getDiagnostics(TEST_PIN).poll.state;
+    check('brak zgody (' + (i ? 'en' : 'pl') + '): panel mówi, co uruchomić, bez adresów Google', /authorizeWhatsApp\(\)/.test(st.text)
+      && !/googleapis/.test(st.text), st.text);
+  });
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

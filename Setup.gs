@@ -120,8 +120,9 @@ function applyTextFormats_() {
  * Wywoływana ponownie przy każdej zmianie godziny z panelu.
  *
  * Przy okazji przywraca wyzwalacz ankiety tygodniowej z zapisanych ustawień (Poll.gs) — po tej
- * jednej funkcji z edytora wszystkie wyzwalacze są na miejscu. Uruchomienie jej z edytora po
- * wdrożeniu 1.2 to też zgoda na nowe uprawnienie (połączenie z bramką WhatsAppa, UrlFetchApp).
+ * jednej funkcji z edytora wszystkie wyzwalacze są na miejscu. Zgody na połączenie z bramką
+ * WhatsAppa NIE daje (z bramką się nie łączy, a edytor pyta tylko o to, czego wykonanie
+ * potrzebuje) — do tego authorizeWhatsApp().
  */
 function installTriggers() {
   ScriptApp.getProjectTriggers()

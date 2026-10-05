@@ -103,6 +103,7 @@ function makeContext(opts){
   // UrlFetchApp: każde wywołanie trafia do `http.calls`, a odpowiada `http.handler(url, opts)` —
   // {code, body} albo wyjątek (awaria sieci). Bez handlera: 500, żeby niezamierzone wywołanie było widać.
   const http = { calls: [], handler: null };
+  const consent = { granted: [], asked: [] };
 
   class FrozenDate extends Date {
     constructor(...a){ if(a.length===0) super(nowMs); else super(...a); }
@@ -150,6 +151,14 @@ function makeContext(opts){
     ScriptApp: {
       WeekDay: { SUNDAY:'SUNDAY', MONDAY:'MONDAY', TUESDAY:'TUESDAY', WEDNESDAY:'WEDNESDAY',
                  THURSDAY:'THURSDAY', FRIDAY:'FRIDAY', SATURDAY:'SATURDAY' },
+      AuthMode: { FULL:'FULL' },
+      // zgoda właściciela: `consent.granted` — zakresy już zatwierdzone; brak = jak w edytorze:
+      // koniec wykonania (tu: wyjątek) i okno zgody (`consent.asked`)
+      requireScopes(mode, scopes){
+        consent.asked.push({ mode, scopes: scopes.slice() });
+        const missing = scopes.filter(s => consent.granted.indexOf(s) < 0);
+        if(missing.length) throw new Error('Wymagana zgoda: ' + missing.join(', '));
+      },
       getProjectTriggers: ()=>triggers.slice(),
       deleteTrigger: t => { const i = triggers.indexOf(t); if(i>=0) triggers.splice(i,1); },
       newTrigger(fn){
@@ -192,7 +201,7 @@ function makeContext(opts){
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_,
                           pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
-                          sendWeeklyPoll, pollPanel_ };
+                          sendWeeklyPoll, pollPanel_, authorizeWhatsApp };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
@@ -205,7 +214,7 @@ function makeContext(opts){
   // przez cały scenariusz i testy nie widziałyby tego, co widzi prawdziwy serwer.
   const api = {};
   Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
-  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, setNow, newExecution: ctx.__newExecution,
+  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, consent, setNow, newExecution: ctx.__newExecution,
            propReads: () => propReads, failProps: f => { propFail = f || null; } };
 }
 

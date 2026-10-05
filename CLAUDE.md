@@ -424,7 +424,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1327 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1332 asercje, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -536,6 +536,7 @@ B55 numer psa i boks w Psy jako tekst (format przed wartością, `migrate()`),
 B56 tydzień ankiety (`pollMonday_`, `pollWeekLabel_`), B57 ustawienia ankiety i wyzwalacz (PIN, reguły,
 `installTriggers()`, token nigdy do przeglądarki), B58 wysyłka (termin i okno, raz na grupę i tydzień,
 przez północ, błąd bez tokenu, „w toku", świeży odczyt), B59 grupy bota (`getPollChats`),
+B60 zgoda na bramkę (`authorizeWhatsApp` + `requireScopes`, komunikat przy braku zgody — `env.consent` w atrapie),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -713,10 +714,13 @@ Pułapki clasp:
 Nowy plik `.gs` albo nowe uprawnienie (np. tworzenie wyzwalaczy) wymaga **ponownej
 autoryzacji** przy pierwszym uruchomieniu. **1.2 dokłada uprawnienie połączenia z zewnętrzną
 usługą** (`UrlFetchApp` w `Poll.gs`, bramka WhatsAppa): zaraz po `deploy:test` i po `deploy:prod`
-uruchom z edytora `installTriggers()` i zatwierdź zgodę. Sprawdzone na teście (@21, 2026-10-05):
-bez tej zgody strona i `getData` działają normalnie — zgody wymaga dopiero samo wywołanie bramki
-(`UrlFetchApp`), więc bez niej panel pokazuje stan konta bota „nie udało się sprawdzić", a ankieta
-nie wychodzi (wyzwalacz rzuca błędem — mail od Google).
+uruchom z edytora **`authorizeWhatsApp()`** i zatwierdź zgodę. **Od 2025 edytor pyta tylko
+o uprawnienia, których wykonanie faktycznie użyje** (granularna zgoda): `installTriggers()` ani
+`sendWeeklyPoll()` z wyłączoną ankietą o tę zgodę NIE pytały (sprawdzone na teście 2026-10-05) —
+dlatego osobna funkcja z `ScriptApp.requireScopes`. Bez zgody strona i `getData` działają normalnie;
+zgody wymaga dopiero wywołanie bramki — panel mówi wtedy, co uruchomić (`GREEN_CONSENT`), a ankieta
+nie wychodzi (wyzwalacz rzuca błędem — mail od Google). **Każde przyszłe nowe uprawnienie** —
+ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `requireScopes`).
 
 ## Stan i rzeczy otwarte
 
@@ -746,7 +750,7 @@ nie wychodzi (wyzwalacz rzuca błędem — mail od Google).
 - **Ankieta tygodniowa (1.2) — do uruchomienia przez właściciela** (README, „Ankieta tygodniowa na
   WhatsAppie"): konto bota (osobny numer z WhatsApp Business — jest) w społeczności i w grupie
   „Grafik", instancja Green API połączona kodem QR, trzy właściwości skryptu (osobno test i produkcja),
-  `installTriggers()` z edytora po wdrożeniu (nowe uprawnienie), w panelu grupa / dzień / godzina /
+  `authorizeWhatsApp()` z edytora po wdrożeniu (nowe uprawnienie), w panelu grupa / dzień / godzina /
   „wysyłaj co tydzień". Tokenów nie przekazuje się w czacie — tylko we właściwościach skryptu.
   Nie sprawdzone na prawdziwej bramce (testy znają ją tylko z dokumentacji): pierwsza próba
   „Wyślij teraz" do grupy z samym sobą.

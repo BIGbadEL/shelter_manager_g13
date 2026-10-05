@@ -123,6 +123,24 @@ function setPollSettings(settings, pin) {
 /* ---------- bramka WhatsAppa (Green API) ---------- */
 
 const GREEN_MISSING = 'Bramka WhatsAppa nie jest ustawiona — we właściwościach skryptu dodaj greenApiUrl, greenApiInstance i greenApiToken';
+const GREEN_SCOPE = 'https://www.googleapis.com/auth/script.external_request';
+const GREEN_CONSENT = 'Brak zgody na połączenie z bramką — w edytorze tego projektu uruchom authorizeWhatsApp() i zatwierdź';
+
+/**
+ * Z edytora, raz po wdrożeniu 1.2 (na teście i na produkcji): zgoda właściciela na połączenie
+ * z bramką WhatsAppa (UrlFetchApp). Od 2025 edytor pyta tylko o uprawnienia, których wykonanie
+ * faktycznie potrzebuje — installTriggers() czy sendWeeklyPoll() z wyłączoną ankietą z bramką się
+ * nie łączą, więc o tę zgodę nie pytały (sprawdzone na teście 2026-10-05). requireScopes kończy
+ * wykonanie i pokazuje okno zgody; z nią — od razu sprawdza połączenie i wpisuje stan do dziennika.
+ * Publiczna (edytor nie uruchamia funkcji z „_"); z przeglądarki nic nie zwraca ani nie zmienia.
+ */
+function authorizeWhatsApp() {
+  ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, [GREEN_SCOPE]);
+  if (!greenApi_()) { console.log('Zgoda jest. ' + GREEN_MISSING + '.'); return; }
+  const r = greenCall_('getStateInstance');
+  const v = String(r && r.stateInstance || '');
+  console.log('Zgoda jest. Konto WhatsApp bota: ' + (POLL_STATES[v] || v));
+}
 
 /** Dostęp do bramki z właściwości skryptu albo null. */
 function greenApi_() {
@@ -149,7 +167,10 @@ function greenCall_(method, body, query) {
   try {
     res = UrlFetchApp.fetch(g.url + '/waInstance' + g.id + '/' + method + '/' + encodeURIComponent(g.token) + (query || ''), opts);
   } catch (e) {
-    throw new Error('Bramka WhatsAppa nie odpowiada: ' + hide(e && e.message || e));
+    const m = String(e && e.message || e);
+    // brak zgody właściciela na UrlFetchApp (po wdrożeniu 1.2) — po ludzku, co zrobić, zamiast komunikatu Google
+    if (/script\.external_request|UrlFetchApp\.fetch/.test(m)) throw new Error(GREEN_CONSENT);
+    throw new Error('Bramka WhatsAppa nie odpowiada: ' + hide(m));
   }
   const code = res.getResponseCode(), text = String(res.getContentText() || '');
   if (code !== 200) throw new Error('Bramka WhatsAppa: błąd ' + code + (text ? ' (' + hide(text).slice(0, 150) + ')' : ''));
