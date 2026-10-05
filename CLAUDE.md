@@ -44,9 +44,12 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
   Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
-  `identyfikator` (numer psa) to **tekst `@`** — od 1.2 ustawiany przy każdym dodaniu i edycji
-  PRZED wartością (`setIdent_`, dlatego numer nie jedzie w `appendRow`) i przez `migrate()` na całej
-  kolumnie; „1/26" arkusz potrafi zamienić na datę, a numer idzie do Historii i władz schroniska (B55).
+  `identyfikator` (numer psa) i `boks` to **tekst `@`** — od 1.2 ustawiany przy każdym dodaniu
+  i edycji PRZED wartością (`setTextFields_`, dlatego te pola nie jadą w `appendRow`) i przez
+  `migrate()` na całych kolumnach; „1/26" czy „3-4" arkusz potrafi zamienić na datę, a numer idzie
+  do Historii i władz schroniska (B55; boks — decyzja właściciela po review PR #5). Format nie
+  przywraca tekstu: komórka, którą arkusz już zamienił na datę, zostaje datą — przed `migrate()`
+  na produkcji przejrzeć numery w trybie edycji i takie wpisać ręcznie.
 - **Spacery** — stan KONKRETNEGO SPACERU psa danego dnia: `data | pies_id | spacer | status | kto | godzina | grupa`.
   Wiersz na trójkę (dzień, pies, numer spaceru), brak wiersza = spacer wolny i bez grupy.
   Pies na dwa spacery ma spacery 1 i 2 — każdy z własną rezerwacją, stanem i grupą. Tylko dni
@@ -168,8 +171,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   to adres schroniska, nie osoby. Prowadząca zmienia je w panelu jednym zapisem:
   `setMailSettings({to, subject, body}, pin)` (1.2, B53) — PIN; **najpierw sprawdza wszystko, potem
   zapisuje** (zły adres nie zostawi nowej treści przy starym odbiorcy); adresy tylko zwykłe
-  (`mailAddresses_`: litery, cyfry, `._%+-` — „?", „&", „#" w adresie rozbiłyby link mailto: albo
-  dopisały ukrytego odbiorcę), temat w jednej linii do `MAX_LEN.MAIL_SUBJECT`, treść jak dotąd
+  (`mailAddresses_`: litery, cyfry, `._+-` — „?", „&", „#" w adresie rozbiłyby link mailto: albo
+  dopisały ukrytego odbiorcę, a „%" poczta odkodowuje, „%41" to „A" — review PR #5), temat w jednej linii do `MAX_LEN.MAIL_SUBJECT`, treść jak dotąd
   (`mailBody_`: `[LISTA]` obowiązkowa, `MAX_LEN.MAIL`, końce linii ujednolicone); puste pola = bez
   odbiorcy / domyślne. Stare `setMailTemplate(text, pin)` zostaje dla kart z 1.1.2 (B52). Obie
   idempotentne, więc w `RETRIABLE` — a skoro kolejka ponawia raz każdy nieudany zapis, przeglądarka
@@ -307,6 +310,13 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   nie ma jeszcze numeru) do pierwszego pełnego stanu po odpowiedzi (`applyData` zdejmuje `done`),
   więc nie mruga, gdy `applyFull_` odkłada stan. Kolejne stuknięcie w pusty formularz, gdy pies
   jest w drodze, nic nie robi — fokus w polu wstrzymałby przerysowanie (busyEditing).
+  **Prowadząca zwykle wpisuje już następnego psa**, więc `safeRender` przy fokusie w polu
+  formularza katalogu podmienia samą listę z licznikiem (`patchCatalog`, `ul[data-catalog]`) —
+  dodany pies wskakuje od razu, pole i palec zostają. Zapis, który przepadł, oddaje dane do
+  formularza tylko wtedy, gdy jest pusty i zaraz się przerysuje (`dogFormEmpty` i nie
+  `busyEditing`); inaczej pies zostaje w katalogu jako **„nie dodano"** (`failed`), a stuknięcie
+  (`reAddDog`) oddaje dane do pustego formularza z tym samym tokenem. Wcześniej taki pies
+  przepadał bez śladu, z komunikatem bez imienia (review PR #5, S112f, S112g).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -337,9 +347,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   aplikacja siedzi w ramce Apps Script (dokumentacja HtmlService radzi `_top` dla linków).
   Telefon otwiera aplikację pocztową z gotowym mailem; którą — zależy od telefonu (Android pyta,
   gdy nie ma domyślnej; iPhone bierze domyślną). Kliknięcia nie przechwytujemy (`sendMail` →
-  zwykły link). Bez tematu z serwera (1.1.2) — bez tego przycisku. Pod nim mniejsze
+  zwykły link). Bez tematu z serwera (1.1.2) — bez tego przycisku. Pod nim
   **„📋 Skopiuj treść"** (`copyMail`) — zapas, gdy telefon poczty nie otworzy (np. przeglądarka
-  WhatsAppa): kopiuje
+  WhatsAppa); tej samej wysokości, ale z ramką zamiast wypełnienia (decyzja właściciela po review
+  PR #5 — tam, gdzie poczta się nie otwiera, to jedyna droga, a 27 px trudno trafić): kopiuje
   treść z panelu (`state.mailTemplate` z `getData`) z podstawionym `[DATA]` (dd.mm.rrrr) i `[LISTA]`
   (`mailList`: CSV `data,pies,numer`, **pies raz na dzień** — dwa spacery to jeden pies, po imieniu,
   pola z przecinkiem w cudzysłowie; pies bez imienia — pusta kolumna „pies", numer raz, jak
@@ -388,7 +399,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1210 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1227 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -470,7 +481,8 @@ wysłaniem (adres, temat, `[LISTA]`, limity równe serwerowym), S110c niezapisan
 i do przywrócenia, S111 „Wyślij e-mail" jako link mailto: (odbiorcy, temat z datą, treść CRLF,
 kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2), S112–S112e „Dodaj" psa (kilka stuknięć = jeden
 pies, „dodaję…", powtórka z tym samym tokenem, dane wracają po nieudanym zapisie, szkice formularzy
-trybu edycji), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
+trybu edycji), S112f–S112g „Dodaj", gdy prowadząca wpisuje już następnego psa („nie dodano"
+w katalogu, lista podmieniana bez formularzy — review PR #5), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
 za komunikatem (przegląd 1.2),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
@@ -492,7 +504,7 @@ B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.
 B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powrót do domyślnej),
 B53 ustawienia maila `setMailSettings` (adresy, temat, treść; nic połowicznie; stare `setMailTemplate`),
 B54 `addDog` z tokenem (powtórka nie dokłada psa, sufit pamięci, świeży odczyt, awaria właściwości),
-B55 numer psa w Psy jako tekst (format przed wartością, `migrate()`),
+B55 numer psa i boks w Psy jako tekst (format przed wartością, `migrate()`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -558,7 +570,9 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
     razu, pies stoi w katalogu jako „dodaję…" (`state.adding`), a każde „Dodaj" niesie token
     (`addDogToken`): serwer pamięta ostatnie `DOG_ADDS_KEEP` (właściwość `dogAdds`, świeży odczyt pod
     blokadą) i powtórki psa nie dokłada — dzięki temu `addDog` jest w `RETRIABLE` (S112, B54).
-    Nieudany zapis oddaje dane do pustego formularza z tym samym tokenem, dopóki treść się nie zmieni.
+    Nieudany zapis oddaje dane do pustego formularza z tym samym tokenem, dopóki treść się nie zmieni,
+    a gdy w formularzu jest już następny pies — zostawia w katalogu „nie dodano" (review PR #5).
+    **Żaden nieudany zapis nie może zniknąć bez śladu** — ślad musi zostać na ekranie, nie tylko w komunikacie.
 
 ## Pułapki Apps Script
 
@@ -688,7 +702,15 @@ autoryzacji** przy pierwszym uruchomieniu.
   i treścią z prawdziwego iframu Apps Script — Android (Gmail i inna poczta), iPhone, przeglądarka
   WhatsAppa — i czy polskie znaki oraz łamania linii w treści dochodzą w całości. Link `mailto:`
   ze strony z ramką testy sprawdzają tylko co do kształtu; to, czy telefon go przepuści, widać
-  dopiero na nim. Gdy nie przepuści — zostaje „Skopiuj treść".
+  dopiero na nim. Gdy nie przepuści — zostaje „Skopiuj treść". Do tego (review PR #5): na
+  **największym prawdziwym dniu** czy w mailu jest cała lista (link to ~45 znaków na psa, 60 psów
+  ≈ 2600 — część aplikacji przycina długie linki), i w WhatsAppie/Messengerze, gdy poczta się NIE
+  otworzy — czy `target="_top"` nie zostawia strony błędu zamiast aplikacji (a jeśli tak — czy
+  „wstecz" do niej wraca).
+- **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
+  (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
+  `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —
+  wąski przypadek, `removeDog` zamyka spacery usuniętego psa, zostaje.
 - **Do sprawdzenia na iPhonie:** po konflikcie rezerwacji pole imienia wraca z wpisanym tekstem
   (`putEntry`), ale fokus przychodzi z odpowiedzi serwera, nie ze stuknięcia — iOS raczej nie
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.

@@ -465,8 +465,11 @@
     const a = document.getElementById('resetNote');
     if(a) a.textContent = '↺ czyści się o ' + hh;
   }
-  /** Render, który nie wyrywa nikomu klawiatury spod palców. */
-  function safeRender(cause){ if(!busyEditing()) render(cause); else updateBusy(); }
+  /**
+   * Render, który nie wyrywa nikomu klawiatury spod palców. Prowadzącej piszącej w formularzu
+   * katalogu podmieniamy przynajmniej samą listę psów (patchCatalog).
+   */
+  function safeRender(cause){ if(!busyEditing()) render(cause); else { patchCatalog(); updateBusy(); } }
 
   /**
    * Pełny stan z serwera (akcje edycyjne). Gdy w kolejce czekają
@@ -1245,20 +1248,52 @@
   /** Tryb edycji: zadania, katalog psów, dodawanie psa. Bez dat i bez rezerwacji. */
   function renderCatalog(){
     if(!state.loaded) return '<div class="empty">Ładowanie…</div>';
-    const n = state.dogs.length;
-    let html = `${renderTaskAdmin()}
-      <div class="count"><b>${n}</b> ${plural(n,'pies','psy','psów')} w katalogu</div>
-      <ul>`;
+    lastCatalogList = catalogList();
+    return `${renderTaskAdmin()}
+      <div class="count">${catalogCount()}</div>
+      <ul data-catalog>${lastCatalogList}</ul>` + renderAdminAddBox();
+  }
+  function catalogCount(){ const n = state.dogs.length; return `<b>${n}</b> ${plural(n,'pies','psy','psów')} w katalogu`; }
+  function catalogList(){
+    let html = '';
     state.dogs.forEach(dog=>{
       html += state.editId===dog.id ? renderEditForm(dog) : renderCatalogDog(dog);
     });
     state.adding.forEach(a=>{ html += renderAddingDog(a); });
-    return html + `</ul>` + renderAdminAddBox();
+    return html;
   }
 
-  /** Pies w drodze na serwer: na końcu katalogu, bez przycisków (nie ma jeszcze numeru), z kręciołkiem. */
+  /**
+   * Sama lista katalogu (i licznik) bez formularzy — gdy prowadząca pisze w „Dodaj psa" albo „Nowe
+   * zadanie". Pełne przerysowanie zabrałoby jej pole spod palców (busyEditing), a bez żadnego
+   * „dodaję…" wisiało przy psie już dodanym albo takim, którego zapis przepadł — prowadząca
+   * wpisywała właśnie następnego (review PR #5). Nie przy otwartej edycji psa: jej formularz
+   * stoi w samej liście.
+   */
+  let lastCatalogList = null;
+  function patchCatalog(){
+    const a = document.activeElement;
+    if(!state.admin || state.view!=='today' || !state.loaded || state.editId!==null || !a || FORM_FIELDS.indexOf(a.id) < 0) return;
+    const ul = viewEl.querySelector('ul[data-catalog]'), cnt = viewEl.querySelector('.count');
+    const html = catalogList();
+    if(!ul || html === lastCatalogList) return;
+    ul.innerHTML = html;
+    if(cnt) cnt.innerHTML = catalogCount();
+    lastCatalogList = html;
+    invalidateHtml();                                // DOM zmieniony poza render()
+  }
+
+  /**
+   * Pies w drodze na serwer: na końcu katalogu, bez przycisków (nie ma jeszcze numeru), z kręciołkiem.
+   * Zapis, który przepadł, a jego danych nie dało się oddać do formularza (prowadząca wpisuje już
+   * następnego psa): „nie dodano" — stuknięcie oddaje dane do formularza (reAddDog). Bez tego pies
+   * znikał bez śladu, a wychodziło to dopiero, gdy brakowało go na liście dnia (review PR #5).
+   */
   function renderAddingDog(a){
     const dm=DIF[a.dif]||DIF.easy;
+    if(a.failed) return `<li class="dog adding failed" data-act="reAddDog" data-token="${esc(a.token)}" style="border-left-color:${dm.color}">
+      <div class="row"><span class="name">${esc(dogLabel(a))}</span><span class="flex"></span><span class="addnote">nie dodano</span></div>
+      <div class="addhint">Zapis nie przeszedł — stuknij, żeby wpisać go ponownie.</div></li>`;
     return `<li class="dog adding" style="border-left-color:${dm.color}">
       <div class="row"><span class="name">${esc(dogLabel(a))} <span class="saving" title="zapisuję…"></span></span>
         <span class="flex"></span><span class="addnote">dodaję…</span></div></li>`;
@@ -1307,7 +1342,8 @@
    * „Dodaj" psa (zgłoszenie z panelu: kilka stuknięć w „Dodaj", gdy dane wciąż stały w polach,
    * dawało kilka takich samych psów). Formularz pustoszeje od razu, a pies staje na końcu
    * katalogu jako „dodaję…" — drugie stuknięcie nie ma już czego dodać. Gdy zapis ostatecznie
-   * się nie uda, dane wracają do pustego formularza (z tym samym tokenem).
+   * się nie uda: dane wracają do pustego formularza (z tym samym tokenem), a gdy prowadząca
+   * wpisuje już następnego psa — pies zostaje w katalogu jako „nie dodano" (renderAddingDog).
    */
   function doAddDog(){
     const v = id => document.getElementById(id).value.trim();
@@ -1315,10 +1351,10 @@
     if(!f.name && !f.ident){
       // kolejne stuknięcie zaraz po „Dodaj": pies już jest w drodze („dodaję…") — nic więcej nie robimy.
       // Fokus w polu otworzyłby klawiaturę i wstrzymał przerysowanie (busyEditing) — dodany pies by nie wskoczył
-      if(state.adding.some(x => !x.done)) return;
+      if(state.adding.some(x => !x.done && !x.failed)) return;
       toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return;
     }
-    const a = Object.assign({token: addDogToken(f), done:false}, f);
+    const a = Object.assign({token: addDogToken(f), done:false, failed:false}, f);
     DOG_FORM.concat('addToken').forEach(id => { delete state.form[id]; });
     state.adding.push(a);
     render('self');
@@ -1328,14 +1364,31 @@
         applyFull_(res);
         toast('Dodano: ' + dogLabel(a), 'ok');
       },
-      fail: () => {
-        state.adding = state.adding.filter(x => x !== a);
-        const el = document.activeElement;
-        if(DOG_FORM.some(id => state.form[id]) || (el && DOG_FORM.indexOf(el.id) >= 0)) return;   // ktoś wpisuje już innego psa
-        Object.assign(state.form, {newName:a.name, newIdent:a.ident, newBox:a.box, newDif:a.dif,
-                                   addToken:{token:a.token, sig:dogSig(a)}});
+      fail: msg => {
+        // dane do formularza tylko wtedy, gdy jest pusty i od razu się przerysuje — inaczej wiersz „nie dodano"
+        const back = dogFormEmpty() && !busyEditing();
+        if(back){ state.adding = state.adding.filter(x => x !== a); fillDogForm(a); }
+        else a.failed = true;
+        toast('Nie dodano: ' + dogLabel(a) + (back ? ' — dane wróciły do formularza' : ' — stuknij go na liście, żeby wpisać ponownie')
+              + (msg ? ' (' + msg + ')' : ''));
       },
     });
+  }
+  /** Czy w „Dodaj psa" nie ma żadnego psa (sama trudność się nie liczy — to lista z wartością domyślną). */
+  function dogFormEmpty(){ return !['newName','newIdent','newBox'].some(id => String(state.form[id] || '').trim()); }
+  /** Dane psa z powrotem w formularzu — z tym samym tokenem: te same dane to wciąż to samo dodanie. */
+  function fillDogForm(a){
+    Object.assign(state.form, {newName:a.name, newIdent:a.ident, newBox:a.box, newDif:a.dif,
+                               addToken:{token:a.token, sig:dogSig(a)}});
+  }
+  /** Stuknięcie w „nie dodano": dane wracają do formularza, jeśli nie stoi w nim inny pies. */
+  function reAddDog(token){
+    const a = state.adding.filter(x => x.token === token && x.failed)[0];
+    if(!a) return;
+    if(!dogFormEmpty()){ toast('W formularzu „Dodaj psa" jest inny pies — najpierw go dodaj albo wyczyść pola'); return; }
+    state.adding = state.adding.filter(x => x !== a);
+    fillDogForm(a);
+    render('self');
   }
 
   /** Podsumowanie nad listą (liczone w spacerach) — osobno, bo podmieniamy je też przy patchDog(). */
@@ -1516,8 +1569,8 @@
     const d = state.mailDraft;
     return !!d && (d.to !== (state.mailTo || '') || d.subject !== (state.mailSubject || '') || d.body !== (state.mailTemplate || ''));
   }
-  /** Adres jak na serwerze (mailAddresses_): tylko zwykłe adresy — „?", „&", „#" rozbiłyby link mailto:. */
-  const MAIL_ADDR = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  /** Adres jak na serwerze (mailAddresses_): tylko zwykłe adresy — „?", „&", „#" rozbiłyby link mailto:, „%" poczta odkodowuje. */
+  const MAIL_ADDR = /^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
   /** Te same reguły co setMailSettings na serwerze — komunikat od razu, nie po dwóch przelotach. '' = w porządku. */
   function mailProblem(f){
     const list = String(f.to || '').split(/[\s,;]+/).filter(Boolean);
@@ -2309,6 +2362,7 @@
       enqueue('removeDog',[id,state.pin],{reconcile:applyFull_});
     }
     if(act==='add') doAddDog();
+    if(act==='reAddDog') reAddDog(btn.dataset.token);
     if(act==='taskAdd'){
       const el=document.getElementById('newTask'); const text=el.value.trim();
       if(!text){ el.focus(); return; }

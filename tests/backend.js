@@ -1528,6 +1528,8 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   const same = () => { const x = env.api.getData(); return JSON.stringify([x.mailTo, x.mailSubject, x.mailTemplate]) === keep; };
   check('zły adres odrzucony — i nic z reszty się nie zapisuje', throws(() => env.api.setMailSettings({to: 'schronisko.pl', subject: 'Inny', body: 'X [LISTA]'}, TEST_PIN)) && same());
   check('adres ze znakami, które rozbiłyby link mailto (?, &), odrzucony', throws(() => env.api.setMailSettings({to: 'a@b.pl?cc=x@y.pl', subject: 'T', body: '[LISTA]'}, TEST_PIN)) && same());
+  check('adres z „%" odrzucony — poczta odkoduje „%41" na „A" i mail pójdzie gdzie indziej (review PR #5)',
+    throws(() => env.api.setMailSettings({to: 'schr%41nisko@b.pl', subject: 'T', body: '[LISTA]'}, TEST_PIN)) && same());
   check('treść bez [LISTA] odrzucona — reszta też nie', throws(() => env.api.setMailSettings({to: 'a@b.pl', subject: 'T', body: 'bez listy'}, TEST_PIN)) && same());
   check('za długi temat odrzucony', throws(() => env.api.setMailSettings({to: '', subject: 'x'.repeat(200), body: '[LISTA]'}, TEST_PIN)) && same());
   const nl = env.api.setMailSettings({to: '', subject: 'Linia 1\nLinia 2', body: '[LISTA]'}, TEST_PIN);
@@ -1579,15 +1581,16 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
 
 /* ---------- B55: numer psa w zakładce Psy jako tekst ---------- */
 (()=>{
-  console.log('B55: numer psa w Psy jako tekst („1/26" to nie data) — format przed wartością, dodanie, edycja, setup/migrate');
-  // numer idzie do Historii i maila dla władz schroniska; w Historii jest '@' od 1.1.1, w Psy nie było
+  console.log('B55: numer psa i boks w Psy jako tekst („1/26", „3-4" to nie daty) — format przed wartością, dodanie, edycja, setup/migrate');
+  // numer idzie do Historii i maila dla władz schroniska; w Historii jest '@' od 1.1.1, w Psy nie było.
+  // Boks (decyzja właściciela po review PR #5) — ta sama droga do arkusza, ten sam kłopot
   const env = build([{id:1, name:'Borys'}]);
   const P = env.sheets['Psy'];
-  const ops = [];                                             // kolejność: format, potem wartość w kolumnie numeru
+  const ops = [];                                             // kolejność: format, potem wartość w kolumnach numeru i boksu
   const getRange = P.getRange.bind(P);
   P.getRange = (r, c, nr, nc) => {
     const g = getRange(r, c, nr, nc), w = nc || 1;
-    const hits = c <= 3 && 3 < c + w;
+    const hits = c <= 4 && 3 < c + w;
     const sv = g.setValues, s1 = g.setValue, sf = g.setNumberFormat;
     g.setValues = v => { if(hits) ops.push('wartość ' + r); return sv.call(g, v); };
     g.setValue = v => { if(hits) ops.push('wartość ' + r); return s1.call(g, v); };
@@ -1598,17 +1601,21 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   const appendRow = P.appendRow.bind(P);
   P.appendRow = r => { appended = r.slice(); appendRow(r); };
 
-  env.api.addDog({name:'Rex', ident:'1/26'}, TEST_PIN, 'dident000001');
+  env.api.addDog({name:'Rex', ident:'1/26', box:'3-4'}, TEST_PIN, 'dident000001');
   const row = P._data.findIndex(r => r[1] === 'Rex') + 1;
-  check('dodanie: numer nie jedzie w appendRow (arkusz sparsowałby go przed formatem)', !!appended && appended[2] === '', JSON.stringify(appended));
-  check('...format tekstowy, potem numer', JSON.stringify(ops) === JSON.stringify(['format ' + row, 'wartość ' + row]) && P._data[row - 1][2] === '1/26',
-    JSON.stringify(ops));
+  check('dodanie: numer i boks nie jadą w appendRow (arkusz sparsowałby je przed formatem)',
+    !!appended && appended[2] === '' && appended[3] === '', JSON.stringify(appended));
+  check('...format tekstowy, potem numer i boks', JSON.stringify(ops) === JSON.stringify(['format ' + row, 'wartość ' + row])
+    && P._data[row - 1][2] === '1/26' && P._data[row - 1][3] === '3-4', JSON.stringify(ops));
+  check('...format na obu kolumnach', P._formatRanges.some(f => f.row === row && f.col === 3 && f.cols === 2 && f.f === '@'),
+    JSON.stringify(P._formatRanges.slice(-2)));
   ops.length = 0;
-  env.api.updateDog(1, {name:'Borys', ident:'2/26'}, TEST_PIN);
-  check('edycja: format, potem wartości', JSON.stringify(ops) === JSON.stringify(['format 2', 'wartość 2']) && P._data[1][2] === '2/26', JSON.stringify(ops));
+  env.api.updateDog(1, {name:'Borys', ident:'2/26', box:'1/2'}, TEST_PIN);
+  check('edycja: format, potem wartości', JSON.stringify(ops) === JSON.stringify(['format 2', 'wartość 2'])
+    && P._data[1][2] === '2/26' && P._data[1][3] === '1/2' && P._formatRanges.some(f => f.row === 2 && f.col === 3 && f.cols === 2), JSON.stringify(ops));
   P._formats = {};
   env.api.migrate();
-  check('migrate()/setup(): cała kolumna numeru jako tekst', P._formats[3] === '@', JSON.stringify(P._formats));
+  check('migrate()/setup(): całe kolumny numeru i boksu jako tekst', P._formats[3] === '@' && P._formats[4] === '@', JSON.stringify(P._formats));
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

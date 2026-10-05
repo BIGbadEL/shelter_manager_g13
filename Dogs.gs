@@ -795,12 +795,13 @@ function noteDogAdd_(adds, token, id) {
 }
 
 /**
- * Numer psa jako tekst ('@') — zrzuty historii i mail idą do władz schroniska, a „1/26" wpisane
- * w komórkę bez formatu arkusz potrafi zamienić na datę (jak godzinę, bug nr 3). Format idzie
- * PRZED wartością, dlatego numer nie jedzie w appendRow / setValues razem z resztą wiersza.
+ * Numer psa i boks jako tekst ('@') — zrzuty historii i mail idą do władz schroniska, a „1/26"
+ * (czy boks „1/2", „3-4") wpisane w komórkę bez formatu arkusz potrafi zamienić na datę (jak
+ * godzinę, bug nr 3). Format idzie PRZED wartością, dlatego te pola nie jadą w appendRow razem
+ * z resztą wiersza. Dwie sąsiednie kolumny (IDENT, BOX) — jeden zakres.
  */
-function setIdent_(sh, row, ident) {
-  sh.getRange(row, DOG.IDENT).setNumberFormat('@').setValue(ident);
+function setTextFields_(sh, row, ident, box) {
+  sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@').setValues([[ident, box]]);
 }
 
 /**
@@ -817,9 +818,9 @@ function addDog(data, pin, token) {
     if (adds && Object.prototype.hasOwnProperty.call(adds, t)) return getData();   // ten pies już jest
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const id = nextId_(sh);
-    sh.appendRow([id, d.name, '', d.box, d.dif, STATUS.FREE, '', '', '',
+    sh.appendRow([id, d.name, '', '', d.dif, STATUS.FREE, '', '', '',
                   d.note, d.walks, '', '', d.noteUntil]);
-    setIdent_(sh, sh.getLastRow(), d.ident);
+    setTextFields_(sh, sh.getLastRow(), d.ident, d.box);
     if (adds) noteDogAdd_(adds, t, id);
     return getData();
   });
@@ -833,7 +834,7 @@ function updateDog(id, data, pin) {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row > 0) {
-      sh.getRange(row, DOG.IDENT).setNumberFormat('@');
+      sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@');        // numer i boks jako tekst, przed wartością
       sh.getRange(row, DOG.NAME, 1, 4).setValues([[d.name, d.ident, d.box, d.dif]]);
       sh.getRange(row, DOG.NOTE, 1, 2).setValues([[d.note, d.walks]]);
       sh.getRange(row, DOG.NOTE_UNTIL).setValue(d.noteUntil);   // kolumna niesąsiadująca z notatką

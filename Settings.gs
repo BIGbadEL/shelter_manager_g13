@@ -167,11 +167,12 @@ function mailBody_(text) {
 /**
  * Odbiorcy z panelu: przecinki, średniki i spacje rozdzielają, wynik „a@b.pl, c@d.pl". Adres
  * idzie wprost do linku mailto:, więc dopuszczamy tylko zwykłe adresy — „?", „&", „#" czy „,"
- * w środku rozbiłyby link albo dopisały ukrytego odbiorcę. '' = bez odbiorcy.
+ * w środku rozbiłyby link albo dopisały ukrytego odbiorcę, a „%" poczta odkodowuje („%41" to „A"),
+ * więc mail poszedłby gdzie indziej, niż wpisano (review PR #5). '' = bez odbiorcy.
  */
 function mailAddresses_(raw) {
   const list = String(raw == null ? '' : raw).split(/[\s,;]+/).filter(Boolean);
-  const bad = list.filter(a => !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(a));
+  const bad = list.filter(a => !/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(a));
   if (bad.length) throw new Error('To nie wygląda na adres e-mail: ' + bad[0]);
   const s = list.join(', ');
   if (s.length > MAX_LEN.MAIL_TO) throw new Error('Za dużo odbiorców — najwyżej ' + MAX_LEN.MAIL_TO + ' znaków');

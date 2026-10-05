@@ -525,7 +525,10 @@ Przegląd kodu przed dalszą pracą nad panelem — poprawki:
   w polach do odpowiedzi serwera, więc nic nie mówiło, że coś się dzieje. Teraz formularz pustoszeje
   od razu, a pies staje na końcu katalogu jako „dodaję…"; kolejne stuknięcie nic nie robi. Każde
   „Dodaj" niesie też token: przy zaginionej odpowiedzi aplikacja sama ponawia zapis, a serwer
-  z tym samym tokenem psa drugi raz nie doda. Gdy zapis się nie uda, wpisane dane wracają do formularza.
+  z tym samym tokenem psa drugi raz nie doda. Gdy zapis się nie uda, wpisane dane wracają do
+  formularza — a gdy prowadząca wpisuje już następnego psa, nieudany zostaje w katalogu jako
+  „nie dodano" i stuknięcie oddaje jego dane. Dodany pies pojawia się w katalogu od razu, także
+  wtedy, gdy prowadząca pisze już kolejnego (review PR #5).
 - **Rezerwacja potrafiła na chwilę „odskoczyć" do wolnej.** Odświeżenie co 15 s, które wyruszyło tuż
   przed stuknięciem, wracało z odczytem sprzed zapisu i cofało go na ekranie — do następnego
   odświeżenia. Teraz taki odczyt jest pomijany i aplikacja pyta jeszcze raz. To samo dotyczyło
@@ -534,11 +537,16 @@ Przegląd kodu przed dalszą pracą nad panelem — poprawki:
   przerysowaniu — wybrany dzień zadania potrafił wrócić po cichu na dzisiejszy.
 - Sprawdzanie PIN-u bez połączenia nie kończy się ciszą, tylko komunikatem; panel, który nie pobrał
   stanu serwera, mówi o tym i ma „Spróbuj jeszcze raz" (wcześniej wisiało „Pobieram…").
-- Numer psa w zakładce Psy zapisuje się jako tekst (jak w Historii od 1.1.1) — „1/26" arkusz
-  potrafi zamienić na datę, a ten numer idzie do władz schroniska. Dotyczy psów dodanych
-  i poprawionych od tej wersji; `migrate()` z edytora ustawia format na całej kolumnie (opcjonalnie).
+- Numer psa i boks w zakładce Psy zapisują się jako tekst (numer jak w Historii od 1.1.1) —
+  „1/26" czy „3-4" arkusz potrafi zamienić na datę, a numer idzie do władz schroniska. Dotyczy psów
+  dodanych i poprawionych od tej wersji; `migrate()` z edytora ustawia format na całych kolumnach
+  (opcjonalnie). **Przed `migrate()` przejrzyj numery w trybie edycji**: numer, który arkusz już
+  zamienił na datę, wygląda jak długi napis z datą — format go nie naprawi, trzeba wpisać ręcznie.
 - Opis „Spacery dla wszystkich psów" w panelu mówił jeszcze o modelu sprzed pól 1/2, 2/2.
 - Drugi komunikat zaraz po pierwszym znikał po ułamku sekundy.
+- „📋 Skopiuj treść" w minionym dniu jest przyciskiem tej samej wysokości co „Wyślij" (z ramką
+  zamiast wypełnienia) — tam, gdzie poczta się nie otwiera, to jedyna droga.
+- Adres maila z „%" jest odrzucany — poczta odkodowuje „%41" na „A" i mail poszedłby gdzie indziej.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 

@@ -354,6 +354,8 @@ function mailPanel(o){
   check('zły adres: nic nie idzie, komunikat wskazuje adres', sent() === 0 && /schronisko\.pl/.test(toastTxt()), toastTxt());
   save('a@b.pl?cc=x@y.pl', 'T', '[LISTA]');
   check('adres, który rozbiłby link mailto: nic nie idzie', sent() === 0, toastTxt());
+  save('schr%41nisko@b.pl', 'T', '[LISTA]');
+  check('adres z „%" (poczta by go odkodowała): nic nie idzie (review PR #5)', sent() === 0 && /%41/.test(toastTxt()), toastTxt());
   save('a@b.pl', 'x'.repeat(200), '[LISTA]');
   check('za długi temat: nic nie idzie, komunikat o długości', sent() === 0 && /150/.test(toastTxt()), toastTxt());
   save('a@b.pl', 'T', 'Dzień dobry, lista w załączniku');

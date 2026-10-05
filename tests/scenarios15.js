@@ -151,6 +151,61 @@ async function S112e(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
+async function S112f(){
+  console.log('S112f: „Dodaj" przepadło, gdy prowadząca wpisuje już następnego psa — „nie dodano" w katalogu od razu, stuknięcie oddaje dane (review PR #5)');
+  // wcześniej: dane Reksa nie zostawały nigdzie, komunikat bez imienia, a „dodaję…" wisiało do następnego „Dodaj"
+  const app = admin();
+  fill(app, REX);
+  app.click('[data-act="add"]');
+  const token = lastCall(app, 'addDog').args[2];
+  const name = doc(app).getElementById('newName');
+  name.focus();                                        // od razu następny pies — palec w polu imienia
+  fill(app, {newName:'Kora'});
+  failTo(app, 'addDog', 'Serwer długo nie odpowiada — dosynchronizuję');
+  failTo(app, 'addDog', 'Serwer długo nie odpowiada — dosynchronizuję');
+  const row = doc(app).querySelector('li.dog.adding.failed');
+  check('Rex w katalogu jako „nie dodano" — od razu, choć palec jest w polu', !!row && /Rex/.test(row.textContent) && /nie dodano/.test(row.textContent)
+    && !doc(app).querySelector('li.dog.adding:not(.failed)'), app.html().slice(-900));
+  check('pisany pies i palec zostają', val(app, 'newName')==='Kora' && doc(app).activeElement===doc(app).getElementById('newName'));
+  check('komunikat mówi, którego psa nie dodano', /Nie dodano: Rex/.test(toastOf(app)) && /stuknij/.test(toastOf(app)), toastOf(app));
+  check('stan: Rex czeka w katalogu, nie w formularzu', app.window.__state.adding.length===1 && app.window.__state.adding[0].failed
+    && app.window.__state.form.newName==='Kora');
+
+  doc(app).getElementById('newName').blur();
+  app.click('li.dog.adding.failed');
+  check('formularz zajęty (Kora) — stuknięcie nie nadpisuje, mówi dlaczego', val(app, 'newName')==='Kora'
+    && !!doc(app).querySelector('li.dog.adding.failed') && /inny pies/.test(toastOf(app)), toastOf(app));
+  fill(app, {newName:''});
+  app.click('li.dog.adding.failed');
+  check('pusty formularz — stuknięcie oddaje dane Reksa', val(app, 'newName')==='Rex' && val(app, 'newIdent')==='552/26'
+    && val(app, 'newBox')==='12' && val(app, 'newDif')==='hard' && !doc(app).querySelector('li.dog.adding'),
+    [val(app,'newName'), val(app,'newIdent'), val(app,'newBox'), val(app,'newDif')].join('|'));
+  app.click('[data-act="add"]');
+  check('ponowne „Dodaj" z tym samym tokenem (pies mógł powstać)', lastCall(app, 'addDog').args[2]===token);
+  respondTo(app, 'addDog', withRex());
+  check('Rex dodany', !!li(app, 3) && !doc(app).querySelector('li.dog.adding'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+async function S112g(){
+  console.log('S112g: „Dodaj" przeszło, gdy prowadząca wpisuje już następnego psa — pies w katalogu od razu, pole nietknięte (review PR #5)');
+  const app = admin();
+  fill(app, REX);
+  app.click('[data-act="add"]');
+  doc(app).getElementById('newName').focus();
+  fill(app, {newName:'Kora'});
+  respondTo(app, 'addDog', withRex());
+  check('Rex w katalogu, „dodaję…" zniknęło — bez czekania, aż skończy pisać', !!li(app, 3) && !doc(app).querySelector('li.dog.adding'),
+    app.html().slice(-700));
+  check('licznik katalogu poszedł za listą', /3<\/b> psy w katalogu/.test(doc(app).querySelector('.count').innerHTML), doc(app).querySelector('.count').innerHTML);
+  check('pisany pies i palec zostają', val(app, 'newName')==='Kora' && doc(app).activeElement===doc(app).getElementById('newName'));
+  doc(app).getElementById('newName').blur();
+  app.window.eval('refresh()');
+  app.respondNext(withRex());
+  check('kolejne pełne przerysowanie nic nie gubi', !!li(app, 3) && val(app, 'newName')==='Kora');
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
 /* ---------- S113: spóźniony odczyt nie cofa zapisu ---------- */
 async function S113(){
   console.log('S113: odczyt z 15-sekundowego odświeżenia, który wyruszył przed zapisem, nie cofa go na ekranie');
@@ -223,7 +278,7 @@ async function S115(){
 }
 
 (async ()=>{
-  for(const s of [S112, S112b, S112c, S112d, S112e, S113, S114, S115]){
+  for(const s of [S112, S112b, S112c, S112d, S112e, S112f, S112g, S113, S114, S115]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }
