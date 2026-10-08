@@ -108,8 +108,10 @@ function diagClean_(e, rx) {
   const kind = String(e.kind || '');
   if (DIAG_KINDS.indexOf(kind) < 0) return null;
   const str = (v, n) => String(v).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, n);
+  // Zegar telefonu: w przeszłość wolno (wpis czekał bez zasięgu, nawet kilka dni — „dosłane" w Panelu),
+  // w przyszłość najwyżej dzień — telefon z rokiem 2030 stałby na szczycie dziennika (review PR #5, runda 3).
   const at = Number(e.at);
-  const out = { id: id, kind: kind, at: isFinite(at) && at > 0 ? Math.round(at) : rx, rx: rx };
+  const out = { id: id, kind: kind, at: isFinite(at) && at > 0 && at <= rx + 86400000 ? Math.round(at) : rx, rx: rx };
   if (e.dev != null && e.dev !== '') out.dev = str(e.dev, 12);
   if (e.ua != null && e.ua !== '') out.ua = str(e.ua, 60);
   if (e.fn != null && e.fn !== '') out.fn = str(e.fn, 30);

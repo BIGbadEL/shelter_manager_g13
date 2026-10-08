@@ -1,3 +1,4 @@
+process.env.TZ = 'Europe/Warsaw';   // testy liczą godziny jak telefon w Polsce, niezależnie od strefy maszyny (review PR #5, runda 3)
 // Harness: ładuje prawdziwy Index+Styles+Script w jsdom, klika jak człowiek,
 // a odpowiedzi "serwera" dostarczamy ręcznie w dowolnej kolejności.
 const fs = require('fs');

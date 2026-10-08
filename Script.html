@@ -23,10 +23,13 @@
    *              SPOWOLNIEŃ"): wywołanie wolniejsze niż diagSlow (tam i z powrotem) trafia do
    *              dziennika, odczyt bez odpowiedzi po diagNoReply też, przerwa, w której strona
    *              stała, od diagFreeze; wysyłka do serwera najczęściej co diagSend; diagBeat — co ile
-   *              zegar sprawdza, czy strona żyje.
+   *              zegar sprawdza, czy strona żyje,
+   *   refresh  — odświeżanie listy z serwera (getData) co tyle,
+   *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać.
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
-    diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000 }, window.__G13_TIMING || {});
+    diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
+    refresh:15000, readStale:60000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -342,6 +345,18 @@
 
   /** Odczyty getData w drodze: {at, noted} — odczyt bez odpowiedzi widać w dzienniku, zanim wróci (albo nigdy). */
   const readsInFlight = new Set();
+  /**
+   * Czy jakiś odczyt jest w drodze krócej niż T.readStale — wtedy odświeżanie co 15 s nie dokłada
+   * następnego. Bez tego przy zastoju Google (odczyt 360 s, 2.10.2026) każdy telefon wysyłał nowy
+   * odczyt co 15 s, a wszystkie wykonania liczą się do jednego konta z limitem równoczesnych —
+   * telefony same dokładały do zastoju (review PR #5, runda 3). Starszy niż T.readStale to odczyt
+   * zgubiony (google.script.run potrafi nie oddzwonić, bug nr 8): na niego już nie czekamy.
+   */
+  function readWaiting(){
+    const now = Date.now();
+    for(const r of readsInFlight) if(now - r.at < T.readStale) return true;
+    return false;
+  }
   let beatAt = Date.now(), diagSendAt = Date.now();
   /**
    * Co sekundę: czy zegar się nie spóźnił (spóźnia się, gdy przeglądarka nie wykonuje skryptu —
@@ -357,6 +372,7 @@
       if(!document.hidden && gap - DIAG_BEAT >= T.diagFreeze) diagNote('freeze', { ms: gap });
       readsInFlight.forEach(r => {
         if(!r.noted && now - r.at >= T.diagNoReply){ r.noted = true; diagNote('call', { fn:'getData', ms: now - r.at, msg:'bez odpowiedzi' }); }
+        if(now - r.at > 10 * T.readStale) readsInFlight.delete(r);   // zgubiony na dobre — nie trzymamy go w nieskończoność
       });
       if(now - diagSendAt >= T.diagSend){ diagSendAt = now; sendDiag(); }
     }catch(e){}
@@ -2898,8 +2914,8 @@
   setInterval(diagTick, DIAG_BEAT);
   document.addEventListener('visibilitychange', diagAwake);   // karta w tle to nie zamrożenie
   window.addEventListener('pageshow', diagAwake);
-  // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
-  setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
+  // co 15 s, ale tylko gdy karta widoczna, kolejka pusta, nikt nie pisze w polu i poprzedni odczyt wrócił
+  setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing() && !readWaiting()) refresh(); }, T.refresh);
   // strażnik zawieszonych zapisów: cyklicznie...
   setInterval(checkStuck, 3000);
   // ...i przy każdym dotknięciu ekranu (działa nawet gdy przeglądarka uśpiła timery).

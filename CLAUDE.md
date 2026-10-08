@@ -210,8 +210,9 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   „w toku" pod blokadą → wysyłka → wynik pod blokadą (`sendPoll_`). Wynik zostaje w `pollLast`
   (panel), błąd leci dalej — wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi. **Trzy
   rodzaje wyniku** (`pollMarkState_`, review PR #5, runda 2): wysłana; **nie wyszła** — bramka
-  odpowiedziała błędem albo brak zgody na `UrlFetchApp` (znacznik zdjęty, można ponowić); **nie
-  wiadomo** — bramka nie odpowiedziała (`err.unknown` z `greenCall_`) albo „w toku" starsze niż
+  odmówiła (kod 4xx) albo brak zgody na `UrlFetchApp` (znacznik zdjęty, można ponowić); **nie
+  wiadomo** — bramka nie odpowiedziała albo odpowiedziała kodem 5xx (pośrednik, za którym bramka mogła
+  ankietę wysłać — runda 3; `err.unknown` z `greenCall_`) albo „w toku" starsze niż
   `POLL_PENDING_MIN`: ankieta MOGŁA dojść, a druga w grupie rozbiłaby głosy — znacznik zostaje,
   wyzwalacz nie ponawia, „Wyślij teraz" dopiero z `force === true` (prowadząca potwierdza, że
   sprawdziła w grupie); `force` niczego innego nie przełamuje. Panel: `now.status`/`now.at` (stan
@@ -230,7 +231,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `withLock_`), każde `withLock_` (blokada, praca, zapis; błąd blokady zawsze; nazwa akcji z ramki stosu —
   `diagCaller_`, w razie czego „?"). Liczy NASZ kod — czasu, zanim Google go uruchomi, nie widzi.
   **Telefon** (`reportDiag`, publiczne bez PIN-u — wpisy sprawdzane jak obce: `diagClean_`, znane pola,
-  przycięte, ms ≤ 1 h; właściwość `diagPhones`). Oba dzienniki: najwyżej `DIAG_KEEP` wpisów i `DIAG_BYTES`
+  przycięte, ms ≤ 1 h, czas zdarzenia najwyżej dzień w przód — w przeszłość wolno, bo wpis potrafi czekać
+  w telefonie bez zasięgu; właściwość `diagPhones`). Oba dzienniki: najwyżej `DIAG_KEEP` wpisów i `DIAG_BYTES`
   bajtów UTF-8 (limit 9 KB na właściwość), bez powtórek po `id`, świeży odczyt, **zapis bez blokady**
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
@@ -377,7 +379,10 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   o `T.diagFreeze`, a strona była widoczna) i `error` (błąd skryptu, wywrotka `render`, wyjątek w akcji;
   ten sam komunikat raz na minutę). Kolejka do 20 wpisów w `localStorage` (`g13diag`; nie ma go — działa
   w pamięci), znak telefonu `g13dev` (losowy, nie mówi czyj), opis z `uaLabel`. `sendDiag` co `T.diagSend`,
-  **tylko gdy nie leci żaden zapis**, jeden naraz, po 10. **Każde `confirm` idzie przez `ask()`** —
+  **tylko gdy nie leci żaden zapis**, jeden naraz, po 10. **Odświeżanie co `T.refresh` nie wysyła odczytu,
+  gdy poprzedni jest w drodze krócej niż `T.readStale`** (`readWaiting`, runda 3, S129) — przy zastoju Google
+  każdy telefon dokładał odczyt co 15 s, a wykonania wszystkich liczą się do jednego konta z limitem
+  równoczesnych; starszy odczyt to zgubiony (bug nr 8), na niego nie czekamy. **Każde `confirm` idzie przez `ask()`** —
   okienko zatrzymuje skrypt, a bez `diagAwake()` każde dłuższe zastanowienie byłoby „zamrożeniem";
   karta w tle tak samo (`visibilitychange`, `pageshow`).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
@@ -462,7 +467,9 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1461 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1469 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
+Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -566,6 +573,7 @@ czy wyszła" (sprawdź w grupie, wysłać mimo to — `force`; „trwa dłużej"
 review PR #5, runda 2, S122–S128 dziennik spowolnień — telefon (wolne i nieudane wywołania, odczyt bez
 odpowiedzi, strona stała — ale nie karta w tle ani okienko pytania, dojście strony, błędy skryptu, pamięć
 między otwarciami, wysyłka tylko w ciszy, Panel, opis telefonu z userAgent, kontrakt telefon → serwer),
+S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`) — runda 3,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,

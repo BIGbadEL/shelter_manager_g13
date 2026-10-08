@@ -1762,16 +1762,17 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   check('termin 23:00, wyzwalacz po północy — ankieta na tydzień od tego poniedziałku', sends(late).length === 1
     && JSON.parse(sends(late)[0].opts.payload).message === 'Grafik 12-18.10');
 
-  // bramka odpowiedziała błędem (kod HTTP) — ankieta na pewno nie wyszła; treść błędu z adresem (i tokenem)
+  // bramka odmówiła (kod 4xx) — ankieta na pewno nie wyszła; treść błędu z adresem (i tokenem).
+  // 5xx to „nie wiadomo" (B61) — pośrednik, za którym bramka mogła ankietę wysłać
   const bad = pollEnv('2026-10-11T12:10:00+02:00');
   pollOn(bad);
-  gateway(bad, { send: url => ({ code: 500, body: 'Internal error at ' + url }) });
+  gateway(bad, { send: url => ({ code: 400, body: 'Bad request at ' + url }) });
   let e1 = '';
   try { bad.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
   const last = bad.api.getDiagnostics(TEST_PIN).poll.last;
-  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /błąd 500/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /błąd 400/.test(e1) && !/tok3n5ecret/.test(e1), e1);
   check('panel: ostatnia próba nieudana (nie „nie wiadomo"), z powodem, bez tokenu', last && last.ok === false && !last.unknown
-    && /500/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)), JSON.stringify(last));
+    && /400/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)), JSON.stringify(last));
   gateway(bad);
   bad.setNow('2026-10-11T12:40:00+02:00');
   bad.api.sendWeeklyPoll();
@@ -1914,6 +1915,24 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   nc.api.sendWeeklyPoll();
   const r2 = nc.api.getDiagnostics(TEST_PIN).poll.now.status;
   check('...po zgodzie wyzwalacz w oknie wysyła normalnie (drugie wywołanie bramki, pierwsze bez zgody)', sends(nc).length === 2 && r2 === 'sent', r2);
+
+  // 5xx (502, 504) — pośrednik, za którym bramka nie zdążyła odpowiedzieć: ankieta MOGŁA wyjść (review PR #5, runda 3)
+  [502, 504, 500].forEach(code => {
+    const px = pollEnv('2026-10-11T12:10:00+02:00');
+    pollOn(px);
+    gateway(px, { send: () => ({ code, body: 'Bad gateway' }) });
+    let ex = '';
+    try { px.api.sendWeeklyPoll(); } catch(e){ ex = e.message; }
+    const pp = px.api.getDiagnostics(TEST_PIN).poll;
+    gateway(px);
+    px.setNow('2026-10-11T12:40:00+02:00');
+    px.api.sendWeeklyPoll();
+    let ey = '';
+    try { px.api.sendPollNow(TEST_PIN); } catch(e){ ey = e.message; }
+    check('kod ' + code + ': „nie wiadomo" — błąd z kodem idzie dalej, wyzwalacz nie ponawia, „Wyślij teraz" tylko po potwierdzeniu',
+      new RegExp('błąd ' + code).test(ex) && pp.last.ok === false && pp.last.unknown === true && pp.now.status === 'unknown'
+      && sends(px).length === 1 && /Nie wiadomo/.test(ey), JSON.stringify([ex, pp.last, sends(px).length, ey]));
+  });
 })();
 
 // ---------------------------------------------------------------------------
@@ -2065,6 +2084,12 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
     p[1].msg.length === 120 && !/[\u0000-\u001f]/.test(p[1].msg) && /^a b c/.test(p[1].msg) && p[1].ua.length === 60 && p[1].dev.length === 12
     && p[1].ms === 0 && !('fn' in p[1]), JSON.stringify(p[1]));
   check('ms najwyżej godzina, zły czas zdarzenia = chwila odbioru', p[2].ms === 3600000 && p[2].at === p[2].rx);
+  const rxNow = ph.now(), DAY = 86400000;
+  const clk = makeContext({ sheets: [], props: {}, now: '2026-08-04T10:00:00+02:00' });
+  clk.api.reportDiag([good('cccccc11', { at: rxNow + 2 * DAY }), good('cccccc12', { at: rxNow + 3600000 }), good('cccccc13', { at: rxNow - 3 * DAY })]);
+  const ck = diagOf(clk, 'diagPhones');
+  check('zegar telefonu: więcej niż dzień w przyszłość = chwila odbioru; godzina w przód i kilka dni wstecz (wpis czekał) zostają',
+    ck[0].at === ck[0].rx && ck[1].at === rxNow + 3600000 && ck[2].at === rxNow - 3 * DAY, JSON.stringify(ck.map(e => e.at - e.rx)));
   check('niby-liczba ms pominięta, nazwa funkcji 30', !('ms' in p[3]) && p[3].fn.length === 30);
   const over = [];
   for(let i = 0; i < 12; i++) over.push(good('bbbbbb' + String(i).padStart(2, '0')));

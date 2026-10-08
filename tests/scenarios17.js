@@ -289,7 +289,8 @@ async function S128(){
   const sent = reported(app);
   const kinds = [...new Set(sent.map(e => e.kind))].sort().join(',');
   check('telefon wysłał wszystkie rodzaje wpisów', kinds === 'call,error,freeze,start', kinds + ' | ' + JSON.stringify(sent));
-  const env = makeContext({ sheets: [], props: { pin: '1' } });
+  // zegar serwera = teraz: wpis z przyszłości (więcej niż dzień) serwer przycina do chwili odbioru
+  const env = makeContext({ sheets: [], props: { pin: '1' }, now: new Date().toISOString() });
   const r = env.api.reportDiag(sent.slice(0, 10));
   const got = JSON.parse(env.props.diagPhones || '[]');
   check('serwer przyjmuje każdy z nich', r.ok === true && r.n === Math.min(10, sent.length) && got.length === r.n, JSON.stringify(r));
@@ -299,8 +300,24 @@ async function S128(){
   check('bez błędów (poza celowym „boom")', app.errors.length === 1 && /boom/.test(app.errors[0]), app.errors.join('; '));
 }
 
+/* ---------- S129: odświeżanie nie dokłada odczytów do zastoju ---------- */
+async function S129(){
+  console.log('S129: odświeżanie co 15 s nie wysyła kolejnego odczytu, gdy poprzedni wisi — dopiero po T.readStale (review PR #5, runda 3)');
+  // odświeżanie co 60 ms, odczyt zgubiony po 400 ms; startowy getData wisi
+  const app = buildApp({ timing: Object.assign({}, FAST, { refresh: 60, readStale: 400, diagNoReply: 5000 }) });
+  const reads = () => app.shipped.filter(f => f === 'getData').length;
+  await sleep(300);
+  check('odczyt wisi: przez 5 tyknięć odświeżania żaden następny', reads() === 1, app.shipped.join(','));
+  await sleep(250);
+  check('po T.readStale (zgubiony — bug nr 8): jeden nowy odczyt, nie seria', reads() === 2, app.shipped.join(','));
+  while(calls(app, 'getData').length) respondTo(app, 'getData', base());
+  await sleep(200);
+  check('odczyty wróciły: odświeżanie idzie dalej', reads() >= 3 && /Borys/.test(app.html()), app.shipped.join(','));
+  check('bez błędów', app.errors.length === 0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S122, S123, S124, S125, S126, S127, S128]){
+  for(const s of [S122, S123, S124, S125, S126, S127, S128, S129]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

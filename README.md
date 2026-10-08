@@ -97,7 +97,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) = `main` | @19, 2026-10-03 |
-| 1.2 | w przygotowaniu: panel prowadzącej | `release/1.2` | — |
+| 1.2 | w przygotowaniu: zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -571,7 +571,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 ### 1.2 — w przygotowaniu
 
 Wydanie z poważnymi zmianami (numer X) — wolontariusze i prowadząca dostaną wiadomość.
-Temat: panel prowadzącej.
+Temat: zarządzanie aplikacją (zaczęło się od panelu prowadzącej, skończyło głównie na narzędziach
+administratora: ankieta, dziennik spowolnień, przegląd kodu).
 
 - **Mail do schroniska wysyła się z telefonu.** W minionym dniu „✉️ Wyślij e-mail z listą psów"
   otwiera aplikację pocztową z gotowym mailem: odbiorca, temat i treść z listą psów są już
@@ -624,6 +625,12 @@ Przegląd kodu przed dalszą pracą nad panelem — poprawki:
   35 s, 189 s i 360 s (limit czasu, 2.10) — bez związku z ruchem ani przerwą w używaniu. Dziennik
   Google nie mówi, który krok trwał, ani co widział telefon; nasz dziennik mówi (rozdział „Dziennik
   spowolnień"). Przyczyny to nie usuwa — następnym razem będzie wiadomo, gdzie zeszło.
+- **Przy zastoju telefony nie dokładają odczytów.** Odświeżanie co 15 s wysyłało nowy odczyt także
+  wtedy, gdy poprzedni jeszcze nie wrócił — przy odczycie wiszącym 6 minut jeden telefon dokładał ich
+  ~24, a wszystkie liczą się do jednego konta z limitem równoczesnych wykonań. Teraz czeka na poprzedni
+  (najwyżej minutę — dłużej to odpowiedź, która zginęła).
+- Ankieta: kod 5xx z bramki (502, 504 — pośrednik, za którym bramka mogła ankietę wysłać) to „nie
+  wiadomo, czy wyszła", nie „nie wyszła" — wyzwalacz nie ponawia, „Wyślij teraz" po potwierdzeniu.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 

@@ -180,7 +180,14 @@ function greenCall_(method, body, query) {
     throw err;
   }
   const code = res.getResponseCode(), text = String(res.getContentText() || '');
-  if (code !== 200) throw new Error('Bramka WhatsAppa: błąd ' + code + (text ? ' (' + hide(text).slice(0, 150) + ')' : ''));
+  if (code !== 200) {
+    const err = new Error('Bramka WhatsAppa: błąd ' + code + (text ? ' (' + hide(text).slice(0, 150) + ')' : ''));
+    // 5xx (502, 504…) daje zwykle pośrednik, za którym bramka nie zdążyła odpowiedzieć — żądanie mogło
+    // dojść i ankieta wyjść, więc „nie wiadomo" jak przy braku odpowiedzi (review PR #5, runda 3).
+    // 4xx to pewna odmowa: nic nie wyszło.
+    if (code >= 500) err.unknown = true;
+    throw err;
+  }
   try { return JSON.parse(text); } catch (e) { throw new Error('Bramka WhatsAppa: nieczytelna odpowiedź'); }
 }
 
