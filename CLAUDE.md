@@ -30,6 +30,8 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `Dogs.gs` | katalog psów + spacery (zakładka Spacery, przepisanie starego układu, jednorazowy import) + akcje na spacerach + kolory wolontariuszy |
 | `Tasks.gs` | zadania |
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
+| `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel |
+| `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
@@ -44,6 +46,12 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
   Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
+  `identyfikator` (numer psa) i `boks` to **tekst `@`** — od 1.2 ustawiany przy każdym dodaniu
+  i edycji PRZED wartością (`setTextFields_`, dlatego te pola nie jadą w `appendRow`) i przez
+  `migrate()` na całych kolumnach; „1/26" czy „3-4" arkusz potrafi zamienić na datę, a numer idzie
+  do Historii i władz schroniska (B55; boks — decyzja właściciela po review PR #5). Format nie
+  przywraca tekstu: komórka, którą arkusz już zamienił na datę, zostaje datą — przed `migrate()`
+  na produkcji przejrzeć numery w trybie edycji i takie wpisać ręcznie.
 - **Spacery** — stan KONKRETNEGO SPACERU psa danego dnia: `data | pies_id | spacer | status | kto | godzina | grupa`.
   Wiersz na trójkę (dzień, pies, numer spaceru), brak wiersza = spacer wolny i bez grupy.
   Pies na dwa spacery ma spacery 1 i 2 — każdy z własną rezerwacją, stanem i grupą. Tylko dni
@@ -97,6 +105,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   **`setGroup` niesie `walks` nadal** (`legacyWalks_`): applyGroups tamtej karty czyta tylko je
   i bez niego zerował u siebie grupy dnia do najbliższego odświeżenia (review PR #2, B47).
 - Akcje edycyjne wymagają PIN-u przez `requirePin_(pin)`.
+- **`addDog(data, pin, token)`** — token = jedno stuknięcie „Dodaj" (1.2): ten sam token drugi raz
+  niczego nie dodaje, tylko oddaje stan (`dogAdds_` / `noteDogAdd_`, ostatnie `DOG_ADDS_KEEP`,
+  tokeny od litery — klucz z samych cyfr przestawiłby kolejność w JSON-ie). Brak tokenu = karta
+  sprzed 1.2, dodanie jak dawniej. Błąd właściwości nie blokuje dodania psa (bug nr 15, B54).
 - **PIN nie istnieje w kodzie.** Siedzi we właściwości skryptu `pin` (`pin_()` w `Settings.gs`),
   bez wartości domyślnej: nieustawiony = tryb edycji zamknięty. Nigdy nie wpisuj PIN-u
   do pliku „na chwilę" — pierwszy commit czyni go publicznym na zawsze, a `git rm`
@@ -154,19 +166,77 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   Pusty termin znikał przy KAŻDYM `endOfDay` — także tym o 20:30, zaraz po dodaniu notatki
   na jutrzejszą listę (B35). Klient pokazuje taki termin jak brak terminu (`noteDated`: bez
   odznaki, puste pole w edycji). Pusty `notatka_do` zostaje tylko w starych notatkach.
-- **Treść maila z listą spacerów** — właściwość `mailTemplate` (`mailTemplate_()`, brak =
-  `DEFAULT_MAIL_TEMPLATE` w `Config.gs`), w `getData` jako `mailTemplate`. Zmienia ją prowadząca
-  w panelu: `setMailTemplate(text, pin)` — PIN, `[LISTA]` obowiązkowa (mail bez listy psów nie ma
-  sensu), najwyżej `MAX_LEN.MAIL` znaków (limit właściwości), końce linii ujednolicone, pusta
-  treść = domyślna. Idempotentna, więc w `RETRIABLE` (B52) — a skoro kolejka ponawia raz każdy
-  nieudany zapis, przeglądarka sprawdza te same reguły przed wysłaniem (`[LISTA]`, `MAIL_MAX` =
-  `MAX_LEN.MAIL`), żeby komunikat był od razu, nie po dwóch przelotach (review PR #4, S110b).
-  Pole w panelu (`#mailTemplate`)
-  trzyma szkic w `state.mailDraft`, a `busyEditing()` łapie też fokus w TEXTAREA — inaczej
-  odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu, więc
-  **inny niż zapisana treść jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
-  zapisaną", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
-  zapisany, a historia kopiowała starą treść (decyzja właściciela, wersja (a), S110c).
+- **Mail z listą spacerów dla schroniska — trzy ustawienia** we właściwościach: `mailTo`
+  (`mailTo_()`, odbiorcy „a@b.pl, c@d.pl", brak = adres wpisuje się w poczcie), `mailSubject`
+  (`mailSubject_()`, brak = `DEFAULT_MAIL_SUBJECT`), `mailTemplate` (`mailTemplate_()`, brak =
+  `DEFAULT_MAIL_TEMPLATE`); wszystkie w `getData`. Odbiorca jest tam jawny dla każdego z linkiem —
+  to adres schroniska, nie osoby. Prowadząca zmienia je w panelu jednym zapisem:
+  `setMailSettings({to, subject, body}, pin)` (1.2, B53) — PIN; **najpierw sprawdza wszystko, potem
+  zapisuje** (zły adres nie zostawi nowej treści przy starym odbiorcy); adresy tylko zwykłe
+  (`mailAddresses_`: litery, cyfry, `._+-` — „?", „&", „#" w adresie rozbiłyby link mailto: albo
+  dopisały ukrytego odbiorcę, a „%" poczta odkodowuje, „%41" to „A" — review PR #5), temat w jednej linii do `MAX_LEN.MAIL_SUBJECT`, treść jak dotąd
+  (`mailBody_`: `[LISTA]` obowiązkowa, `MAX_LEN.MAIL`, końce linii ujednolicone); puste pola = bez
+  odbiorcy / domyślne. Stare `setMailTemplate(text, pin)` zostaje dla kart z 1.1.2 (B52). Obie
+  idempotentne, więc w `RETRIABLE` — a skoro kolejka ponawia raz każdy nieudany zapis, przeglądarka
+  sprawdza te same reguły przed wysłaniem (`mailProblem`, `MAIL_MAX` / `MAIL_TO_MAX` /
+  `MAIL_SUBJECT_MAX` = `MAX_LEN.*`), żeby komunikat był od razu, nie po dwóch przelotach (S110b).
+  Pola w panelu (`#mailTo`, `#mailSubject`, `#mailTemplate`; adres jako `type="text"
+  inputmode="email"` — `type="email"` zjada spacje i myli „niezapisane") trzymają szkic
+  w `state.mailDraft` = `{to, subject, body}`, a `busyEditing()` łapie też fokus w TEXTAREA —
+  inaczej odświeżenie co 15 s podmieniałoby pole pod palcami. Szkic przeżywa też wyjście z panelu,
+  więc **inny niż zapisane jest oznaczony** (`mailDirty`: „Niezapisane zmiany" + „Przywróć
+  zapisane", przełączane już w trakcie pisania przez `showMailDirty`) — bez tego wyglądał jak
+  zapisany, a historia używała starych ustawień (decyzja właściciela, wersja (a), S110c).
+- **Ankieta tygodniowa na WhatsAppie** (1.2, `Poll.gs`, B56–B59, S116–S119): konto bota (osobny
+  numer — decyzja właściciela 2026-10-05, ryzyko blokady przyjęte) przez **nieoficjalną bramkę Green
+  API** wysyła raz w tygodniu do grupy (np. „Grafik" w społeczności) ankietę „Grafik [TYDZIEŃ]"
+  z dniami tygodnia — odwzorowanie ręcznych ankiet prowadzącego (`DEFAULT_POLL`). Oficjalne API
+  Meta ankiet do zwykłych grup nie wysyła (grupy do 8 osób, tylko własne, bez ankiet — research
+  2026-10-05). [TYDZIEŃ] = tydzień od `pollMonday_` (najbliższy poniedziałek, dziś włącznie)
+  w formacie ręcznych ankiet (`pollWeekLabel_`: „05-11.10", „28.09-04.10").
+  **Dostęp do bramki to sekret jak PIN**: właściwości `greenApiUrl`, `greenApiInstance`,
+  `greenApiToken`, ustawiane ręcznie; nigdy w kodzie, w `getData`, w odpowiedzi ani w błędzie —
+  token jest w adresie, więc `greenCall_` wycina go z każdego komunikatu (także błędu sieci
+  z UrlFetchApp). Ustawienia (`poll`, JSON) z panelu: `setPollSettings(settings, pin)` (sprawdza
+  `pollValid_`; przeglądarka te same reguły w `pollProblem`, limity `POLL_LIMITS` = `POLL_*_MAX`;
+  RETRIABLE), lista grup `getPollChats(pin)`, „Wyślij teraz" `sendPollNow(pin)` (NIE RETRIABLE),
+  stan w `getDiagnostics().poll` (`pollPanel_`, stan konta bota z bramki; awaria → `null`, panel żyje).
+  Wyzwalacz co tydzień `onWeekDay` + `atHour` + `nearMinute(15)` = między h:00 a h:30
+  (`installPollTrigger_`, też z `installTriggers()`). **`sendWeeklyPoll` musi być publiczna**
+  (wyzwalacz nie woła funkcji z „_"), więc niczego nie przyjmuje i sama pilnuje terminu: wysyła
+  tylko w oknie `POLL_WINDOW_H` godzin od ustawionej godziny (`pollDueDay_`, także przez północ).
+  **Każda ankieta (grupa + tydzień) najwyżej raz** (`pollSent`, świeży odczyt pod blokadą), a wywołanie
+  bramki idzie BEZ blokady (potrafi trwać do minuty, a rezerwacje czekają na blokadę 20 s): znacznik
+  „w toku" pod blokadą → wysyłka → wynik pod blokadą (`sendPoll_`). Wynik zostaje w `pollLast`
+  (panel), błąd leci dalej — wyzwalacz, który rzuca, Google zgłasza mailem właścicielowi. **Trzy
+  rodzaje wyniku** (`pollMarkState_`, review PR #5, runda 2): wysłana; **nie wyszła** — bramka
+  odmówiła (kod 4xx) albo brak zgody na `UrlFetchApp` (znacznik zdjęty, można ponowić); **nie
+  wiadomo** — bramka nie odpowiedziała albo odpowiedziała kodem 5xx (pośrednik, za którym bramka mogła
+  ankietę wysłać — runda 3; `err.unknown` z `greenCall_`) albo „w toku" starsze niż
+  `POLL_PENDING_MIN`: ankieta MOGŁA dojść, a druga w grupie rozbiłaby głosy — znacznik zostaje,
+  wyzwalacz nie ponawia, „Wyślij teraz" dopiero z `force === true` (prowadząca potwierdza, że
+  sprawdziła w grupie); `force` niczego innego nie przełamuje. Panel: `now.status`/`now.at` (stan
+  ankiety na najbliższy tydzień w zapisanej grupie). **Stan konta bota NIE idzie w `getDiagnostics`**
+  (bramka potrafi odpowiadać do minuty, cały panel czekał) — osobno `getPollState(pin)` (błąd bramki
+  to stan `error`, nie wyjątek), w przeglądarce `fetchPollState` po panelu, „sprawdzam…", po
+  `T.pollState` bez odpowiedzi — „bramka długo nie odpowiada". „Wyślij teraz" bez odpowiedzi w czasie
+  watchdoga (`fail(msg, lost)`) — „Wysyłka trwa dłużej", panel od razu i po `T.pollRecheck` jeszcze raz.
+  Przypięcie ankiety zostaje ręczne.
+- **Dziennik spowolnień** (1.2, `Diag.gs`, B62–B64, S122–S128) — po zgłoszeniu 7–8.10.2026 „strona
+  długo się ładowała, a potem wisiała": dziennik wykonań Google zna tylko łączny czas na serwerze
+  (bez kroków, bez filtra po funkcji), a telefonu nie widzi wcale. **Serwer** (`diagServer_`, właściwość
+  `diagServer`): wywołanie dłuższe niż `DIAG_SLOW_MS` z krokami — `doGet` (szablon, odczyty stanu
+  startowego, strona; plus nieudany stan startowy, dawniej połykany po cichu w `bootJson_`), `getData`
+  (`readState_(parts)`: ustawienia, psy, spacery, zadania, reszta; **pod blokadą nie** — tam mierzy
+  `withLock_`), każde `withLock_` (blokada, praca, zapis; błąd blokady zawsze; nazwa akcji z ramki stosu —
+  `diagCaller_`, w razie czego „?"). Liczy NASZ kod — czasu, zanim Google go uruchomi, nie widzi.
+  **Telefon** (`reportDiag`, publiczne bez PIN-u — wpisy sprawdzane jak obce: `diagClean_`, znane pola,
+  przycięte, ms ≤ 1 h, czas zdarzenia najwyżej dzień w przód — w przeszłość wolno, bo wpis potrafi czekać
+  w telefonie bez zasięgu; właściwość `diagPhones`). Oba dzienniki: najwyżej `DIAG_KEEP` wpisów i `DIAG_BYTES`
+  bajtów UTF-8 (limit 9 KB na właściwość), bez powtórek po `id`, świeży odczyt, **zapis bez blokady**
+  (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
+  nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
+  Panel: `getDiagnostics().diag`. Bez imion i treści.
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -282,6 +352,39 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
 - **`pendingKeys`** liczy zapisy w drodze per byt. Odpowiedź serwera stosujemy tylko
   wtedy, gdy dotyczy **ostatniej** operacji dla tego bytu — inaczej szybkie sekwencje
   (rezerwuj → zwolnij) cofałyby się same.
+- **`writeSeq`** liczy zapisy wpuszczone do kolejki (`enqueue`). `refresh()` zapamiętuje go przy
+  wysłaniu i odpowiedź sprzed zapisu pomija (pyta od nowa) — bug nr 14. `enqueue(fn, args,
+  {key, reconcile, fail})`: `fail(msg, lost)` woła się, gdy zapis ostatecznie się nie udał (po
+  powtórce); `lost` — odpowiedź nie przyszła (watchdog, zerwane połączenie), więc serwer MÓGŁ zapis
+  wykonać — w odróżnieniu od odmowy serwera z komunikatem.
+- **Szkice formularzy trybu edycji** — „Dodaj psa" i „Nowe zadanie" (z dniem) trzymają wartości
+  w `state.form` (`formVal`, `FORM_FIELDS`, zapis na `input`/`change`), jak mail w `mailDraft`:
+  przerysowanie katalogu, gdy palec akurat nie jest w polu, wymieniało formularz na pusty.
+  Pies w drodze na serwer stoi na końcu katalogu jako „dodaję…" (`state.adding`, bez przycisków —
+  nie ma jeszcze numeru) do pierwszego pełnego stanu po odpowiedzi (`applyData` zdejmuje `done`),
+  więc nie mruga, gdy `applyFull_` odkłada stan. Kolejne stuknięcie w pusty formularz, gdy pies
+  jest w drodze, nic nie robi — fokus w polu wstrzymałby przerysowanie (busyEditing).
+  **Prowadząca zwykle wpisuje już następnego psa**, więc `safeRender` przy fokusie w polu
+  formularza katalogu podmienia samą listę z licznikiem (`patchCatalog`, `ul[data-catalog]`) —
+  dodany pies wskakuje od razu, pole i palec zostają. Zapis, który przepadł, oddaje dane do
+  formularza tylko wtedy, gdy jest pusty i zaraz się przerysuje (`dogFormEmpty` i nie
+  `busyEditing`); inaczej pies zostaje w katalogu jako **„nie dodano"** (`failed`), a stuknięcie
+  (`reAddDog`) oddaje dane do pustego formularza z tym samym tokenem. Wcześniej taki pies
+  przepadał bez śladu, z komunikatem bez imienia (review PR #5, S112f, S112g).
+- **Dziennik spowolnień — strona telefonu** („DZIENNIK SPOWOLNIEŃ" w `Script.html`): `diagNote(kind, …)`
+  zapisuje `call` (zapis z kolejki albo odczyt wolniejszy niż `T.diagSlow` lub nieudany — `diagCall`
+  w `settle`, `refresh`, `fetchPast`), `call` „bez odpowiedzi" (odczyt w `readsInFlight` dłużej niż
+  `T.diagNoReply`, raz), `start` (od `served` z `doGet` do startu skryptu — sieć, opakowanie Google, ramka;
+  zegar zły o godzinę i więcej = bez wpisu), `freeze` (zegar `diagTick` co `T.diagBeat` spóźnił się
+  o `T.diagFreeze`, a strona była widoczna) i `error` (błąd skryptu, wywrotka `render`, wyjątek w akcji;
+  ten sam komunikat raz na minutę). Kolejka do 20 wpisów w `localStorage` (`g13diag`; nie ma go — działa
+  w pamięci), znak telefonu `g13dev` (losowy, nie mówi czyj), opis z `uaLabel`. `sendDiag` co `T.diagSend`,
+  **tylko gdy nie leci żaden zapis**, jeden naraz, po 10. **Odświeżanie co `T.refresh` nie wysyła odczytu,
+  gdy poprzedni jest w drodze krócej niż `T.readStale`** (`readWaiting`, runda 3, S129) — przy zastoju Google
+  każdy telefon dokładał odczyt co 15 s, a wykonania wszystkich liczą się do jednego konta z limitem
+  równoczesnych; starszy odczyt to zgubiony (bug nr 8), na niego nie czekamy. **Każde `confirm` idzie przez `ask()`** —
+  okienko zatrzymuje skrypt, a bez `diagAwake()` każde dłuższe zastanowienie byłoby „zamrożeniem";
+  karta w tle tak samo (`visibilitychange`, `pageshow`).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -304,8 +407,18 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   **Przy każdym psie jego numer** (`histNr`: „Draco nr 552/26 — Grzesiek", z `ident`; S108) —
   wymóg, zrzuty idą do władz schroniska. Brak numeru = brak „nr", pies bez imienia („#2077")
   nie dostaje numeru drugi raz. Nie usuwaj go przy porządkowaniu widoku.
-  **E-mail z listą dla schroniska** (1.1.2, S109–S110): schronisko chce tylko listę psów z numerami
-  i datą. Przycisk „Skopiuj e-mail z listą psów" nad listą minionego dnia (`copyMail`) kopiuje
+  **E-mail z listą dla schroniska** (1.1.2 kopiowanie, 1.2 wysyłka; S109–S111): schronisko chce
+  tylko listę psów z numerami i datą. Nad listą minionego dnia **„✉️ Wyślij e-mail z listą psów"**
+  (1.2, S111) — link `mailto:` (`mailHref`, RFC 6068): adresy z panelu po przecinku (serwer
+  przepuszcza tylko zwykłe, więc „@" zostaje czytelne dla każdej poczty), temat z `[DATA]`
+  i treść zakodowane `encodeURIComponent`, końce linii w treści CRLF; `target="_top"`, bo
+  aplikacja siedzi w ramce Apps Script (dokumentacja HtmlService radzi `_top` dla linków).
+  Telefon otwiera aplikację pocztową z gotowym mailem; którą — zależy od telefonu (Android pyta,
+  gdy nie ma domyślnej; iPhone bierze domyślną). Kliknięcia nie przechwytujemy (`sendMail` →
+  zwykły link). Bez tematu z serwera (1.1.2) — bez tego przycisku. Pod nim
+  **„📋 Skopiuj treść"** (`copyMail`) — zapas, gdy telefon poczty nie otworzy (np. przeglądarka
+  WhatsAppa); tej samej wysokości, ale z ramką zamiast wypełnienia (decyzja właściciela po review
+  PR #5 — tam, gdzie poczta się nie otwiera, to jedyna droga, a 27 px trudno trafić): kopiuje
   treść z panelu (`state.mailTemplate` z `getData`) z podstawionym `[DATA]` (dd.mm.rrrr) i `[LISTA]`
   (`mailList`: CSV `data,pies,numer`, **pies raz na dzień** — dwa spacery to jeden pies, po imieniu,
   pola z przecinkiem w cudzysłowie; pies bez imienia — pusta kolumna „pies", numer raz, jak
@@ -313,7 +426,7 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   (`copyByCommand` — działa w iframie Apps Script i musi pójść w samym stuknięciu, iOS), potem
   `navigator.clipboard` (w iframie bywa zablokowany), a gdy nic nie zadziała — mail w polu
   `.mailbox` do ręcznego skopiowania i komunikat, **nigdy cisza**. Bez treści z serwera (starsza
-  wersja) — bez przycisku. W trybie edycji przycisku nie widać, bo tam nie ma dni (katalog).
+  wersja) — bez przycisków. W trybie edycji ich nie widać, bo tam nie ma dni (katalog).
 - **Kolejność kafelków — `tileKey`, opis i przykłady w `SORTING.md`.** W skrócie: czekające
   na chętnego → obsadzone → odbyte; w każdej części najpierw psy dwuspacerowe, potem mniejszy
   dorobek dnia, potem — od 1.1.1 — **psy jednego opiekuna razem** (kryterium 5, `ownerOf` +
@@ -354,7 +467,9 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1119 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1469 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
+Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -368,9 +483,16 @@ psa na 25.09). Gdy błąd może siedzieć w stanie, wymuś przerysowanie ze stan
 grupy przed odświeżeniem nie chroni zaznaczeń (te trzyma stan), tylko dnia przed przeskokiem
 po resecie — pierwsza wersja S76 sprawdzała zaznaczenia i przechodziła bez tej ochrony.
 
-Zestawy `scenarios12.js`–`scenarios14.js` są **asynchroniczne**: przytrzymanie kafelka mierzy
+Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymanie kafelka mierzy
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
-ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`).
+ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
+`scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
+spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę.
+
+**`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
+w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
+S8 przez lata miał sprawdzać spóźniony `getData` po rezerwacji, a odpowiadał w odwrotnej kolejności
+i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przegląd 1.2, S113).
 
 - `tests/harness.js` — ładuje prawdziwe `Index`+`Styles`+`Script` w jsdom, klika jak
   człowiek, pozwala sterować tym **kiedy i czy w ogóle** odpowie „serwer"
@@ -378,6 +500,12 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
   kafelki w kolejności (`m5` główny, `s5.1` odłączony), `opts.timing` skraca czasy listy.
   Klik przez `app.click` to klik „programowy" (bez osłony stuknięć); prawdziwe stuknięcie palcem
   = `pointerdown` + `MouseEvent('click', {detail:1})` (patrz `tap()` w `scenarios14.js`).
+  **`reportDiag` (dziennik spowolnień) harness obsługuje sam** — trafia do `app.diagReports`, NIE do
+  `pending`, inaczej `respondNext` starszych testów odpowiadałby jemu; `opts.diagManual` — jak każde
+  inne wywołanie. `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
+  prawdziwym adresem, nie na about:blank), `opts.storage` (localStorage przed startem), `__diag()` —
+  kolejka dziennika. `let`/`const` skryptu nie są widoczne z `window.eval` (osobny zakres eval) —
+  do stanu przez wystawione `__…`.
 - `tests/backend-harness.js` — uruchamia prawdziwe pliki `.gs` na atrapie arkusza
   z **zamrożonym, ale przestawialnym zegarem** (`env.setNow(iso)`), więc przejście przez
   godzinę resetu da się sprawdzić w jednym scenariuszu. Wszystkie `.gs` sklejane w jeden
@@ -394,7 +522,13 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
   rzuca błędem na zakres poza swoją szerokością, jak Apps Script (B49) — domyślnie atrapa
   dokłada kolumny sama, więc taki błąd bez tej flagi jest niewidoczny. Tak samo `maxRows: N` —
   stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
-  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51).
+  `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51). `env.http` to
+  `UrlFetchApp` na niby: `http.calls` (adres, opcje) i `http.handler(url, opts)` → `{code, body}`
+  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_nearMinute`, `_tz` (B57).
+  **`env.cost`** — koszt usług w ms przy zamrożonym zegarze: `read[zakładka]` (każde `getValues`),
+  `waitLock` (`lockFail` — blokada rzuca), `flush`, `template`, `evaluate`; `env.now()`, `env.html.evaluated`
+  (szablony z `doGet`: `boot`, `served`). Uwaga: pusta zakładka nie woła `getValues` — koszt jej odczytu
+  się nie liczy (B62–B64).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -424,9 +558,22 @@ S105 miniony dzień po wolontariuszu, potem po godzinie (1.1.1), S106 pasek grup
 na treść tyle miejsca co bez grupy, kółko zaznaczania nad paskiem — 1.1.1), S107 grupy w minionym
 dniu (kolor wpisu, „Spacery grupowe", grupa z jednym spacerem to spacer pojedynczy), S108 numer psa
 w minionym dniu, S109 e-mail z listą psów (CSV, pies raz, schowek: execCommand → clipboard → pole
-do ręcznego skopiowania — 1.1.2), S110 treść maila w panelu (szkic, fokus, zapis z PIN-em),
-S110b treść maila sprawdzana w przeglądarce przed wysłaniem (`[LISTA]`, limit równy serwerowemu),
-S110c niezapisana treść maila oznaczona i do przywrócenia,
+do ręcznego skopiowania — 1.1.2), S110 ustawienia maila w panelu (odbiorca, temat, treść; szkic,
+fokus, zapis jednym przyciskiem z PIN-em — 1.2), S110b ustawienia sprawdzane w przeglądarce przed
+wysłaniem (adres, temat, `[LISTA]`, limity równe serwerowym), S110c niezapisane ustawienia oznaczone
+i do przywrócenia, S111 „Wyślij e-mail" jako link mailto: (odbiorcy, temat z datą, treść CRLF,
+kodowanie, `target=_top`, zapasowe „Skopiuj" — 1.2), S112–S112e „Dodaj" psa (kilka stuknięć = jeden
+pies, „dodaję…", powtórka z tym samym tokenem, dane wracają po nieudanym zapisie, szkice formularzy
+trybu edycji), S112f–S112g „Dodaj", gdy prowadząca wpisuje już następnego psa („nie dodano"
+w katalogu, lista podmieniana bez formularzy — review PR #5), S113 spóźniony odczyt nie cofa zapisu, S114 PIN i panel bez połączenia, S115 komunikat
+za komunikatem (przegląd 1.2), S116–S119 ankieta tygodniowa w panelu (domyślne ustawienia, „Pobierz
+grupy", zapis, te same reguły co serwer, szkic przeżywa przerysowanie, „Wyślij teraz" z potwierdzeniem),
+S120 stan konta bota osobnym pytaniem (panel nie czeka, „sprawdzam…", bramka nie odpowiada), S121 „nie wiadomo,
+czy wyszła" (sprawdź w grupie, wysłać mimo to — `force`; „trwa dłużej" po watchdogu i ponowne sprawdzenie) —
+review PR #5, runda 2, S122–S128 dziennik spowolnień — telefon (wolne i nieudane wywołania, odczyt bez
+odpowiedzi, strona stała — ale nie karta w tle ani okienko pytania, dojście strony, błędy skryptu, pamięć
+między otwarciami, wysyłka tylko w ciszy, Panel, opis telefonu z userAgent, kontrakt telefon → serwer),
+S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`) — runda 3,
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -445,6 +592,17 @@ B47 `setGroup` dla kart z PR #1 (`walks`), B48 `trimSlots_` jednym odczytem, B49
 B50 numer psa w Historii (zapis jako tekst, stare wpisy z katalogu tylko jednoznacznie, przemianowanie),
 B51 pełna Historia dostaje wiersze (z formatem tekstowym), nic nie znika — 1.1.2,
 B52 treść maila z listą (domyślna, PIN, `[LISTA]` obowiązkowa, limit, powrót do domyślnej),
+B53 ustawienia maila `setMailSettings` (adresy, temat, treść; nic połowicznie; stare `setMailTemplate`),
+B54 `addDog` z tokenem (powtórka nie dokłada psa, sufit pamięci, świeży odczyt, awaria właściwości),
+B55 numer psa i boks w Psy jako tekst (format przed wartością, `migrate()`),
+B56 tydzień ankiety (`pollMonday_`, `pollWeekLabel_`), B57 ustawienia ankiety i wyzwalacz (PIN, reguły,
+`installTriggers()`, token nigdy do przeglądarki), B58 wysyłka (termin i okno, raz na grupę i tydzień,
+przez północ, błąd bez tokenu, „w toku", świeży odczyt), B59 grupy bota (`getPollChats`),
+B60 zgoda na bramkę (`authorizeWhatsApp` + `requireScopes`, komunikat przy braku zgody — `env.consent` w atrapie),
+B61 nieznany wynik wysyłki (bramka przyjęła, odpowiedź zginęła: „nie wiadomo", bez drugiej ankiety; `force`;
+pewne „nie wyszło" przy braku zgody),
+B62 dziennik spowolnień — serwer (kroki `doGet`/`getData`/`withLock_`, błąd blokady, nieudany stan startowy,
+nazwa akcji, awaria właściwości nic nie psuje), B63 sufity dziennika i `reportDiag`, B64 dziennik w Panelu,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -499,6 +657,20 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
     listy jest zapowiadany dymkiem „Aktualizuję…" (`decideOrder`), a stuknięcie w zmienioną
     pod palcem listę albo kafelek nie liczy się (`tapRefused`, S93, S96).
     **Nie dokładaj ruchu listy bez zapowiedzi ani nowej akcji spoza `GUARDED` bez przemyślenia.**
+14. **Spóźniony odczyt cofał świeży zapis** (przegląd 1.2). `refresh()` sprawdzał tylko, czy zapis
+    jest W DRODZE w chwili odpowiedzi — a odświeżenie co 15 s wysłane tuż przed stuknięciem wracało
+    już po zapisie, z odczytem sprzed niego: rezerwacja „odskakiwała" do wolnej do następnego
+    odświeżenia, usunięty pies wracał. Teraz `writeSeq` (licznik zapisów wpuszczonych do kolejki):
+    odczyt sprzed zapisu jest pomijany i idzie nowy (S113, S8). **Każdy nowy odczyt pełnego stanu
+    poza `refresh()` musi tak samo pilnować `writeSeq`.**
+15. **Kilka stuknięć w „Dodaj" = kilka takich samych psów** (zgłoszenie z panelu). `addDog` nie był
+    idempotentny, a dane stały w formularzu do odpowiedzi serwera. Teraz formularz pustoszeje od
+    razu, pies stoi w katalogu jako „dodaję…" (`state.adding`), a każde „Dodaj" niesie token
+    (`addDogToken`): serwer pamięta ostatnie `DOG_ADDS_KEEP` (właściwość `dogAdds`, świeży odczyt pod
+    blokadą) i powtórki psa nie dokłada — dzięki temu `addDog` jest w `RETRIABLE` (S112, B54).
+    Nieudany zapis oddaje dane do pustego formularza z tym samym tokenem, dopóki treść się nie zmieni,
+    a gdy w formularzu jest już następny pies — zostawia w katalogu „nie dodano" (review PR #5).
+    **Żaden nieudany zapis nie może zniknąć bez śladu** — ślad musi zostać na ekranie, nie tylko w komunikacie.
 
 ## Pułapki Apps Script
 
@@ -529,8 +701,8 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
   stawałoby — dni przestałyby się zamykać. Od 1.1.2 `histRoom_` dokłada brakujące wiersze
   z formatem `@` (B51); **historii nie kasujemy** (decyzja właściciela — idzie do władz
   schroniska). `appendRow` (Psy, Zadania) rośnie sam. Zakładka Spacery dopisuje nowe spacery
-  tak samo pod ostatni wiersz (`walkDay_().save`) — na produkcji czyszczona co noc, ale na teście
-  (bez wyzwalacza) rośnie bez końca.
+  tak samo pod ostatni wiersz (`walkDay_().save`) — czyszczona co noc (na teście dopiero od
+  2026-10-05, wcześniej bez wyzwalacza rosła bez końca).
 - Aplikacja działa w zagnieżdżonym iframie `googleusercontent.com`. Wbudowane
   przeglądarki (WhatsApp, Messenger) potrafią zablokować most `postMessage`
   i wtedy wywołania wiszą — to nie jest błąd kodu.
@@ -606,7 +778,15 @@ Pułapki clasp:
 - clasp nie odpala funkcji: `migrate()` / `installTriggers()` nadal ręcznie z edytora.
 
 Nowy plik `.gs` albo nowe uprawnienie (np. tworzenie wyzwalaczy) wymaga **ponownej
-autoryzacji** przy pierwszym uruchomieniu.
+autoryzacji** przy pierwszym uruchomieniu. **1.2 dokłada uprawnienie połączenia z zewnętrzną
+usługą** (`UrlFetchApp` w `Poll.gs`, bramka WhatsAppa): zaraz po `deploy:test` i po `deploy:prod`
+uruchom z edytora **`authorizeWhatsApp()`** i zatwierdź zgodę. **Od 2025 edytor pyta tylko
+o uprawnienia, których wykonanie faktycznie użyje** (granularna zgoda): `installTriggers()` ani
+`sendWeeklyPoll()` z wyłączoną ankietą o tę zgodę NIE pytały (sprawdzone na teście 2026-10-05) —
+dlatego osobna funkcja z `ScriptApp.requireScopes`. Bez zgody strona i `getData` działają normalnie;
+zgody wymaga dopiero wywołanie bramki — panel mówi wtedy, co uruchomić (`GREEN_CONSENT`), a ankieta
+nie wychodzi (wyzwalacz rzuca błędem — mail od Google). **Każde przyszłe nowe uprawnienie** —
+ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `requireScopes`).
 
 ## Stan i rzeczy otwarte
 
@@ -624,6 +804,36 @@ autoryzacji** przy pierwszym uruchomieniu.
 - **Do sprawdzenia na telefonie (1.1.2):** czy „Skopiuj e-mail z listą psów" kopiuje w prawdziwym
   iframie Apps Script (Android i iPhone). W jsdom i w Chromium na zwykłej stronie działa; gdy
   w iframie schowek będzie zablokowany, pojawi się pole do ręcznego skopiowania.
+- **Do sprawdzenia na telefonie (1.2):** czy „✉️ Wyślij e-mail" otwiera pocztę z odbiorcą, tematem
+  i treścią z prawdziwego iframu Apps Script — Android (Gmail i inna poczta), iPhone, przeglądarka
+  WhatsAppa — i czy polskie znaki oraz łamania linii w treści dochodzą w całości. Link `mailto:`
+  ze strony z ramką testy sprawdzają tylko co do kształtu; to, czy telefon go przepuści, widać
+  dopiero na nim. Gdy nie przepuści — zostaje „Skopiuj treść". Do tego (review PR #5): na
+  **największym prawdziwym dniu** czy w mailu jest cała lista (link to ~45 znaków na psa, 60 psów
+  ≈ 2600 — część aplikacji przycina długie linki), i w WhatsAppie/Messengerze, gdy poczta się NIE
+  otworzy — czy `target="_top"` nie zostawia strony błędu zamiast aplikacji (a jeśli tak — czy
+  „wstecz" do niej wraca).
+- **Ankieta tygodniowa (1.2) — do uruchomienia przez właściciela** (README, „Ankieta tygodniowa na
+  WhatsAppie"): konto bota (osobny numer z WhatsApp Business — jest) w społeczności i w grupie
+  „Grafik", instancja Green API połączona kodem QR, trzy właściwości skryptu (osobno test i produkcja),
+  `authorizeWhatsApp()` z edytora po wdrożeniu (nowe uprawnienie), w panelu grupa / dzień / godzina /
+  „wysyłaj co tydzień". Tokenów nie przekazuje się w czacie — tylko we właściwościach skryptu.
+  **Sprawdzone na teście z prawdziwą bramką** (październik 2026): „Wyślij teraz" i wysyłka z wyzwalacza.
+  Pierwsza próba wyzwalacza „nic nie wysłała", bo ankieta na ten tydzień poszła już ręcznie tego dnia
+  (znacznik `pollSent` — tak ma być); po usunięciu znacznika poszła sama.
+- **„Strona długo się ładowała i wisiała" (7–8.10.2026, dwie osoby z iPhone'ami w schronisku, dane
+  komórkowe).** Dziennik wykonań produkcji z tygodnia (1.10–8.10, 1607 wywołań, przeczytany przez Claude
+  in Chrome): mediana 1,7 s, 99% do ~4,5 s, ale pojedyncze przestoje Google bez związku z ruchem ani
+  z przerwą w używaniu — `doGet` 37 s i 44 s (7.10 21:31, zgłoszenie z tej minuty), 12,7 s (8.10 11:00), `getData` 35 s,
+  189 s i 360 s (limit czasu, 2.10), zapis 9–10 s. Zimny start odrzucony (po przerwach 60+ min max 4,4 s;
+  test po wielu godzinach — 2,8 s). Dziennik Google nie mówi, który krok trwał, i nie widzi telefonu —
+  stąd dziennik spowolnień (1.2). Kodem tego nie usuniemy; po następnym zgłoszeniu: Panel → „Dziennik
+  spowolnień". **Do sprawdzenia po wdrożeniu na test:** czy wpis serwera ma nazwę akcji (`diagCaller_`
+  czyta stos Apps Script — format ramek zgadnięty z V8; „?" = nie dało się odczytać, wpis i tak jest).
+- **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
+  (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
+  `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —
+  wąski przypadek, `removeDog` zamyka spacery usuniętego psa, zostaje.
 - **Do sprawdzenia na iPhonie:** po konflikcie rezerwacji pole imienia wraca z wpisanym tekstem
   (`putEntry`), ale fokus przychodzi z odpowiedzi serwera, nie ze stuknięcia — iOS raczej nie
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
@@ -651,10 +861,12 @@ autoryzacji** przy pierwszym uruchomieniu.
   pustych). Czyszczenie na produkcji było wtedy o 19:00 (od 2026-10-03 — 18:00). Przed wdrożeniem
   zrobiona próba generalna: kod @16 i nowy na jednym arkuszu (dzień, noc, cofnięcie, ponowne
   wdrożenie) oraz stara karta @16 z nowym serwerem — wszystko zielone.
-- **Projekt testowy nie ma wyzwalacza `endOfDay`** (wyzwalacze nie kopiują się z projektem).
-  Dzień przełącza tam zegar, ale nic nie trafia do Historii i Spacery puchnie. Nocne czyszczenie
-  nowego kodu sprawdzone raz ręcznie z edytora 28.09. Stary układ Spacery testu przepisał się
-  przy @8 jeszcze bez kopii — jest tylko w historii wersji arkusza.
+- **Projekt testowy ma wyzwalacz `endOfDay` od 2026-10-05** — założył go `installTriggers()`
+  uruchomione z edytora testu przy konfiguracji ankiety; właściciel zdecydował, że zostaje (review
+  PR #5, runda 2). Wcześniej go nie było (wyzwalacze nie kopiują się z projektem): nic nie trafiało
+  do Historii, a Spacery puchło — pierwsze czyszczenie (5.10, godzina resetu testu) domyka wszystkie
+  zaległe dni naraz; sprawdzić w Wykonaniach i w Historii testu. Stary układ Spacery testu przepisał
+  się przy @8 jeszcze bez kopii — jest tylko w historii wersji arkusza.
 
 ## Jak ze mną pracować
 

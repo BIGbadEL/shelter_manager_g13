@@ -216,6 +216,8 @@ const back     = (app, n) => { for(let i=0; i<(n||1); i++) app.click('#prevDay')
 /* ---------- S109: e-mail z listą psów dla schroniska ---------- */
 const later = [];   // testy czekające na obietnicę (schowek przeglądarki) — koniec pliku na nie czeka
 const TPL = 'Dzień dobry,\nPrzesyłam listę spacerową z [DATA] z grupy G13.\n[LISTA]\nPozdrawiam,\n';
+const TO = 'schronisko@example.pl, biuro@example.pl';
+const SUBJ = 'Lista spacerowa G13 z [DATA] & co #1';          // & i # — muszą przejść przez link mailto: zakodowane
 const DAY = [
   {date:'2026-09-23', name:'Rex',         who:'Ola', time:'17:00', ident:'303/26'},
   {date:'2026-09-23', name:'Borys, mały', who:'Ala', time:'9:00',  ident:'101/26'},
@@ -230,7 +232,7 @@ const MAIL = 'Dzień dobry,\nPrzesyłam listę spacerową z 23.09.2026 z grupy G
 /** Aplikacja na wczorajszym dniu z DAY; `copy` — co robi document.execCommand('copy'). */
 function mailApp(o){
   const app = buildApp();
-  app.seed(base(Object.assign({mailTemplate: TPL}, o && o.data)));
+  app.seed(base(Object.assign({mailTemplate: TPL, mailTo: TO, mailSubject: SUBJ}, o && o.data)));
   const doc = app.window.document;
   app.copied = null;
   doc.execCommand = cmd => {
@@ -289,108 +291,152 @@ function mailApp(o){
   }));
 })();
 
-/* ---------- S110: treść maila w panelu prowadzącej ---------- */
-(()=>{
-  console.log('S110: panel — treść maila do ustawienia, zapis z PIN-em, przycisk używa nowej treści');
-  const app = mailApp();
+/* ---------- S110: ustawienia maila w panelu prowadzącej ---------- */
+/** Panel na aplikacji z mailApp: tryb edycji, zakładka Panel; `fill` wpisuje pola jak palec (zdarzenie input). */
+function mailPanel(o){
+  const app = mailApp(o);
   const w = app.window, doc = w.document;
   app.click('#nextDay');                                       // z powrotem na bieżący dzień
   w.__setAdmin('4321');
   app.click('[data-tab="diag"]');
-  const ta = doc.getElementById('mailTemplate');
-  check('w panelu pole z obecną treścią maila', !!ta && ta.value === TPL, ta ? JSON.stringify(ta.value) : app.html().slice(0, 300));
+  app.field = id => doc.getElementById(id);
+  app.fill = (id, v) => { const el = doc.getElementById(id); el.value = v; el.dispatchEvent(new w.Event('input', {bubbles:true})); };
+  app.answer = res => { const j = app.pending.filter(x => x.fn === 'setMailSettings')[0]; app.pending.splice(app.pending.indexOf(j), 1); j.ok(res); return j; };
+  return app;
+}
+(()=>{
+  console.log('S110: panel — odbiorca, temat i treść maila do ustawienia, zapis jednym przyciskiem z PIN-em');
+  const app = mailPanel();
+  const w = app.window, doc = w.document;
+  check('w panelu trzy pola z obecnymi ustawieniami', app.field('mailTo') && app.field('mailTo').value === TO
+    && app.field('mailSubject').value === SUBJ && app.field('mailTemplate').value === TPL, app.html().slice(0, 300));
   check('…z opisem [DATA] i [LISTA]', /\[DATA\]/.test(app.html()) && /\[LISTA\]/.test(app.html()));
+  check('pole adresu bez type=email (przeglądarka zjadałaby spacje i myliła „niezapisane")', app.field('mailTo').type === 'text');
   const mine = 'Witam,\nlista G13 z [DATA]:\n[LISTA]\nPozdrawiam,\n';
-  ta.value = mine; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
-  // odświeżenie co 15 s nie może zjeść pisanego tekstu; inna godzina zmienia HTML panelu, więc pole
-  // naprawdę rysuje się od nowa (przy tym samym HTML render nie dotyka DOM i test niczego by nie dowodził)
+  app.fill('mailTo', 'nowy@example.pl'); app.fill('mailSubject', 'Spacery [DATA]'); app.fill('mailTemplate', mine);
+  // odświeżenie co 15 s nie może zjeść pisanego tekstu; inna godzina zmienia HTML panelu, więc pola
+  // naprawdę rysują się od nowa (przy tym samym HTML render nie dotyka DOM i test niczego by nie dowodził)
+  const before = app.field('mailTemplate');
   w.__state.resetHour = 8; w.eval('safeRender()');
-  check('pisana treść przeżywa przerysowanie panelu', doc.getElementById('mailTemplate') !== ta && doc.getElementById('mailTemplate').value === mine,
-    doc.getElementById('mailTemplate') === ta ? 'pole nie przerysowane' : JSON.stringify(doc.getElementById('mailTemplate').value));
-  const typing = doc.getElementById('mailTemplate');
+  check('pisane pola przeżywają przerysowanie panelu', app.field('mailTemplate') !== before && app.field('mailTemplate').value === mine
+    && app.field('mailTo').value === 'nowy@example.pl' && app.field('mailSubject').value === 'Spacery [DATA]');
+  const typing = app.field('mailSubject');
   typing.focus();
   w.__state.resetHour = 7; w.eval('safeRender()');             // coś w panelu się zmieniło, a ona pisze
-  check('…a gdy pole ma fokus, nie jest podmieniane (kursor zostaje)', doc.getElementById('mailTemplate') === typing);
+  check('…a gdy pole ma fokus, nie jest podmieniane (kursor zostaje)', app.field('mailSubject') === typing);
   typing.blur();
   app.click('[data-act="saveMail"]');
-  const job = app.pending.filter(j => j.fn === 'setMailTemplate')[0];
-  check('zapis idzie na serwer z treścią i PIN-em', !!job && job.args[0] === mine && job.args[1] === '4321', job && JSON.stringify(job.args));
-  app.pending.splice(app.pending.indexOf(job), 1); job.ok({mailTemplate: mine});
+  const job = app.pending.filter(j => j.fn === 'setMailSettings')[0];
+  check('zapis idzie na serwer: wszystkie trzy naraz i PIN', !!job && JSON.stringify(job.args[0]) === JSON.stringify({to: 'nowy@example.pl', subject: 'Spacery [DATA]', body: mine})
+    && job.args[1] === '4321', job && JSON.stringify(job.args));
+  app.answer({mailTo: 'nowy@example.pl', mailSubject: 'Spacery [DATA]', mailTemplate: mine});
   check('po zapisie: komunikat', /zapisan/i.test(doc.getElementById('toast').textContent), doc.getElementById('toast').textContent);
   app.click('#gear');                                          // tryb edycji to katalog — dzień widać po wyjściu z niego
   back(app);
   app.click('[data-act="copyMail"]');
-  check('przycisk używa nowej treści', !!app.copied && app.copied.startsWith('Witam,\nlista G13 z 23.09.2026:\ndata,pies,numer\n'), JSON.stringify(app.copied));
+  check('„Skopiuj" używa nowej treści', !!app.copied && app.copied.startsWith('Witam,\nlista G13 z 23.09.2026:\ndata,pies,numer\n'), JSON.stringify(app.copied));
+  const href = doc.querySelector('[data-act="sendMail"]').getAttribute('href');
+  check('„Wyślij" używa nowego odbiorcy i tematu', href.startsWith('mailto:nowy@example.pl?') && decodeURIComponent(href.split('subject=')[1].split('&')[0]) === 'Spacery 23.09.2026', href.slice(0, 120));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-/* ---------- S110b: treść maila sprawdzana w przeglądarce przed wysłaniem ---------- */
+/* ---------- S110b: ustawienia maila sprawdzane w przeglądarce przed wysłaniem ---------- */
 (()=>{
-  console.log('S110b: panel — treść bez [LISTA] albo za długa nie idzie na serwer, komunikat od razu (review PR #4)');
-  // setMailTemplate jest w RETRIABLE: odrzucenie przez serwer kolejka ponawia raz, więc komunikat
-  // przychodził dopiero po dwóch przelotach. Te same reguły co serwer — w stuknięciu.
-  const app = mailApp();
-  const w = app.window, doc = w.document;
-  app.click('#nextDay');
-  w.__setAdmin('4321');
-  app.click('[data-tab="diag"]');
-  const save = text => { const ta = doc.getElementById('mailTemplate'); ta.value = text; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
-    app.click('[data-act="saveMail"]'); };
-  const sent = () => app.shipped.filter(f => f === 'setMailTemplate').length;
+  console.log('S110b: panel — zły adres, za długi temat, treść bez [LISTA] nie idą na serwer, komunikat od razu (review PR #4)');
+  // zapis jest w RETRIABLE: odrzucenie przez serwer kolejka ponawia raz, więc komunikat przychodził
+  // dopiero po dwóch przelotach. Te same reguły co serwer — w stuknięciu.
+  const app = mailPanel();
+  const doc = app.window.document;
+  const sent = () => app.shipped.filter(f => f === 'setMailSettings').length;
   const toastTxt = () => doc.getElementById('toast').textContent;
-  save('Dzień dobry, lista w załączniku');
-  check('bez [LISTA]: nic nie idzie na serwer', sent() === 0, app.shipped.join(','));
-  check('…a komunikat mówi od razu, czego brakuje', /\[LISTA\]/.test(toastTxt()), toastTxt());
-  save('[LISTA]' + 'x'.repeat(2100));
-  check('za długa: nic nie idzie na serwer, komunikat o długości', sent() === 0 && /2000/.test(toastTxt()), toastTxt());
-  check('pisana treść zostaje w polu do poprawienia', doc.getElementById('mailTemplate').value.length > 2000);
-  save('Witam\n[LISTA]\n');
-  check('poprawna treść idzie na serwer', sent() === 1);
-  const first = app.pending.filter(j => j.fn === 'setMailTemplate')[0];   // zapisy jednym torem, po kolei
-  app.pending.splice(app.pending.indexOf(first), 1); first.ok({mailTemplate: 'Witam\n[LISTA]\n'});
-  save('   ');
-  check('pusta treść też idzie (serwer przywraca domyślną)', sent() === 2);
+  const save = (to, subject, body) => { app.fill('mailTo', to); app.fill('mailSubject', subject); app.fill('mailTemplate', body); app.click('[data-act="saveMail"]'); };
+  save('schronisko.pl', 'T', '[LISTA]');
+  check('zły adres: nic nie idzie, komunikat wskazuje adres', sent() === 0 && /schronisko\.pl/.test(toastTxt()), toastTxt());
+  save('a@b.pl?cc=x@y.pl', 'T', '[LISTA]');
+  check('adres, który rozbiłby link mailto: nic nie idzie', sent() === 0, toastTxt());
+  save('schr%41nisko@b.pl', 'T', '[LISTA]');
+  check('adres z „%" (poczta by go odkodowała): nic nie idzie (review PR #5)', sent() === 0 && /%41/.test(toastTxt()), toastTxt());
+  save('a@b.pl', 'x'.repeat(200), '[LISTA]');
+  check('za długi temat: nic nie idzie, komunikat o długości', sent() === 0 && /150/.test(toastTxt()), toastTxt());
+  save('a@b.pl', 'T', 'Dzień dobry, lista w załączniku');
+  check('treść bez [LISTA]: nic nie idzie, komunikat mówi, czego brakuje', sent() === 0 && /\[LISTA\]/.test(toastTxt()), toastTxt());
+  save('a@b.pl', 'T', '[LISTA]' + 'x'.repeat(2100));
+  check('za długa treść: nic nie idzie, komunikat o długości', sent() === 0 && /2000/.test(toastTxt()), toastTxt());
+  check('pisana treść zostaje w polu do poprawienia', app.field('mailTemplate').value.length > 2000);
+  save('a@b.pl; c@d.pl', 'T [DATA]', 'Witam\n[LISTA]\n');
+  check('poprawne ustawienia idą na serwer (kilku odbiorców)', sent() === 1);
+  app.answer({mailTo: 'a@b.pl, c@d.pl', mailSubject: 'T [DATA]', mailTemplate: 'Witam\n[LISTA]\n'});   // zapisy jednym torem, po kolei
+  save('', ' ', '   ');
+  check('puste pola też idą (serwer: bez odbiorcy, domyślny temat i treść)', sent() === 2);
   const fs = require('fs'), path = require('path');
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'Config.gs'), 'utf8');
   const scr = fs.readFileSync(path.join(__dirname, '..', 'Script.html'), 'utf8');
-  const srvMax = Number((cfg.match(/MAIL:\s*(\d+)/) || [])[1]), cliMax = Number((scr.match(/const MAIL_MAX = (\d+)/) || [])[1]);
-  check('limit długości ten sam w przeglądarce i na serwerze (MAIL_MAX = MAX_LEN.MAIL)', srvMax > 0 && srvMax === cliMax, srvMax + ' / ' + cliMax);
+  const lim = (src, re) => Number((src.match(re) || [])[1]);
+  check('limity te same w przeglądarce i na serwerze (MAIL, MAIL_TO, MAIL_SUBJECT)',
+    lim(cfg, /MAIL:\s*(\d+)/) === lim(scr, /const MAIL_MAX = (\d+)/) && lim(cfg, /MAIL_TO:\s*(\d+)/) === lim(scr, /const MAIL_TO_MAX = (\d+)/)
+    && lim(cfg, /MAIL_SUBJECT:\s*(\d+)/) === lim(scr, /const MAIL_SUBJECT_MAX = (\d+)/) && lim(cfg, /MAIL:\s*(\d+)/) > 0,
+    [lim(cfg, /MAIL_TO:\s*(\d+)/), lim(scr, /const MAIL_TO_MAX = (\d+)/), lim(cfg, /MAIL_SUBJECT:\s*(\d+)/), lim(scr, /const MAIL_SUBJECT_MAX = (\d+)/)].join('/'));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
 
-/* ---------- S110c: niezapisana treść maila widać jako niezapisaną ---------- */
+/* ---------- S110c: niezapisane ustawienia maila widać jako niezapisane ---------- */
 (()=>{
-  console.log('S110c: panel — niezapisane zmiany treści maila są oznaczone i da się wrócić do zapisanej (review PR #4)');
-  // prowadząca zmienia treść, nie zapisuje, wychodzi z panelu i wraca: pole pokazuje jej szkic,
-  // a przycisk w historii kopiuje dalej starą treść — bez tego napisu wyglądało to na zapisane
-  const app = mailApp();
-  const w = app.window, doc = w.document;
-  app.click('#nextDay');
-  w.__setAdmin('4321');
-  app.click('[data-tab="diag"]');
+  console.log('S110c: panel — niezapisane zmiany (którekolwiek z trzech pól) są oznaczone i da się wrócić do zapisanych (review PR #4)');
+  // prowadząca zmienia, nie zapisuje, wychodzi z panelu i wraca: pola pokazują jej szkic, a przycisk
+  // w historii używa dalej starych ustawień — bez tego napisu wyglądało to na zapisane
+  const app = mailPanel();
+  const doc = app.window.document;
   const dirty = () => { const el = doc.querySelector('.maildirty'); return !!el && !el.classList.contains('hidden'); };
   const resetBtn = () => { const el = doc.querySelector('[data-act="resetMail"]'); return !!el && !el.classList.contains('hidden'); };
-  check('zapisana treść: bez napisu o zmianach', !dirty() && !resetBtn());
-  const ta = doc.getElementById('mailTemplate');
-  ta.value = 'Nowa treść [LISTA] — podpis Ania'; ta.dispatchEvent(new w.Event('input', {bubbles:true}));
-  check('w trakcie pisania od razu „Niezapisane zmiany" i „Przywróć zapisaną"', dirty() && resetBtn()
+  check('zapisane ustawienia: bez napisu o zmianach', !dirty() && !resetBtn());
+  app.fill('mailSubject', 'Inny temat [DATA]');
+  check('zmiana samego tematu: od razu „Niezapisane zmiany" i „Przywróć zapisane"', dirty() && resetBtn()
     && /Niezapisane/.test(doc.querySelector('.maildirty').textContent), app.html().slice(0, 200));
+  app.fill('mailTemplate', 'Nowa treść [LISTA] — podpis Ania');
   app.click('[data-tab="today"]');                             // wyjście z panelu bez zapisu…
   app.click('[data-tab="diag"]');                              // …i powrót
-  check('po powrocie: szkic w polu, ale wyraźnie niezapisany', doc.getElementById('mailTemplate').value === 'Nowa treść [LISTA] — podpis Ania'
-    && dirty() && resetBtn());
-  check('…i nic nie poszło na serwer', !app.shipped.includes('setMailTemplate'));
+  check('po powrocie: szkic w polach, ale wyraźnie niezapisany', app.field('mailTemplate').value === 'Nowa treść [LISTA] — podpis Ania'
+    && app.field('mailSubject').value === 'Inny temat [DATA]' && dirty() && resetBtn());
+  check('…i nic nie poszło na serwer', !app.shipped.includes('setMailSettings'));
   app.click('[data-act="resetMail"]');
-  check('„Przywróć zapisaną": w polu zapisana treść, napis znika', doc.getElementById('mailTemplate').value === TPL && !dirty() && !resetBtn());
-  const ta2 = doc.getElementById('mailTemplate');
-  ta2.value = TPL; ta2.dispatchEvent(new w.Event('input', {bubbles:true}));
-  check('treść taka sama jak zapisana — bez napisu', !dirty());
-  ta2.value = 'Inna [LISTA]'; ta2.dispatchEvent(new w.Event('input', {bubbles:true}));
+  check('„Przywróć zapisane": wszystkie trzy pola zapisane, napis znika', app.field('mailTemplate').value === TPL
+    && app.field('mailSubject').value === SUBJ && app.field('mailTo').value === TO && !dirty() && !resetBtn());
+  app.fill('mailTo', TO);
+  check('wartość taka sama jak zapisana — bez napisu', !dirty());
+  app.fill('mailTo', 'inny@example.pl');
+  check('zmiana samego odbiorcy też jest niezapisaną zmianą', dirty());
   app.click('[data-act="saveMail"]');
-  const job = app.pending.filter(j => j.fn === 'setMailTemplate')[0];
-  app.pending.splice(app.pending.indexOf(job), 1); job.ok({mailTemplate: 'Inna [LISTA]'});
-  check('po zapisie napis znika', !dirty() && !resetBtn() && doc.getElementById('mailTemplate').value === 'Inna [LISTA]');
+  app.answer({mailTo: 'inny@example.pl', mailSubject: SUBJ, mailTemplate: TPL});
+  check('po zapisie napis znika', !dirty() && !resetBtn() && app.field('mailTo').value === 'inny@example.pl');
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
+})();
+
+/* ---------- S111: „Wyślij e-mail" otwiera aplikację pocztową ---------- */
+(()=>{
+  console.log('S111: miniony dzień — „Wyślij e-mail" to link mailto: z odbiorcą, tematem i treścią (1.2)');
+  const app = mailApp();
+  const doc = app.window.document;
+  const a = doc.querySelector('a[data-act="sendMail"]');
+  check('jest link „Wyślij e-mail z listą psów"', !!a && /Wyślij/.test(a.textContent), app.html().slice(0, 300));
+  const href = a ? a.getAttribute('href') : '';
+  const q = new URLSearchParams(href.split('?')[1] || '');
+  check('…do odbiorców z panelu (kilku po przecinku, @ czytelne dla każdej poczty)', href.startsWith('mailto:schronisko@example.pl,biuro@example.pl?'), href.slice(0, 80));
+  check('…temat z podstawioną datą', q.get('subject') === 'Lista spacerowa G13 z 23.09.2026 & co #1', q.get('subject'));
+  check('…treść: ten sam gotowy mail co przy kopiowaniu, z końcami linii CRLF (RFC 6068)', q.get('body') === MAIL.replace(/\n/g, '\r\n'), JSON.stringify(q.get('body')));
+  check('…znaki specjalne zakodowane (& i # z tematu nie rozbijają linku)', !/[&#] /.test(href) && /%26/.test(href) && /%23/.test(href));
+  check('…w ramce Apps Script nawigacja idzie do okna nadrzędnego (target=_top)', a && a.getAttribute('target') === '_top');
+  const ev = new app.window.MouseEvent('click', {bubbles: true, cancelable: true});
+  a.dispatchEvent(ev);
+  check('stuknięcie nie jest blokowane przez aplikację (otwiera pocztę)', !ev.defaultPrevented && app.errors.length === 0);
+  check('„Skopiuj treść" zostaje jako zapas (np. przeglądarka WhatsAppa)', !!doc.querySelector('[data-act="copyMail"]'));
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+
+  const noTo = mailApp({data: {mailTo: ''}});
+  const h2 = noTo.window.document.querySelector('a[data-act="sendMail"]').getAttribute('href');
+  check('bez odbiorcy: mailto bez adresu — wpisze się w poczcie', h2.startsWith('mailto:?subject='), h2.slice(0, 60));
+  const old = mailApp({data: {mailTo: undefined, mailSubject: undefined}});
+  check('serwer bez odbiorcy i tematu (1.1.2): bez „Wyślij", „Skopiuj" zostaje, bez błędu',
+    !old.window.document.querySelector('[data-act="sendMail"]') && !!old.window.document.querySelector('[data-act="copyMail"]') && old.errors.length===0);
 })();
 
 Promise.all(later).catch(e => { failures++; console.log('  FAIL wyjątek | ' + (e && e.stack || e)); }).then(() => {

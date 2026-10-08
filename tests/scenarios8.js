@@ -109,7 +109,9 @@ const tap = app => app.window.document.dispatchEvent(new app.window.Event('point
   const html = app.html();
   check('przycisk „wszystkie po 2 spacery"', /data-act="allWalks" data-walks="2"/.test(html), html.slice(0,400));
   check('przycisk „wszystkie po 1 spacerze"', /data-act="allWalks" data-walks="1"/.test(html));
-  check('wyjaśnienie, co się stanie z psem już wyprowadzonym', /po pierwszym z dwóch/.test(html));
+  // opis w modelu spacerów 1/2, 2/2 (przegląd 1.2: wisiał tu jeszcze opis sprzed nich)
+  check('wyjaśnienie, co się stanie z psem już wyprowadzonym', /dziś już wyszedł \(to był\s+jego spacer 1\/2\)/.test(html));
+  check('...i z zarezerwowanym 2/2 przy powrocie do jednego', /zarezerwowane i odbyte\s+zostają/.test(html));
 
   app.click('[data-act="allWalks"][data-walks="2"]');
   const job = app.pending[app.pending.length-1];

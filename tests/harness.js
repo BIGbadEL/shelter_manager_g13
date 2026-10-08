@@ -1,3 +1,4 @@
+process.env.TZ = 'Europe/Warsaw';   // testy liczą godziny jak telefon w Polsce, niezależnie od strefy maszyny (review PR #5, runda 3)
 // Harness: ładuje prawdziwy Index+Styles+Script w jsdom, klika jak człowiek,
 // a odpowiedzi "serwera" dostarczamy ręcznie w dowolnej kolejności.
 const fs = require('fs');
@@ -23,23 +24,36 @@ function buildApp(opts){
   const bodyHtml = src_('Index.html')
     .match(/<body>([\s\S]*)<\?!= include\('Script'\); \?>/)[1]
     .replace('<?!= boot ?>', opts.boot === undefined ? '<?!= boot ?>'
-      : (typeof opts.boot === 'string' ? opts.boot : JSON.stringify(opts.boot)));
+      : (typeof opts.boot === 'string' ? opts.boot : JSON.stringify(opts.boot)))
+    // opts.served — chwila oddania strony przez doGet (dziennik spowolnień liczy od niej dojście strony)
+    .replace('<?!= served ?>', opts.served === undefined ? '<?!= served ?>' : String(opts.served));
 
-  const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${bodyHtml}</body></html>`, {
+  // opts.url — strona pod prawdziwym adresem (localStorage działa tylko wtedy; about:blank go nie ma),
+  // opts.storage — localStorage przed startem skryptu (to, co zostało po poprzednim otwarciu)
+  const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${bodyHtml}</body></html>`, Object.assign({
     runScripts: 'outside-only', pretendToBeVisual: true,
-  });
+  }, opts.url ? { url: opts.url } : {}));
   const { window } = dom;
   window.confirm = () => true;
+  if(opts.storage) Object.keys(opts.storage).forEach(k => window.localStorage.setItem(k, opts.storage[k]));
 
   // kontrolowany fake google.script.run
   const pending = [];   // {fn,args,ok,fail}
   const shipped = [];   // log wszystkich wysłanych wywołań
+  // Dziennik spowolnień (reportDiag) odpowiada sam i nie staje w `pending` — inaczej respondNext
+  // starszych testów trafiałby w niego zamiast w wywołanie, o które chodzi. `diagManual` — jak każde inne.
+  const diagReports = [];
   function makeRunner(){
     const t = { _ok:null, _fail:null };
     const proxy = new Proxy(t, { get(tgt, p){
       if(p === 'withSuccessHandler') return f => { tgt._ok = f; return proxy; };
       if(p === 'withFailureHandler') return f => { tgt._fail = f; return proxy; };
       if(typeof p !== 'string') return undefined;
+      if(p === 'reportDiag' && !opts.diagManual) return (entries) => {
+        diagReports.push(entries);
+        const ok = tgt._ok;
+        setTimeout(() => { if(ok) ok({ ok: true, n: entries.length }); }, 0);
+      };
       return (...args) => {
         shipped.push(p);
         pending.push({ fn:p, args, ok:tgt._ok, fail:tgt._fail });
@@ -62,11 +76,12 @@ function buildApp(opts){
   const exposed = script + '\n;window.__dbg = () => ({sending: isSending(), queueLen: queue.length, pending: [...pendingKeys.entries()], dogs: state.dogs.map(d=>{ const s = slotOf(state.date, d.id, 1); return s.status+":"+s.who; }), tasks: state.tasks.map(t=>t.id+":"+(t.done?1:0))});window.__force = () => { [...inflight.values()].forEach(s=>{ s.at = 0; }); };window.__setAdmin = (pin)=>{ state.admin=true; state.pin=pin; render("self"); };window.__enqueue = enqueue; window.__keyDog = keyDog; window.__keySlot = keySlot; window.__state = state;'
     + '\n;window.__settle = () => { lastTapAt = 0; reorderDueAt = 1; render(); };'   // udaje ciszę po dotknięciu i minioną zapowiedź
     + '\n;window.__order = () => [...viewEl.querySelectorAll("li.dog")].map(li => Number(li.dataset.dog));'
-    + '\n;window.__tiles = () => [...viewEl.querySelectorAll("li.dog")].map(li => li.dataset.tile);';
+    + '\n;window.__tiles = () => [...viewEl.querySelectorAll("li.dog")].map(li => li.dataset.tile);'
+    + '\n;window.__diag = () => ({ pending: diagPending, dev: diagDev });';   // dziennik spowolnień: kolejka do wysłania
   try { window.eval(exposed); } catch(e){ errors.push('EVAL: '+e.message); }
 
   return {
-    window, dom, pending, shipped, errors,
+    window, dom, pending, shipped, errors, diagReports,
     // pomocnicze
     seed(data){ // odpowiedz na startowy getData
       const j = pending.shift();

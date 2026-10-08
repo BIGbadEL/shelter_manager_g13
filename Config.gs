@@ -104,6 +104,13 @@ const VOLUNTEER_COLORS = 10;
 const VOLUNTEER_MAX = 60;
 const VOLUNTEER_DAYS = 31;
 
+/**
+ * Ile ostatnich dodań psa pamięta serwer (token -> id, właściwość `dogAdds`). Powtórka tego
+ * samego „Dodaj" przychodzi w ciągu sekund, więc dwadzieścia z dużym zapasem pokrywa nawet
+ * dodawanie całej grupy psów pod rząd.
+ */
+const DOG_ADDS_KEEP = 20;
+
 /** Zakładka Zadania. */
 const TASK = { ID: 1, TEXT: 2, DATE: 3, STATUS: 4 };
 const TASK_HEADERS = ['id', 'tresc', 'data', 'status'];
@@ -131,8 +138,14 @@ const DIFFICULTIES = ['easy', 'med', 'hard'];
  */
 const NOTE_FOREVER = 'nigdy';
 
-/** Limity długości pól (obrona przed wklejeniem elaboratu). MAIL — treść maila z listą (właściwość skryptu). */
-const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000 };
+/**
+ * Limity długości pól (obrona przed wklejeniem elaboratu). MAIL, MAIL_TO, MAIL_SUBJECT — treść,
+ * odbiorcy i temat maila z listą (właściwości skryptu; te same liczby w Script.html).
+ */
+const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150 };
+
+/** Temat maila z listą spacerów — domyślny, dopóki prowadząca nie ustawi własnego (właściwość `mailSubject`). */
+const DEFAULT_MAIL_SUBJECT = 'Lista spacerowa G13 z [DATA]';
 
 /**
  * Treść maila z listą spacerów dnia (schronisko chce listę psów z numerami i datą) — domyślna,
@@ -141,6 +154,34 @@ const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000 
  * zostaje pusta linia na podpis.
  */
 const DEFAULT_MAIL_TEMPLATE = 'Dzień dobry,\nPrzesyłam listę spacerową z [DATA] z grupy G13.\n[LISTA]\nPozdrawiam,\n';
+
+/**
+ * Ankieta tygodniowa na WhatsAppie (1.2, Poll.gs) — „Grafik" w grupie wolontariuszy: raz w tygodniu,
+ * w ustawionym dniu i godzinie, z wybranymi odpowiedziami. Domyślne ustawienia odwzorowują ankiety,
+ * które prowadzący robił ręcznie (zrzuty z 27.09 i 5.10.2026): pytanie z tygodniem, dni tygodnia
+ * i „Nie mogę", kilka odpowiedzi naraz. Wysyłanie wyłączone, dopóki prowadząca go nie włączy.
+ * [TYDZIEŃ] — tydzień od poniedziałku do niedzieli, „28.09-04.10" albo „05-11.10" (pollWeekLabel_).
+ * day: 0 = niedziela … 6 = sobota (jak getDay), hour: 0–23 (ankieta idzie między hour:00 a hour:30).
+ */
+const DEFAULT_POLL = {
+  question: 'Grafik [TYDZIEŃ]',
+  options: ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela', 'Nie mogę'],
+  multi: true, day: 0, hour: 12, enabled: false, chatId: '', chatName: '',
+};
+
+/**
+ * Limity ankiety. OPTION i OPTIONS_MAX — tyle przyjmuje bramka (Green API sendPoll: 2–12 odpowiedzi,
+ * każda do 100 znaków, pytanie do 255). QUESTION z zapasem na rozwinięte [TYDZIEŃ]. Te same liczby
+ * w Script.html — pilnuje tego test.
+ */
+const POLL_LIMITS = { QUESTION: 200, OPTION: 100, OPTIONS_MIN: 2, OPTIONS_MAX: 12 };
+
+/**
+ * Ile godzin po ustawionej godzinie ankieta tygodnia jeszcze idzie sama (wyzwalacz bywa spóźniony).
+ * Później — już nie: ankieta w środę na „ten" tydzień nikomu się nie przyda, a sendWeeklyPoll jest
+ * publiczne (wyzwalacz musi wołać funkcję bez „_") — poza tym oknem nikt nie wyśle nią niczego.
+ */
+const POLL_WINDOW_H = 3;
 
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
@@ -167,3 +208,16 @@ const MAX_DAYS_AHEAD = 365;
  * a wtedy zapisuje się w Script Properties (patrz Settings.gs).
  */
 const DEFAULT_RESET_HOUR = 22;
+
+/**
+ * Dziennik spowolnień (Diag.gs, Panel → „Dziennik spowolnień"). Wywołanie serwera dłuższe niż
+ * DIAG_SLOW_MS trafia do dziennika z rozbiciem na kroki; telefony dosyłają, co same widziały
+ * (reportDiag). Zwykle wywołanie trwa ~1–2 s (dziennik wykonań Google z 1–8.10.2026: połowa
+ * do 1,7 s, 99% do 4,4 s), więc 3 s to już coś do obejrzenia, a nie codzienny szum.
+ * Sufity, bo właściwość ma limit 9 KB na wartość: DIAG_KEEP wpisów na stronę (serwer, telefony),
+ * DIAG_BYTES bajtów razem, DIAG_REPORT_MAX wpisów z telefonu na jedno wywołanie.
+ */
+const DIAG_SLOW_MS = 3000;
+const DIAG_KEEP = 30;
+const DIAG_BYTES = 8000;
+const DIAG_REPORT_MAX = 10;

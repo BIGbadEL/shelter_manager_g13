@@ -92,11 +92,12 @@ function migrate() {
 /**
  * Format tekstowy ('@') na kolumnach dat i godzin — arkusz przestaje
  * zamieniać "17:21" na datę z 1899 r., a "2026-07-07" na obiekt daty.
+ * Także numer psa (Psy, Historia) i boks: „1/26" czy „3-4" arkusz potrafi wziąć za datę.
  */
 function applyTextFormats_() {
   const s = ss_();
   const textCols = [
-    [SHEETS.DOGS,  [DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],
+    [SHEETS.DOGS,  [DOG.IDENT, DOG.BOX, DOG.TIME, DOG.LAST_WALK, DOG.TIME1, DOG.NOTE_UNTIL]],   // numer i boks: „1/26" to nie data
     [SHEETS.WALKS, [WALK.DATE, WALK.TIME]],
     [SHEETS.HIST,  [HIST.DATE, HIST.TIME, HIST.IDENT]],
     [SHEETS.TASKS, [TASK.DATE]],
@@ -117,6 +118,11 @@ function applyTextFormats_() {
  *
  * Uwaga Apps Script: `atHour(h)` to okno h:00–h:59, nie punkt czasowy.
  * Wywoływana ponownie przy każdej zmianie godziny z panelu.
+ *
+ * Przy okazji przywraca wyzwalacz ankiety tygodniowej z zapisanych ustawień (Poll.gs) — po tej
+ * jednej funkcji z edytora wszystkie wyzwalacze są na miejscu. Zgody na połączenie z bramką
+ * WhatsAppa NIE daje (z bramką się nie łączy, a edytor pyta tylko o to, czego wykonanie
+ * potrzebuje) — do tego authorizeWhatsApp().
  */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
@@ -129,4 +135,6 @@ function installTriggers() {
     .atHour(resetHour_())
     .inTimezone(TIMEZONE)
     .create();
+
+  installPollTrigger_(pollSettings_());
 }

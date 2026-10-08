@@ -1508,5 +1508,620 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
     && env.api.getData().mailTemplate === def && !('mailTemplate' in env.props));
 })();
 
+/* ---------- B53: mail do schroniska — odbiorca, temat, treść ---------- */
+(()=>{
+  console.log('B53: ustawienia maila (do, temat, treść) — zapis jednym wywołaniem z PIN-em, zły adres odrzucony, nic połowicznie');
+  // 1.2: zamiast samego kopiowania przycisk otwiera aplikację pocztową z gotowym mailem (mailto:),
+  // więc odbiorca i temat też muszą być do ustawienia w panelu
+  const env = build([{id:1, name:'Borys'}]);
+  const g = env.api.getData();
+  check('getData: bez odbiorcy, domyślny temat z [DATA], domyślna treść', g.mailTo === '' && /\[DATA\]/.test(g.mailSubject) && /\[LISTA\]/.test(g.mailTemplate),
+    JSON.stringify([g.mailTo, g.mailSubject]));
+  const ok = {to: 'schronisko@example.pl; biuro@example.pl', subject: 'Spacery G13 — [DATA]', body: 'Dzień dobry,\n[LISTA]\n'};
+  check('bez PIN-u ani rusz', throws(() => env.api.setMailSettings(ok, TEST_PIN + 'x')) && env.api.getData().mailTo === '');
+  const r = env.api.setMailSettings(ok, TEST_PIN);
+  check('zapis oddaje wszystkie trzy, adresy ujednolicone („a, b")', !!r && r.mailTo === 'schronisko@example.pl, biuro@example.pl'
+    && r.mailSubject === 'Spacery G13 — [DATA]' && r.mailTemplate === 'Dzień dobry,\n[LISTA]\n', JSON.stringify(r));
+  const after = env.api.getData();
+  check('…i getData je niesie', after.mailTo === r.mailTo && after.mailSubject === r.mailSubject && after.mailTemplate === r.mailTemplate);
+  const keep = JSON.stringify([after.mailTo, after.mailSubject, after.mailTemplate]);
+  const same = () => { const x = env.api.getData(); return JSON.stringify([x.mailTo, x.mailSubject, x.mailTemplate]) === keep; };
+  check('zły adres odrzucony — i nic z reszty się nie zapisuje', throws(() => env.api.setMailSettings({to: 'schronisko.pl', subject: 'Inny', body: 'X [LISTA]'}, TEST_PIN)) && same());
+  check('adres ze znakami, które rozbiłyby link mailto (?, &), odrzucony', throws(() => env.api.setMailSettings({to: 'a@b.pl?cc=x@y.pl', subject: 'T', body: '[LISTA]'}, TEST_PIN)) && same());
+  check('adres z „%" odrzucony — poczta odkoduje „%41" na „A" i mail pójdzie gdzie indziej (review PR #5)',
+    throws(() => env.api.setMailSettings({to: 'schr%41nisko@b.pl', subject: 'T', body: '[LISTA]'}, TEST_PIN)) && same());
+  check('treść bez [LISTA] odrzucona — reszta też nie', throws(() => env.api.setMailSettings({to: 'a@b.pl', subject: 'T', body: 'bez listy'}, TEST_PIN)) && same());
+  check('za długi temat odrzucony', throws(() => env.api.setMailSettings({to: '', subject: 'x'.repeat(200), body: '[LISTA]'}, TEST_PIN)) && same());
+  const nl = env.api.setMailSettings({to: '', subject: 'Linia 1\nLinia 2', body: '[LISTA]'}, TEST_PIN);
+  check('temat w jednej linii, pusty odbiorca dozwolony (wpisze się w poczcie)', nl.mailSubject === 'Linia 1 Linia 2' && nl.mailTo === '', JSON.stringify(nl));
+  const empty = env.api.setMailSettings({to: '', subject: ' ', body: ''}, TEST_PIN);
+  check('puste temat i treść = domyślne', empty.mailSubject === g.mailSubject && empty.mailTemplate === g.mailTemplate, JSON.stringify(empty));
+  check('stare setMailTemplate (karty z 1.1.2) dalej działa i nie rusza odbiorcy ani tematu',
+    env.api.setMailSettings({to: 'a@b.pl', subject: 'T [DATA]', body: '[LISTA]'}, TEST_PIN)
+    && env.api.setMailTemplate('Stara karta\n[LISTA]', TEST_PIN).mailTemplate === 'Stara karta\n[LISTA]'
+    && env.api.getData().mailTo === 'a@b.pl' && env.api.getData().mailSubject === 'T [DATA]');
+})();
+
+/* ---------- B54: „Dodaj" z tokenem — powtórka nie dokłada psa ---------- */
+(()=>{
+  console.log('B54: dodanie psa z tokenem — ten sam token dodaje psa raz (kilka stuknięć, powtórka po zaginionej odpowiedzi)');
+  // zgłoszenie z panelu (1.2): kilka stuknięć w „Dodaj" dawało kilka takich samych psów
+  const env = build([{id:1, name:'Borys'}]);
+  const count = n => env.api.readDogCatalog_().filter(d => d.name === n).length;
+  const T1 = 'dabc12345xyz';
+  const r1 = env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, T1);
+  const r2 = env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, T1);
+  check('ten sam token dwa razy: jeden Rex', count('Rex') === 1, JSON.stringify(env.api.readDogCatalog_().map(d => d.name)));
+  check('powtórka oddaje ten sam stan co pierwsze wywołanie', JSON.stringify(r1.dogs) === JSON.stringify(r2.dogs) && r2.dogs.some(d => d.name === 'Rex'));
+  env.api.addDog({name:'Rex', ident:'552/26'}, TEST_PIN, 'dother000001');
+  check('inny token = drugi pies (dwa psy o tym samym imieniu to osobna decyzja)', count('Rex') === 2);
+  env.api.addDog({name:'Kora'}, TEST_PIN); env.api.addDog({name:'Kora'}, TEST_PIN);
+  check('bez tokenu (karty sprzed 1.2) — jak dawniej', count('Kora') === 2);
+  env.api.addDog({name:'Fado'}, TEST_PIN, '12345678'); env.api.addDog({name:'Fado'}, TEST_PIN, '12345678');
+  check('token nie od litery pomijany (klucz z cyfr przestawiłby kolejność w JSON-ie i przycinanie)', count('Fado') === 2);
+  check('bez PIN-u token nic nie daje', throws(() => env.api.addDog({name:'Zły'}, TEST_PIN + 'x', 'dzzzzzzzz01')) && count('Zły') === 0);
+
+  for(let i = 0; i < 25; i++) env.api.addDog({name:'P' + i}, TEST_PIN, 'dseq' + String(i).padStart(6, '0'));
+  const adds = JSON.parse(env.props.dogAdds);
+  check('pamięta najwyżej 20 ostatnich (właściwości mają limit)', Object.keys(adds).length === 20
+    && adds.dseq000024 && !adds.dseq000004 && !adds[T1], Object.keys(adds).length + ' ' + Object.keys(adds)[0]);
+
+  // świeży odczyt pod blokadą: inne wykonanie zapisało token już po tym, jak to wczytało właściwości
+  const n0 = env.api.readDogCatalog_().length;
+  env.newExecution();
+  env.ctx.__api.getData();                                    // pamięć wykonania wczytana
+  env.props.dogAdds = JSON.stringify(Object.assign(JSON.parse(env.props.dogAdds), {dlate0000001: 99}));
+  env.ctx.__api.addDog({name:'Późny'}, TEST_PIN, 'dlate0000001');
+  check('token zapisany przez inne wykonanie też chroni (odczyt świeży, nie z pamięci)', env.api.readDogCatalog_().length === n0);
+
+  env.failProps(k => k === 'dogAdds');
+  check('właściwości padły: pies i tak się dodaje', !throws(() => env.api.addDog({name:'Awaria'}, TEST_PIN, 'dfail0000001')) && count('Awaria') === 1);
+  env.failProps(null);
+})();
+
+/* ---------- B55: numer psa w zakładce Psy jako tekst ---------- */
+(()=>{
+  console.log('B55: numer psa i boks w Psy jako tekst („1/26", „3-4" to nie daty) — format przed wartością, dodanie, edycja, setup/migrate');
+  // numer idzie do Historii i maila dla władz schroniska; w Historii jest '@' od 1.1.1, w Psy nie było.
+  // Boks (decyzja właściciela po review PR #5) — ta sama droga do arkusza, ten sam kłopot
+  const env = build([{id:1, name:'Borys'}]);
+  const P = env.sheets['Psy'];
+  const ops = [];                                             // kolejność: format, potem wartość w kolumnach numeru i boksu
+  const getRange = P.getRange.bind(P);
+  P.getRange = (r, c, nr, nc) => {
+    const g = getRange(r, c, nr, nc), w = nc || 1;
+    const hits = c <= 4 && 3 < c + w;
+    const sv = g.setValues, s1 = g.setValue, sf = g.setNumberFormat;
+    g.setValues = v => { if(hits) ops.push('wartość ' + r); return sv.call(g, v); };
+    g.setValue = v => { if(hits) ops.push('wartość ' + r); return s1.call(g, v); };
+    g.setNumberFormat = f => { if(hits) ops.push('format ' + r); sf.call(g, f); return g; };
+    return g;
+  };
+  let appended = null;
+  const appendRow = P.appendRow.bind(P);
+  P.appendRow = r => { appended = r.slice(); appendRow(r); };
+
+  env.api.addDog({name:'Rex', ident:'1/26', box:'3-4'}, TEST_PIN, 'dident000001');
+  const row = P._data.findIndex(r => r[1] === 'Rex') + 1;
+  check('dodanie: numer i boks nie jadą w appendRow (arkusz sparsowałby je przed formatem)',
+    !!appended && appended[2] === '' && appended[3] === '', JSON.stringify(appended));
+  check('...format tekstowy, potem numer i boks', JSON.stringify(ops) === JSON.stringify(['format ' + row, 'wartość ' + row])
+    && P._data[row - 1][2] === '1/26' && P._data[row - 1][3] === '3-4', JSON.stringify(ops));
+  check('...format na obu kolumnach', P._formatRanges.some(f => f.row === row && f.col === 3 && f.cols === 2 && f.f === '@'),
+    JSON.stringify(P._formatRanges.slice(-2)));
+  ops.length = 0;
+  env.api.updateDog(1, {name:'Borys', ident:'2/26', box:'1/2'}, TEST_PIN);
+  check('edycja: format, potem wartości', JSON.stringify(ops) === JSON.stringify(['format 2', 'wartość 2'])
+    && P._data[1][2] === '2/26' && P._data[1][3] === '1/2' && P._formatRanges.some(f => f.row === 2 && f.col === 3 && f.cols === 2), JSON.stringify(ops));
+  P._formats = {};
+  env.api.migrate();
+  check('migrate()/setup(): całe kolumny numeru i boksu jako tekst', P._formats[3] === '@' && P._formats[4] === '@', JSON.stringify(P._formats));
+})();
+
+/* ---------- ankieta tygodniowa na WhatsAppie (Poll.gs, 1.2) ---------- */
+// Bramka Green API na niby: adresy jak w konsoli, token tylko testowy. Ankieta „Grafik" w grupie
+// społeczności — jak na zrzutach prowadzącego z 27.09 i 5.10.2026.
+const GREEN = { greenApiUrl: 'https://7103.api.greenapi.com/', greenApiInstance: '7103123456', greenApiToken: 'tok3n5ecret' };
+const GRAFIK = '120363000000000001@g.us';
+function gateway(env, o){
+  o = o || {};
+  env.http.handler = (url, opts) => {
+    if(/\/sendPoll\//.test(url)) return o.send ? o.send(url, opts) : { code: 200, body: JSON.stringify({ idMessage: 'BAE5F0A1' }) };
+    if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(o.contacts || []) };
+    if(/\/getStateInstance\//.test(url)){
+      if(o.stateError) throw new Error('Address unavailable: ' + url);
+      return { code: 200, body: JSON.stringify({ stateInstance: o.state || 'authorized' }) };
+    }
+    return { code: 404, body: '' };
+  };
+}
+const sends   = env => env.http.calls.filter(c => /\/sendPoll\//.test(c.url));
+const pollOn  = (env, extra) => env.api.setPollSettings(Object.assign({}, env.conf.DEFAULT_POLL,
+                  { chatId: GRAFIK, chatName: 'Grafik', enabled: true, day: 0, hour: 12 }, extra), TEST_PIN);
+const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Object.assign({ now, props: Object.assign({}, GREEN) }, extra)); gateway(env); return env; };
+
+/* ---------- B56: tydzień ankiety ---------- */
+(()=>{
+  console.log('B56: ankieta — tydzień od poniedziałku do niedzieli, jak w ręcznych ankietach („28.09-04.10", „05-11.10")');
+  const env = pollEnv('2026-10-11T10:00:00+02:00');
+  const week = d => { const m = env.api.pollMonday_(d); return m + ' ' + env.api.pollWeekLabel_(m); };
+  check('niedziela 27.09 → tydzień od jutra: „28.09-04.10" (zrzut z 27.09)', week('2026-09-27') === '2026-09-28 28.09-04.10', week('2026-09-27'));
+  check('poniedziałek 5.10 → ten sam tydzień: „05-11.10"', week('2026-10-05') === '2026-10-05 05-11.10', week('2026-10-05'));
+  check('środa → następny tydzień', week('2026-10-07') === '2026-10-12 12-18.10', week('2026-10-07'));
+  check('sobota → poniedziałek za dwa dni', week('2026-10-10') === '2026-10-12 12-18.10');
+  check('przełom roku: „28.12-03.01"', week('2026-12-27') === '2026-12-28 28.12-03.01', week('2026-12-27'));
+  check('zmiana czasu (25.10) nie przesuwa dni', week('2026-10-25') === '2026-10-26 26.10-01.11', week('2026-10-25'));
+})();
+
+/* ---------- B57: ustawienia ankiety i wyzwalacz ---------- */
+(()=>{
+  console.log('B57: ankieta — ustawienia z PIN-em, sprawdzone; wyzwalacz co tydzień; token nigdy nie wychodzi do przeglądarki');
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  const d = env.api.pollSettings_();
+  check('domyślnie jak ręczne ankiety: „Grafik [TYDZIEŃ]", dni tygodnia + „Nie mogę", kilka odpowiedzi, wyłączona',
+    d.question === 'Grafik [TYDZIEŃ]' && d.options.length === 8 && d.options[0] === 'Poniedziałek' && d.options[7] === 'Nie mogę'
+    && d.multi === true && d.enabled === false, JSON.stringify(d));
+  const base = Object.assign({}, env.conf.DEFAULT_POLL, { chatId: GRAFIK, chatName: 'Grafik' });
+  const bad = (extra, why) => check('odrzucone: ' + why, throws(() => env.api.setPollSettings(Object.assign({}, base, extra), TEST_PIN)));
+  check('bez PIN-u ani rusz', throws(() => env.api.setPollSettings(base, TEST_PIN + 'x')));
+  bad({ question: '  ' }, 'puste pytanie');
+  bad({ question: 'x'.repeat(201) }, 'za długie pytanie');
+  bad({ options: ['Tak'] }, 'jedna odpowiedź');
+  bad({ options: Array.from({length: 13}, (_, i) => 'O' + i) }, '13 odpowiedzi (WhatsApp: najwyżej 12)');
+  bad({ options: ['Środa', 'środa '] }, 'ta sama odpowiedź dwa razy');
+  bad({ options: ['A', 'x'.repeat(101)] }, 'za długa odpowiedź');
+  bad({ day: 7 }, 'dzień spoza tygodnia');
+  bad({ hour: 24 }, 'godzina 24');
+  bad({ chatId: '48600100200@c.us' }, 'czat prywatny zamiast grupy');
+  bad({ chatId: '', enabled: true }, 'włączona bez grupy');
+  const noGw = build([{id:1, name:'Borys'}], { now: '2026-10-07T10:00:00+02:00' });
+  let msg = '';
+  try { noGw.api.setPollSettings(Object.assign({}, base, { enabled: true }), TEST_PIN); } catch(e){ msg = e.message; }
+  check('włączona bez bramki — komunikat mówi, które właściwości ustawić', /greenApiUrl/.test(msg) && /greenApiToken/.test(msg), msg);
+  check('...a wyłączoną (szkic) bez bramki zapisać można', !throws(() => noGw.api.setPollSettings(base, TEST_PIN)));
+
+  const r = env.api.setPollSettings(Object.assign({}, base, { options: [' Poniedziałek ', '', 'Wtorek', 'Nie mogę'], day: 0, hour: 18, enabled: true }), TEST_PIN);
+  check('zapis: puste linie i spacje wycięte, oddaje stan panelu', JSON.stringify(r.settings.options) === '["Poniedziałek","Wtorek","Nie mogę"]'
+    && r.settings.enabled && r.settings.chatName === 'Grafik' && r.next.day === '2026-10-11' && r.next.label === '12-18.10', JSON.stringify(r));
+  const pt = () => env.triggers.filter(t => t._fn === 'sendWeeklyPoll');
+  const t = pt()[0];
+  check('wyzwalacz: co tydzień, w niedzielę, 18:00–18:30, strefa Warszawa', pt().length === 1 && t._everyWeeks === 1 && t._weekDay === 'SUNDAY'
+    && t._hour === 18 && t._nearMinute === 15 && t._tz === 'Europe/Warsaw', JSON.stringify(t));
+  env.api.setPollSettings(Object.assign({}, base, { enabled: true, day: 6, hour: 9 }), TEST_PIN);
+  check('zmiana terminu: dalej jeden wyzwalacz, w nowym terminie', pt().length === 1 && pt()[0]._weekDay === 'SATURDAY' && pt()[0]._hour === 9);
+  env.triggers.splice(env.triggers.indexOf(pt()[0]), 1);                // wyzwalacz ankiety zniknął (ręcznie skasowany)
+  env.api.installTriggers();
+  check('installTriggers() z edytora przywraca też ankietę (sobota 9), bez dubli', pt().length === 1 && pt()[0]._weekDay === 'SATURDAY'
+    && env.triggers.filter(x => x._fn === 'endOfDay').length === 1, JSON.stringify(env.triggers.map(x => x._fn)));
+  env.api.installTriggers();
+  check('...drugi raz — dalej po jednym', pt().length === 1 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+  env.api.setResetHour(19, TEST_PIN);
+  check('zmiana godziny czyszczenia nie gubi ankiety', pt().length === 1 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+  env.api.setPollSettings(Object.assign({}, base, { enabled: false }), TEST_PIN);
+  check('wyłączenie zdejmuje wyzwalacz ankiety (czyszczenie zostaje)', pt().length === 0 && env.triggers.filter(x => x._fn === 'endOfDay').length === 1);
+
+  const leaks = s => /tok3n5ecret/.test(s);
+  check('getData i stan wpisany w stronę: ani tokenu, ani ankiety', !leaks(JSON.stringify(env.api.getData())) && !/greenApi|chatId/.test(JSON.stringify(env.api.getData()))
+    && !leaks(env.api.bootJson_()));
+  const before = env.http.calls.length;
+  const diag = env.api.getDiagnostics(TEST_PIN);
+  check('panel: ankieta bez tokenu i BEZ pytania bramki (bramka potrafi odpowiadać do minuty — review PR #5, runda 2)',
+    !!diag.poll && diag.poll.configured && diag.poll.state === null && env.http.calls.length === before && !leaks(JSON.stringify(diag)),
+    JSON.stringify(diag.poll));
+  check('stan konta bota osobno (getPollState, PIN)', throws(() => env.api.getPollState(TEST_PIN + 'x'))
+    && env.api.getPollState(TEST_PIN).code === 'authorized' && /połączone/.test(env.api.getPollState(TEST_PIN).text));
+  gateway(env, { stateError: true });
+  const down = env.api.getPollState(TEST_PIN);
+  check('bramka nie odpowiada: stan „nie udało się" zamiast wyjątku, token wycięty z błędu (adres go zawiera)',
+    down.code === 'error' && !leaks(JSON.stringify(down)) && /nie udało się/.test(down.text), JSON.stringify(down));
+  check('...a panel działa jak działał', !!env.api.getDiagnostics(TEST_PIN).poll);
+  check('bez bramki: stan „missing", bez wywołania', noGw.api.getPollState(TEST_PIN).code === 'missing' && noGw.http.calls.length === 0);
+})();
+
+/* ---------- B58: wysyłka ankiety ---------- */
+(()=>{
+  console.log('B58: ankieta — idzie w swoim terminie, raz na grupę i tydzień; błąd widać w panelu, bez tokenu');
+  const env = pollEnv('2026-10-11T11:50:00+02:00');                    // niedziela, przed 12:00
+  pollOn(env);
+  env.api.sendWeeklyPoll();
+  check('przed godziną — nic', sends(env).length === 0);
+  env.setNow('2026-10-11T12:10:00+02:00');
+  const r = env.api.sendWeeklyPoll();
+  const c = sends(env)[0], body = c ? JSON.parse(c.opts.payload) : {};
+  check('w terminie — jedna ankieta', sends(env).length === 1 && r && r.question === 'Grafik 12-18.10', JSON.stringify(r));
+  check('adres bramki z konsoli (bez ukośnika na końcu), POST z JSON-em', c.url === 'https://7103.api.greenapi.com/waInstance7103123456/sendPoll/tok3n5ecret'
+    && c.opts.method === 'post' && c.opts.contentType === 'application/json', c.url);
+  check('treść: grupa, „Grafik 12-18.10", dni tygodnia + „Nie mogę", kilka odpowiedzi', body.chatId === GRAFIK && body.message === 'Grafik 12-18.10'
+    && body.options.length === 8 && body.options[2].optionName === 'Środa' && body.options[7].optionName === 'Nie mogę' && body.multipleAnswers === true,
+    JSON.stringify(body));
+  env.setNow('2026-10-11T12:25:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('drugi raz w tym samym terminie — nic (wyzwalacz, wywołanie z zewnątrz)', sends(env).length === 1);
+  let msg = '';
+  try { env.api.sendPollNow(TEST_PIN); } catch(e){ msg = e.message; }
+  check('„Wyślij teraz" po wysłanej — odmowa z godziną wysłania', /już poszła/.test(msg) && /12:10/.test(msg) && sends(env).length === 1, msg);
+  check('panel: ostatnia ankieta wysłana', env.api.getDiagnostics(TEST_PIN).poll.last.ok === true);
+  env.setNow('2026-10-11T15:05:00+02:00');
+  env.api.sendWeeklyPoll({ chatId: '1@g.us' });                       // argumenty z przeglądarki nic nie znaczą
+  check('po oknie (3 h) — nic, także wywołane z zewnątrz', sends(env).length === 1);
+  env.setNow('2026-10-18T14:59:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('kolejna niedziela, spóźniony wyzwalacz (14:59) — ankieta na następny tydzień', sends(env).length === 2
+    && JSON.parse(sends(env)[1].opts.payload).message === 'Grafik 19-25.10');
+  env.api.setPollSettings(Object.assign({}, env.conf.DEFAULT_POLL, { chatId: '120363000000000002@g.us', chatName: 'Test', day: 0, hour: 12 }), TEST_PIN);
+  const other = env.api.sendPollNow(TEST_PIN);
+  check('„Wyślij teraz" do innej grupy (np. próbnej) — idzie, choć „Grafik" już ma tę ankietę', sends(env).length === 3 && other.sent.question === 'Grafik 19-25.10');
+  env.setNow('2026-10-25T12:10:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('wyłączona — wyzwalacz nic nie wysyła', sends(env).length === 3);
+
+  // przez północ: niedziela 23:00, wyzwalacz przychodzi w poniedziałek 0:30 — to wciąż ankieta z niedzieli
+  const late = pollEnv('2026-10-12T00:30:00+02:00');
+  pollOn(late, { hour: 23 });
+  late.api.sendWeeklyPoll();
+  check('termin 23:00, wyzwalacz po północy — ankieta na tydzień od tego poniedziałku', sends(late).length === 1
+    && JSON.parse(sends(late)[0].opts.payload).message === 'Grafik 12-18.10');
+
+  // bramka odmówiła (kod 4xx) — ankieta na pewno nie wyszła; treść błędu z adresem (i tokenem).
+  // 5xx to „nie wiadomo" (B61) — pośrednik, za którym bramka mogła ankietę wysłać
+  const bad = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(bad);
+  gateway(bad, { send: url => ({ code: 400, body: 'Bad request at ' + url }) });
+  let e1 = '';
+  try { bad.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
+  const last = bad.api.getDiagnostics(TEST_PIN).poll.last;
+  check('błąd idzie dalej (Google zgłosi go mailem), bez tokenu', /błąd 400/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('panel: ostatnia próba nieudana (nie „nie wiadomo"), z powodem, bez tokenu', last && last.ok === false && !last.unknown
+    && /400/.test(last.msg) && !/tok3n5ecret/.test(JSON.stringify(last)), JSON.stringify(last));
+  gateway(bad);
+  bad.setNow('2026-10-11T12:40:00+02:00');
+  bad.api.sendWeeklyPoll();
+  check('po pewnym błędzie znacznik zdjęty — kolejne wywołanie w oknie wysyła', sends(bad).length === 2);
+  gateway(bad, { send: () => ({ code: 466, body: '{"message":"limit"}' }) });
+  let e2 = '';
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('„Wyślij teraz" po wysłanej — odmowa, zanim zapyta bramkę', /już poszła/.test(e2) && sends(bad).length === 2, e2);
+  bad.api.setPollSettings(Object.assign({}, bad.conf.DEFAULT_POLL, { chatId: '120363000000000003@g.us', chatName: 'Inna' }), TEST_PIN);
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('kod błędu bramki w komunikacie', /466/.test(e2), e2);
+  gateway(bad, { send: () => ({ code: 200, body: '{}' }) });
+  try { bad.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('bramka nie potwierdziła (brak idMessage) — błąd, nie „wysłana"', /nie potwierdziła/.test(e2), e2);
+
+  // „w toku": inna wysyłka trwa (bramka bywa wolna — wywołanie idzie bez blokady)
+  const busy = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(busy);
+  busy.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:09', t: Date.parse('2026-10-11T12:09:00+02:00'), pending: true } });
+  busy.api.sendWeeklyPoll();
+  let e3 = '';
+  try { busy.api.sendPollNow(TEST_PIN); } catch(e){ e3 = e.message; }
+  check('wysyłka w toku — wyzwalacz nic, „Wyślij teraz" mówi, że się wysyła', sends(busy).length === 0 && /właśnie się wysyła/.test(e3), e3);
+  busy.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 11:00', t: Date.parse('2026-10-11T11:00:00+02:00'), pending: true } });
+  busy.api.sendWeeklyPoll();
+  check('przerwana wysyłka (znacznik sprzed godziny) — wyzwalacz dalej nic (mogła dojść)', sends(busy).length === 0);
+  check('...w panelu „nie wiadomo"', busy.api.getDiagnostics(TEST_PIN).poll.now.status === 'unknown');
+  check('...„Wyślij teraz" bez potwierdzenia jej nie ponawia (mogła dojść — review PR #5, runda 2)',
+    throws(() => busy.api.sendPollNow(TEST_PIN)) && sends(busy).length === 0);
+  busy.api.sendPollNow(TEST_PIN, true);
+  check('...po potwierdzeniu prowadzącej („sprawdziłam w grupie") — ponawia', sends(busy).length === 1);
+  // świeży odczyt pod blokadą: w tym samym czasie ankietę wysłało inne wykonanie (np. „Wyślij teraz"
+  // i wyzwalacz naraz) — to wykonanie wczytało właściwości wcześniej i z pamięci by tego nie wiedziało
+  const race = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(race);
+  race.newExecution();
+  race.ctx.__api.getData();                                           // pamięć wykonania wczytana
+  race.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:10' } });
+  race.ctx.__api.sendWeeklyPoll();
+  check('ankieta wysłana przez inne wykonanie — ta nie idzie drugi raz (odczyt świeży, nie z pamięci)', sends(race).length === 0);
+  const many = {};
+  for(let i = 0; i < 25; i++) many['1203630000000000' + String(i).padStart(2, '0') + '@g.us|2026-10-05'] = { at: 'x' };
+  busy.props.pollSent = JSON.stringify(many);
+  busy.api.setPollSettings(Object.assign({}, busy.conf.DEFAULT_POLL, { chatId: '120363000000000099@g.us', chatName: 'X' }), TEST_PIN);
+  busy.api.sendPollNow(TEST_PIN);
+  check('pamięć wysłanych ma sufit (20)', Object.keys(JSON.parse(busy.props.pollSent)).length === 20);
+})();
+
+/* ---------- B59: lista grup bota ---------- */
+(()=>{
+  console.log('B59: ankieta — grupy, w których jest bot (z PIN-em), do wyboru w panelu');
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  gateway(env, { contacts: [
+    { id: '48600100200@c.us', name: 'Ola', type: 'user' },
+    { id: GRAFIK, name: 'Grafik', type: 'group' },
+    { id: '120363000000000005@g.us', name: '', contactName: 'Ogłoszenia G13', type: 'group' },
+    { id: 'zlyid', name: 'Śmieć', type: 'group' },
+    { id: '120363000000000002@g.us', name: 'Bieganie', type: 'group' },
+  ] });
+  check('bez PIN-u ani rusz', throws(() => env.api.getPollChats(TEST_PIN + 'x')));
+  const list = env.api.getPollChats(TEST_PIN);
+  check('same grupy, po nazwie, nazwa z książki adresowej, gdy brak własnej', JSON.stringify(list.map(g => g.name)) === '["Bieganie","Grafik","Ogłoszenia G13"]'
+    && list[1].id === GRAFIK, JSON.stringify(list));
+  check('pyta bramkę tylko o grupy', /\/getContacts\/tok3n5ecret\?group=true$/.test(env.http.calls.slice(-1)[0].url), env.http.calls.slice(-1)[0].url);
+  const noGw = build([{id:1, name:'Borys'}]);
+  let msg = '';
+  try { noGw.api.getPollChats(TEST_PIN); } catch(e){ msg = e.message; }
+  check('bez bramki — komunikat, co ustawić', /greenApiInstance/.test(msg), msg);
+})();
+
+/* ---------- B60: zgoda na połączenie z bramką ---------- */
+(()=>{
+  console.log('B60: ankieta — zgoda właściciela na połączenie z bramką (authorizeWhatsApp) i komunikat, gdy jej brak');
+  // test 2026-10-05: installTriggers() i sendWeeklyPoll() z edytora o zgodę nie zapytały — edytor pyta
+  // tylko o to, czego wykonanie faktycznie potrzebuje, a żadna z nich nie doszła do UrlFetchApp
+  const SCOPE = 'https://www.googleapis.com/auth/script.external_request';
+  const env = pollEnv('2026-10-07T10:00:00+02:00');
+  check('bez zgody: authorizeWhatsApp prosi o zgodę na UrlFetchApp i kończy wykonanie (bramki nie rusza)',
+    throws(() => env.api.authorizeWhatsApp()) && env.consent.asked.length === 1 && env.consent.asked[0].mode === 'FULL'
+    && JSON.stringify(env.consent.asked[0].scopes) === JSON.stringify([SCOPE]) && env.http.calls.length === 0, JSON.stringify(env.consent.asked));
+  env.consent.granted.push(SCOPE);
+  check('ze zgodą: od razu sprawdza połączenie z bramką', !throws(() => env.api.authorizeWhatsApp())
+    && /\/getStateInstance\//.test((env.http.calls.slice(-1)[0] || {}).url), JSON.stringify(env.http.calls.map(c => c.url)));
+  const bare = build([{id:1, name:'Borys'}]);
+  bare.consent.granted.push(SCOPE);
+  check('ze zgodą, bez bramki: nie rzuca (mówi w dzienniku, co ustawić)', !throws(() => bare.api.authorizeWhatsApp()) && bare.http.calls.length === 0);
+
+  // UrlFetchApp bez zgody rzuca komunikatem Google (po polsku albo po angielsku) — w panelu ma być, co zrobić
+  ['Nie masz uprawnień do wywołania funkcji UrlFetchApp.fetch. Wymagane uprawnienia: ' + SCOPE,
+   'You do not have permission to call UrlFetchApp.fetch. Required permissions: ' + SCOPE].forEach((g, i) => {
+    env.http.handler = () => { throw new Error(g); };
+    const st = env.api.getPollState(TEST_PIN);
+    check('brak zgody (' + (i ? 'en' : 'pl') + '): panel mówi, co uruchomić, bez adresów Google', /authorizeWhatsApp\(\)/.test(st.text)
+      && !/googleapis/.test(st.text), st.text);
+  });
+})();
+
+/* ---------- B61: nieznany wynik wysyłki ---------- */
+(()=>{
+  console.log('B61: ankieta — bramka przyjęła, odpowiedź nie wróciła: „nie wiadomo", bez drugiej ankiety w grupie (review PR #5, runda 2)');
+  // review: każdy wyjątek był „nie wyszła" — znacznik zdejmowany, „Wyślij teraz" wysyłało drugi raz, głosy na dwie ankiety
+  const env = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(env);
+  let delivered = 0;
+  gateway(env, { send: url => { delivered++; throw new Error('Timeout: ' + url); } });   // doszła, odpowiedź zginęła
+  let e1 = '';
+  try { env.api.sendWeeklyPoll(); } catch(e){ e1 = e.message; }
+  const p = env.api.getDiagnostics(TEST_PIN).poll;
+  check('błąd idzie dalej (mail od Google), bez tokenu', /nie odpowiada/.test(e1) && !/tok3n5ecret/.test(e1), e1);
+  check('panel: „nie wiadomo" (nie „nie wyszła"), stan ankiety na ten tydzień „unknown"', p.last && p.last.ok === false && p.last.unknown === true
+    && p.now.status === 'unknown' && p.now.at === '2026-10-11 12:10', JSON.stringify([p.last, p.now]));
+  gateway(env);
+  env.setNow('2026-10-11T12:40:00+02:00');
+  env.api.sendWeeklyPoll();
+  check('wyzwalacz w oknie nie ponawia (mogła dojść)', delivered === 1 && sends(env).length === 1);
+  let e2 = '';
+  try { env.api.sendPollNow(TEST_PIN); } catch(e){ e2 = e.message; }
+  check('„Wyślij teraz" bez potwierdzenia — odmowa „sprawdź w grupie", nic nie idzie', /Nie wiadomo/.test(e2) && /sprawdź w grupie/.test(e2)
+    && sends(env).length === 1, e2);
+  check('force tylko jako true (nie „1", nie obiekt z przeglądarki)', throws(() => env.api.sendPollNow(TEST_PIN, 'true')) && sends(env).length === 1);
+  const r = env.api.sendPollNow(TEST_PIN, true);
+  check('po potwierdzeniu prowadzącej — idzie, panel: wysłana', sends(env).length === 2 && r.sent.question === 'Grafik 12-18.10'
+    && r.panel.now.status === 'sent' && r.panel.last.ok === true, JSON.stringify(r.panel.now));
+  let e3 = '';
+  try { env.api.sendPollNow(TEST_PIN, true); } catch(e){ e3 = e.message; }
+  check('force nie przełamuje ankiety, która na pewno poszła', /już poszła/.test(e3) && sends(env).length === 2, e3);
+  env.props.pollSent = JSON.stringify({ [GRAFIK + '|2026-10-12']: { at: '2026-10-11 12:39', t: Date.parse('2026-10-11T12:39:00+02:00'), pending: true } });
+  try { env.api.sendPollNow(TEST_PIN, true); } catch(e){ e3 = e.message; }
+  check('...ani wysyłki, która właśnie trwa', /właśnie się wysyła/.test(e3) && sends(env).length === 2, e3);
+
+  // pewne „nie wyszło": brak zgody na UrlFetchApp (zapytanie nie poszło) i kod błędu bramki — znacznik zdjęty
+  const nc = pollEnv('2026-10-11T12:10:00+02:00');
+  pollOn(nc);
+  nc.http.handler = () => { throw new Error('You do not have permission to call UrlFetchApp.fetch. Required permissions: https://www.googleapis.com/auth/script.external_request'); };
+  try { nc.api.sendWeeklyPoll(); } catch(e){}
+  const q = nc.api.getDiagnostics(TEST_PIN).poll;
+  check('brak zgody: „nie wyszła" (z tym, co uruchomić), znacznik zdjęty', q.last.ok === false && !q.last.unknown && /authorizeWhatsApp/.test(q.last.msg)
+    && q.now.status === '', JSON.stringify(q.last));
+  gateway(nc);
+  nc.api.sendWeeklyPoll();
+  const r2 = nc.api.getDiagnostics(TEST_PIN).poll.now.status;
+  check('...po zgodzie wyzwalacz w oknie wysyła normalnie (drugie wywołanie bramki, pierwsze bez zgody)', sends(nc).length === 2 && r2 === 'sent', r2);
+
+  // 5xx (502, 504) — pośrednik, za którym bramka nie zdążyła odpowiedzieć: ankieta MOGŁA wyjść (review PR #5, runda 3)
+  [502, 504, 500].forEach(code => {
+    const px = pollEnv('2026-10-11T12:10:00+02:00');
+    pollOn(px);
+    gateway(px, { send: () => ({ code, body: 'Bad gateway' }) });
+    let ex = '';
+    try { px.api.sendWeeklyPoll(); } catch(e){ ex = e.message; }
+    const pp = px.api.getDiagnostics(TEST_PIN).poll;
+    gateway(px);
+    px.setNow('2026-10-11T12:40:00+02:00');
+    px.api.sendWeeklyPoll();
+    let ey = '';
+    try { px.api.sendPollNow(TEST_PIN); } catch(e){ ey = e.message; }
+    check('kod ' + code + ': „nie wiadomo" — błąd z kodem idzie dalej, wyzwalacz nie ponawia, „Wyślij teraz" tylko po potwierdzeniu',
+      new RegExp('błąd ' + code).test(ex) && pp.last.ok === false && pp.last.unknown === true && pp.now.status === 'unknown'
+      && sends(px).length === 1 && /Nie wiadomo/.test(ey), JSON.stringify([ex, pp.last, sends(px).length, ey]));
+  });
+})();
+
+// ---------------------------------------------------------------------------
+// B62–B64: dziennik spowolnień (Diag.gs). Zegar atrapy stoi, więc „wolne" usługi odgrywa
+// env.cost: odczyt zakładki, branie blokady, flush i HtmlService przesuwają go o zadany czas.
+// ---------------------------------------------------------------------------
+const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
+
+// B62: serwer zapisuje wolne wywołania z rozbiciem na kroki
+(function(){
+  console.log('B62: dziennik spowolnień — serwer: wolne otwarcie strony, odczyt i zapis z krokami, błąd blokady, nic przy zwykłej pracy');
+  const env = build([{id:1, name:'Borys'}, {id:2, name:'Luna'}], { walks: [{date:'2026-08-04', dogId:1, status:'reserved', who:'Ania'}] });
+  env.api.getData();
+  env.api.reserve(2, 'Ola', '2026-08-04', 1);
+  env.api.doGet();
+  check('zwykła praca: dziennik nietknięty (żaden zapis właściwości)', !('diagServer' in env.props) && !('diagPhones' in env.props));
+  check('doGet oddaje stronę ze stanem i chwilą oddania (served)', env.html.evaluated.length === 1
+    && JSON.parse(env.html.evaluated[0].boot).dogs.length === 2 && env.html.evaluated[0].served === env.now());
+
+  env.cost.read['Spacery'] = 4000;
+  env.api.getData();
+  let l = diagOf(env);
+  check('wolny odczyt: wpis getData z krokami (spacery ≥ 4 s, psy 0)', l.length === 1 && l[0].fn === 'getData' && l[0].ms >= 4000
+    && l[0].parts.spacery >= 4000 && l[0].parts.psy === 0 && 'zadania' in l[0].parts && 'ustawienia' in l[0].parts, JSON.stringify(l));
+  check('...z godziną z zegara serwera, bez imion i treści', l[0].at === env.now() && !/Borys|Luna|Ania/.test(env.props.diagServer));
+
+  env.api.doGet();
+  l = diagOf(env);
+  check('wolne otwarcie strony: JEDEN wpis doGet (odczyt w środku nie liczy się drugi raz)', l.length === 2 && l[1].fn === 'doGet'
+    && l[1].ms >= 4000 && l[1].parts.spacery >= 4000 && 'szablon' in l[1].parts && 'strona' in l[1].parts, JSON.stringify(l[1]));
+  env.cost.read['Spacery'] = 0;
+  env.cost.evaluate = 3500;
+  env.api.doGet();
+  l = diagOf(env);
+  check('...wolne składanie strony: strona ≥ 3,5 s', l.length === 3 && l[2].parts.strona >= 3500 && l[2].parts.spacery === 0, JSON.stringify(l[2]));
+  env.cost.evaluate = 0;
+  env.cost.template = 3200;
+  env.api.doGet();
+  check('...wolny szablon: szablon ≥ 3,2 s', diagOf(env)[3].parts.szablon >= 3200, JSON.stringify(diagOf(env)[3]));
+  env.cost.template = 0;
+
+  // stan startowy nie dał się odczytać: strona idzie bez niego, błąd w dzienniku (wcześniej znikał po cichu)
+  const psy = env.sheets['Psy'];
+  delete env.sheets['Psy'];
+  env.api.doGet();
+  env.sheets['Psy'] = psy;
+  l = diagOf(env);
+  check('nieudany stan startowy: strona bez danych („null"), wpis z błędem mimo szybkiego otwarcia', env.html.evaluated[env.html.evaluated.length - 1].boot === 'null'
+    && l.length === 5 && l[4].fn === 'doGet' && /^stan startowy: /.test(l[4].err) && l[4].ms < 3000, JSON.stringify(l[4]));
+
+  // zapisy pod blokadą: czekanie na blokadę, praca, zapis do arkusza — i kto ją wziął
+  env.cost.waitLock = 5000;
+  const r = env.api.reserve(1, 'Ola', '2026-08-05', 1);
+  env.cost.waitLock = 0;
+  l = diagOf(env);
+  check('wolny zapis: wpis z nazwą akcji (reserve), blokada ≥ 5 s, praca i zapis osobno', l.length === 6 && l[5].fn === 'reserve'
+    && l[5].parts.blokada >= 5000 && 'praca' in l[5].parts && 'zapis' in l[5].parts && !l[5].err, JSON.stringify(l[5]));
+  check('...a rezerwacja zapisana jak zwykle', r.slot && r.slot.status === 'reserved' && r.slot.who === 'Ola');
+  env.cost.flush = 3100;
+  env.api.markWalked(1, 'Ania', 1, '2026-08-04');
+  env.cost.flush = 0;
+  l = diagOf(env);
+  check('wolny flush: zapis ≥ 3,1 s, akcja markWalked', l.length === 7 && l[6].fn === 'markWalked' && l[6].parts.zapis >= 3100, JSON.stringify(l[6]));
+  env.cost.read['Spacery'] = 3500;
+  let e1 = '';
+  try { env.api.reserve(1, 'Ola', '2026-08-06', 5); } catch(e){ e1 = e.message; }
+  env.cost.read['Spacery'] = 0;
+  l = diagOf(env);
+  check('wolny zapis, który rzucił: błąd idzie dalej i jest w dzienniku', /Nie ma takiego spaceru/.test(e1) && l.length === 8
+    && l[7].fn === 'reserve' && /Nie ma takiego spaceru/.test(l[7].err), JSON.stringify(l[7]));
+  let e2 = '';
+  try { env.api.reserve(1, 'Ola', '2026-08-06', 5); } catch(e){ e2 = e.message; }
+  check('...szybki błąd (zwykła odmowa) — bez wpisu', /Nie ma takiego spaceru/.test(e2) && diagOf(env).length === 8);
+  env.cost.lockFail = 'Lock timeout: another process was holding the lock for too long.';
+  env.cost.waitLock = 20000;
+  let e3 = '';
+  try { env.api.reserve(2, 'Ola', '2026-08-06', 1); } catch(e){ e3 = e.message; }
+  env.cost.lockFail = null;
+  env.cost.waitLock = 0;
+  l = diagOf(env);
+  check('blokada nie przyszła: błąd idzie dalej, wpis z błędem i czekaniem ≥ 20 s', /Lock timeout/.test(e3) && l.length === 9
+    && l[8].fn === 'reserve' && /Lock timeout/.test(l[8].err) && l[8].parts.blokada >= 20000, JSON.stringify(l[8]));
+  check('...a blokada nie została „wzięta" (następny zapis działa)', env.api.reserve(2, 'Ola', '2026-08-06', 1).slot.status === 'reserved');
+
+  // pełny stan spod blokady (akcja edycyjna) — jeden wpis za całą akcję, nie drugi za getData w środku
+  env.cost.read['Spacery'] = 3500;
+  env.api.updateDog(2, {name:'Luna', dif:'easy'}, TEST_PIN);
+  env.cost.read['Spacery'] = 0;
+  l = diagOf(env);
+  check('akcja edycyjna: jeden wpis (updateDog), bez osobnego getData', l.length === 10 && l[9].fn === 'updateDog', JSON.stringify(l.slice(9)));
+  env.cost.flush = 4000;
+  env.api.endOfDay();
+  env.cost.flush = 0;
+  check('nocne czyszczenie też (wyzwalacz)', diagOf(env)[10].fn === 'endOfDay', JSON.stringify(diagOf(env)[10]));
+
+  // dziennik nigdy nie zatrzymuje aplikacji
+  const bad = build([{id:1, name:'Borys'}]);
+  bad.failProps(k => k === 'diagServer');
+  bad.cost.waitLock = 5000;
+  let ok = true;
+  try { ok = bad.api.reserve(1, 'Ola', '2026-08-04', 1).slot.status === 'reserved'; } catch(e){ ok = false; }
+  bad.cost.read['Spacery'] = 4000;
+  try { ok = ok && bad.api.getData().dogs.length === 1; } catch(e){ ok = false; }
+  check('awaria właściwości dziennika: zapis i odczyt działają, wpisu brak', ok && !('diagServer' in bad.props));
+  bad.failProps(null);
+  bad.props.diagServer = '{zepsute';
+  bad.api.getData();
+  check('zepsuty dziennik zaczyna się od nowa', diagOf(bad).length === 1);
+})();
+
+// B63: sufity dziennika i wpisy z telefonów
+(function(){
+  console.log('B63: dziennik spowolnień — sufity (wpisy, bajty) i reportDiag: tylko poprawne wpisy, przycięte, bez powtórek, bez PIN-u');
+  const env = build([{id:1, name:'Borys'}]);
+  env.cost.read['Psy'] = 3000;
+  for(let i = 0; i < 35; i++) env.api.getData();
+  env.cost.read['Psy'] = 0;
+  let l = diagOf(env);
+  check('najwyżej DIAG_KEEP wpisów, najnowsze zostają (każdy odczyt przesuwa zegar o 3 s)', l.length === env.conf.DIAG_KEEP
+    && l[l.length - 1].at === env.now() && l[0].at === env.now() - 29 * 3000, l.length + ' / ' + (env.now() - l[0].at));
+  for(let i = 0; i < 30; i++) env.ctx.__api.diagServer_('reserve', 5000, { blokada: 4000 }, 'ż'.repeat(200));
+  l = diagOf(env);
+  const bytes = env.ctx.__api.diagBytes_(env.props.diagServer);
+  check('najwyżej DIAG_BYTES bajtów (polskie znaki liczone podwójnie), błąd przycięty do 160', bytes <= env.conf.DIAG_BYTES && l.length < 30
+    && l[l.length - 1].err.length === 160, bytes + ' B, ' + l.length);
+  check('diagBytes_: ASCII 1, „ż" 2, „—" 3, emoji 4', env.ctx.__api.diagBytes_('a') === 1 && env.ctx.__api.diagBytes_('ż') === 2
+    && env.ctx.__api.diagBytes_('—') === 3 && env.ctx.__api.diagBytes_('🐕') === 4);
+
+  const ph = build([{id:1, name:'Borys'}]);
+  const P = () => diagOf(ph, 'diagPhones');
+  check('nie lista: odmowa, nic nie zapisane', ph.api.reportDiag('x').ok === false && ph.api.reportDiag(null).ok === false && !('diagPhones' in ph.props));
+  const good = (id, o) => Object.assign({ id, at: Date.parse('2026-08-04T09:59:00+02:00'), kind: 'call', dev: 'a3f9c1', ua: 'iPhone iOS 17.5 · Safari 17.5', fn: 'getData', ms: 41234, msg: 'bez odpowiedzi' }, o);
+  const r = ph.api.reportDiag([
+    good('aaaaaaa1'),
+    good('x'),                                   // za krótki id
+    good('<b>xx</b>'),                           // nie znaki z id
+    good('aaaaaaa2', { kind: 'hack' }),          // nieznany rodzaj
+    'tekst', null,
+    good('aaaaaaa3', { kind: 'freeze', fn: '', msg: 'a\u0000b\nc' + 'x'.repeat(200), ua: 'u'.repeat(100), dev: 'd'.repeat(30), ms: -5 }),
+    good('aaaaaaa4', { kind: 'start', ms: 1e12, at: 'wczoraj' }),
+    good('aaaaaaa5', { kind: 'error', ms: 'dużo', fn: 'f'.repeat(50) }),
+  ]);
+  const p = P();
+  check('przyjęte tylko poprawne (4 z 9), bez PIN-u', r.ok === true && r.n === 4 && p.length === 4, JSON.stringify(r));
+  check('wpis jak z telefonu: wszystkie pola, rx = zegar serwera', p[0].id === 'aaaaaaa1' && p[0].kind === 'call' && p[0].fn === 'getData'
+    && p[0].ms === 41234 && p[0].msg === 'bez odpowiedzi' && p[0].dev === 'a3f9c1' && p[0].ua === 'iPhone iOS 17.5 · Safari 17.5'
+    && p[0].at === Date.parse('2026-08-04T09:59:00+02:00') && p[0].rx === ph.now(), JSON.stringify(p[0]));
+  check('przycięte: komunikat 120 bez znaków sterujących, opis telefonu 60, znak 12, ms ≥ 0, puste pole pominięte',
+    p[1].msg.length === 120 && !/[\u0000-\u001f]/.test(p[1].msg) && /^a b c/.test(p[1].msg) && p[1].ua.length === 60 && p[1].dev.length === 12
+    && p[1].ms === 0 && !('fn' in p[1]), JSON.stringify(p[1]));
+  check('ms najwyżej godzina, zły czas zdarzenia = chwila odbioru', p[2].ms === 3600000 && p[2].at === p[2].rx);
+  const rxNow = ph.now(), DAY = 86400000;
+  const clk = makeContext({ sheets: [], props: {}, now: '2026-08-04T10:00:00+02:00' });
+  clk.api.reportDiag([good('cccccc11', { at: rxNow + 2 * DAY }), good('cccccc12', { at: rxNow + 3600000 }), good('cccccc13', { at: rxNow - 3 * DAY })]);
+  const ck = diagOf(clk, 'diagPhones');
+  check('zegar telefonu: więcej niż dzień w przyszłość = chwila odbioru; godzina w przód i kilka dni wstecz (wpis czekał) zostają',
+    ck[0].at === ck[0].rx && ck[1].at === rxNow + 3600000 && ck[2].at === rxNow - 3 * DAY, JSON.stringify(ck.map(e => e.at - e.rx)));
+  check('niby-liczba ms pominięta, nazwa funkcji 30', !('ms' in p[3]) && p[3].fn.length === 30);
+  const over = [];
+  for(let i = 0; i < 12; i++) over.push(good('bbbbbb' + String(i).padStart(2, '0')));
+  check('najwyżej DIAG_REPORT_MAX na raz', ph.api.reportDiag(over).n === env.conf.DIAG_REPORT_MAX && P().length === 14);
+  ph.api.reportDiag([good('aaaaaaa1'), good('bbbbbb00'), good('cccccc01')]);
+  check('powtórka (zaginiona odpowiedź, telefon wysyła drugi raz) nie dubluje wpisów', P().length === 15
+    && P().filter(e => e.id === 'aaaaaaa1').length === 1);
+  for(let i = 0; i < 4; i++) ph.api.reportDiag(Array.from({length: 10}, (_, j) => good('dd' + i + 'ddd' + String(j).padStart(2, '0'))));
+  check('telefony też najwyżej DIAG_KEEP, najnowsze zostają', P().length === env.conf.DIAG_KEEP && P()[P().length - 1].id === 'dd3ddd09');
+  check('wpisy telefonów nie mieszają się z serwerowymi', !('diagServer' in ph.props));
+})();
+
+// B64: dziennik w Panelu
+(function(){
+  console.log('B64: dziennik spowolnień w Panelu (getDiagnostics, PIN): serwer i telefony, próg, zepsuty wpis = pusto');
+  const env = build([{id:1, name:'Borys'}]);
+  const empty = env.api.getDiagnostics(TEST_PIN).diag;
+  check('pusty dziennik: dwie puste listy, próg 3 s, sufit 30', Array.isArray(empty.server) && !empty.server.length
+    && Array.isArray(empty.phones) && !empty.phones.length && empty.slowMs === 3000 && empty.keep === 30, JSON.stringify(empty));
+  env.cost.read['Psy'] = 3300;
+  env.api.getData();
+  env.cost.read['Psy'] = 0;
+  env.api.reportDiag([{ id: 'abcdef12', at: 1, kind: 'freeze', ms: 5000 }]);
+  const d = env.api.getDiagnostics(TEST_PIN).diag;
+  check('w Panelu: wpis serwera i wpis telefonu', d.server.length === 1 && d.server[0].fn === 'getData' && d.server[0].parts.psy >= 3300
+    && d.phones.length === 1 && d.phones[0].kind === 'freeze', JSON.stringify(d));
+  check('tylko z PIN-em', throws(() => env.api.getDiagnostics('zły')));
+  env.props.diagServer = 'nie json';
+  env.props.diagPhones = '{"a":1}';
+  const z = env.api.getDiagnostics(TEST_PIN).diag;
+  check('zepsuty dziennik nie zabiera Panelu: puste listy', z.server.length === 0 && z.phones.length === 0);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

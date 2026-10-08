@@ -765,14 +765,63 @@ function dogFields_(data) {
            noteUntil: noteUntil_(data && data.noteUntil, note) };
 }
 
-/** data = { name, ident, box, dif } — wszystko opcjonalne poza regułą wyżej. */
-function addDog(data, pin) {
+/**
+ * Ostatnie dodania psów z panelu: {token: id}. Kilka stuknięć w „Dodaj" albo powtórka po
+ * zaginionej odpowiedzi (addDog jest w RETRIABLE) dawały kilka takich samych psów — z tym samym
+ * tokenem pies powstaje raz. Świeży odczyt pod blokadą (jak kolory wolontariuszy): pamięć wykonania
+ * mogła wczytać właściwości, zanim poprzednie dodanie skończyło się w innym wykonaniu.
+ * null = nie udało się odczytać: pies się doda, tylko bez tej ochrony.
+ */
+function dogAdds_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(PROP_DOG_ADDS);
+    const m = raw ? JSON.parse(raw) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Zapamiętuje dodanie (najwyżej DOG_ADDS_KEEP ostatnich). Błąd właściwości nie może zatrzymać dodania psa. */
+function noteDogAdd_(adds, token, id) {
+  try {
+    adds[token] = id;
+    const keys = Object.keys(adds);                 // kolejność dopisywania — tokeny zaczynają się literą
+    keys.slice(0, Math.max(0, keys.length - DOG_ADDS_KEEP)).forEach(k => { delete adds[k]; });
+    setProp_(PROP_DOG_ADDS, JSON.stringify(adds));
+  } catch (e) {
+    console.warn('Token dodania psa nie zapisany: ' + e);
+  }
+}
+
+/**
+ * Numer psa i boks jako tekst ('@') — zrzuty historii i mail idą do władz schroniska, a „1/26"
+ * (czy boks „1/2", „3-4") wpisane w komórkę bez formatu arkusz potrafi zamienić na datę (jak
+ * godzinę, bug nr 3). Format idzie PRZED wartością, dlatego te pola nie jadą w appendRow razem
+ * z resztą wiersza. Dwie sąsiednie kolumny (IDENT, BOX) — jeden zakres.
+ */
+function setTextFields_(sh, row, ident, box) {
+  sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@').setValues([[ident, box]]);
+}
+
+/**
+ * data = { name, ident, box, dif } — wszystko opcjonalne poza regułą wyżej.
+ * `token` — jedno stuknięcie „Dodaj" w panelu (1.2): ten sam token drugi raz niczego nie dodaje,
+ * tylko oddaje stan (patrz dogAdds_). Brak tokenu (karty sprzed 1.2) = dodanie jak dawniej.
+ */
+function addDog(data, pin, token) {
   requirePin_(pin);
   const d = dogFields_(data);
+  const t = /^[A-Za-z][A-Za-z0-9_-]{7,63}$/.test(String(token == null ? '' : token)) ? String(token) : '';
   return withLock_(() => {
+    const adds = t ? dogAdds_() : null;
+    if (adds && Object.prototype.hasOwnProperty.call(adds, t)) return getData();   // ten pies już jest
     const sh = ss_().getSheetByName(SHEETS.DOGS);
-    sh.appendRow([nextId_(sh), d.name, d.ident, d.box, d.dif, STATUS.FREE, '', '', '',
+    const id = nextId_(sh);
+    sh.appendRow([id, d.name, '', '', d.dif, STATUS.FREE, '', '', '',
                   d.note, d.walks, '', '', d.noteUntil]);
+    setTextFields_(sh, sh.getLastRow(), d.ident, d.box);
+    if (adds) noteDogAdd_(adds, t, id);
     return getData();
   });
 }
@@ -785,6 +834,7 @@ function updateDog(id, data, pin) {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row > 0) {
+      sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@');        // numer i boks jako tekst, przed wartością
       sh.getRange(row, DOG.NAME, 1, 4).setValues([[d.name, d.ident, d.box, d.dif]]);
       sh.getRange(row, DOG.NOTE, 1, 2).setValues([[d.note, d.walks]]);
       sh.getRange(row, DOG.NOTE_UNTIL).setValue(d.noteUntil);   // kolumna niesąsiadująca z notatką

@@ -15,10 +15,12 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Dogs.gs` | katalog psów + dzień psa (zakładka Spacery) + akcje wolontariuszy i prowadzącej |
 | `Tasks.gs` | zadania na dziś: odczyt + akcje |
 | `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
+| `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
+| `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z rozbiciem na kroki + to, co dosłały telefony (`reportDiag`) — w Panelu |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios14`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios17`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -95,6 +97,7 @@ dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) = `main` | @19, 2026-10-03 |
+| 1.2 | w przygotowaniu: zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -442,7 +445,69 @@ tak samo, w tym samym kolorze.
 
 ## Zakładka „Panel"
 
-Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, a przede wszystkim **czasy przelotu ostatnich 30 wywołań**. To jedyny sposób, żeby na telefonie rozstrzygnąć, czy wisi Apps Script, czy przeglądarka.
+Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, **dziennik spowolnień** (niżej) i **czasy przelotu ostatnich 30 wywołań tego telefonu**.
+
+### Dziennik spowolnień (od 1.2)
+
+Gdy ktoś zgłasza „strona długo się ładowała i wisiała", zajrzyj tu, zanim zajrzysz do dziennika
+wykonań Google (on zna tylko łączny czas na serwerze i nie filtruje po funkcji). Wpisy z obu stron,
+od najnowszego, po 30 ostatnich z każdej:
+
+- **serwer** — każde wywołanie dłuższe niż 3 s z rozbiciem na kroki: otwarcie strony (szablon,
+  odczyty zakładek, składanie strony), odczyt listy (ustawienia, psy, spacery, zadania), zapis
+  (czekanie na blokadę — czyli na zapisy innych osób, praca, zapis do arkusza), do tego błąd blokady
+  i strona oddana bez danych. Liczy tylko nasz kod;
+- **telefon** (znak telefonu + opis, np. „iPhone iOS 17.5 · Safari 17.5") — wywołania wolniejsze niż
+  6 s i nieudane, odczyt bez odpowiedzi po 20 s, strona, która długo szła do telefonu (od oddania
+  przez serwer), chwile, w których strona stała, choć była na ekranie, i błędy skryptu. Telefon
+  dosyła je, gdy nic innego nie leci; bez zasięgu czekają w pamięci przeglądarki („dosłane" przy wpisie).
+  Bez imion i treści.
+
+Jak czytać: **telefon czekał długo, a serwer nie ma wpisu z tej chwili** — czas zjadła sieć albo Google,
+zanim nasz kod ruszył (tego nie naprawimy kodem). **Jest wpis serwera** — widać, który krok trwał.
+Zegar telefonu może się mylić o kilka sekund.
+
+## Ankieta tygodniowa na WhatsAppie
+
+Raz w tygodniu, w ustawionym dniu i godzinie, konto bota wysyła do wybranej grupy (np. „Grafik"
+w społeczności G13) ankietę „Grafik [TYDZIEŃ]" — tę samą, którą prowadzący robił ręcznie: dni
+tygodnia i „Nie mogę", kilka odpowiedzi naraz. [TYDZIEŃ] to tydzień od poniedziałku do niedzieli
+(„28.09-04.10", „05-11.10"): ankieta wysłana w niedzielę idzie na tydzień od jutra, w poniedziałek —
+na ten tydzień, w inny dzień — na następny. Ankieta idzie między ustawioną godziną a pół godziny
+później (wyzwalacze Google nie są co do minuty).
+
+**To droga nieoficjalna.** Oficjalne API WhatsAppa (Meta) nie wysyła ankiet do zwykłych grup, więc
+ankietę wysyła bramka [Green API](https://green-api.com), do której konto bota jest podłączone jak
+„połączone urządzenie". Regulamin WhatsAppa zabrania automatyzacji konta — numer bota może zostać
+zablokowany (decyzja właściciela 2026-10-05: osobny numer, ryzyko przyjęte). Nigdy nie podłączaj
+prywatnego numeru. Bramka ma dostęp do wszystkich czatów konta bota.
+
+Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własnymi właściwościami):
+1. Konto bota: osobny numer z WhatsApp (Business). **Dodaj go do społeczności i do samej grupy
+   „Grafik"** — do grupy nadrzędnej społeczności i do „Ogłoszeń" bramka nie wyśle.
+2. W konsoli Green API załóż instancję (plan Developer wystarcza: 3 czaty, ankiety bez limitu)
+   i połącz ją z telefonem bota: WhatsApp → Połączone urządzenia → Połącz urządzenie → kod QR
+   z konsoli. Telefon bota musi co jakiś czas być włączony z internetem.
+3. W Apps Script: *Ustawienia projektu → Właściwości skryptu* dodaj `greenApiUrl` (apiUrl z konsoli),
+   `greenApiInstance` (idInstance) i `greenApiToken` (apiTokenInstance). **Token daje pełny dostęp
+   do konta bota** — trzymaj go tylko tam: nie w kodzie, nie w czacie, nie na WhatsAppie. Aplikacja
+   nigdy nie wysyła go do przeglądarki.
+4. Po wdrożeniu wersji z ankietą uruchom raz z edytora **`authorizeWhatsApp()`** i zatwierdź
+   nowe uprawnienie (połączenie z zewnętrzną usługą; przy własnym skrypcie Google ostrzega
+   „aplikacja niezweryfikowana" → „Zaawansowane" → „Przejdź do…" → „Zezwól"). Dziennik wykonania
+   pokaże stan konta bota. `installTriggers()` tej zgody nie daje — od 2025 edytor pyta tylko
+   o uprawnienia, których uruchomiona funkcja faktycznie użyje (sprawdzone na teście). Bez zgody
+   sama aplikacja działa, ale bramka nie: panel mówi wtedy, co uruchomić, a ankieta nie wyjdzie.
+5. Panel → „Ankieta tygodniowa na WhatsAppie": „Pobierz grupy", wybierz grupę, dzień i godzinę,
+   sprawdź pytanie i odpowiedzi, zaznacz „wysyłaj co tydzień", „Zapisz". Do próby: wybierz grupę
+   tylko z sobą, „Wyślij teraz", potem wróć do „Grafiku".
+
+W panelu widać stan konta bota (połączone / telefon wyłączony / zablokowane…), najbliższą ankietę
+i ostatnią próbę — także nieudaną, z powodem. Nieudaną wysyłkę z wyzwalacza Google zgłasza też
+mailem właścicielowi skryptu. Gdy bramka nie odpowiedziała, panel mówi „nie wiadomo, czy wyszła —
+sprawdź w grupie": ankieta mogła dojść, więc wyzwalacz jej nie ponawia, a „Wyślij teraz" najpierw
+pyta, czy w grupie jej nie ma (druga ankieta rozbiłaby głosy). Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
+i „Wyślij teraz" się nie dublują. Przypięcie ankiety w grupie zostaje ręczne.
 
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
@@ -502,6 +567,70 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.2 — w przygotowaniu
+
+Wydanie z poważnymi zmianami (numer X) — wolontariusze i prowadząca dostaną wiadomość.
+Temat: zarządzanie aplikacją (zaczęło się od panelu prowadzącej, skończyło głównie na narzędziach
+administratora: ankieta, dziennik spowolnień, przegląd kodu).
+
+- **Mail do schroniska wysyła się z telefonu.** W minionym dniu „✉️ Wyślij e-mail z listą psów"
+  otwiera aplikację pocztową z gotowym mailem: odbiorca, temat i treść z listą psów są już
+  wpisane, zostaje stuknąć „Wyślij". Którą aplikację — zależy od telefonu (Android zapyta, jeśli
+  nie ma ustawionej domyślnej). Pod spodem „📋 Skopiuj treść" jako zapas, gdy telefon poczty nie
+  otworzy (np. w przeglądarce WhatsAppa).
+- W panelu (tryb edycji → Panel → „E-mail z listą spacerów") trzy pola: **Do** (adres schroniska,
+  kilka po przecinku), **Temat** (z `[DATA]`), **Treść** (z `[DATA]` i `[LISTA]`) i jeden przycisk
+  „Zapisz". Zły adres, za długi temat albo treść bez `[LISTA]` — komunikat od razu, nic się nie
+  zapisuje połowicznie. Niezapisane zmiany w którymkolwiek polu są oznaczone.
+
+- **Ankieta „Grafik" na WhatsAppie sama, raz w tygodniu** — konto bota wysyła do grupy ankietę
+  z dniami tygodnia (jak dotąd ręcznie), w ustawionym dniu i godzinie. Ustawienia w panelu (grupa,
+  dzień, godzina, pytanie z [TYDZIEŃ], odpowiedzi, „wysyłaj co tydzień", „Wyślij teraz"). Droga
+  nieoficjalna (bramka Green API) — opis, ryzyko i uruchomienie: rozdział „Ankieta tygodniowa
+  na WhatsAppie". **Po wdrożeniu: `authorizeWhatsApp()` z edytora** (nowe uprawnienie).
+
+Przegląd kodu przed dalszą pracą nad panelem — poprawki:
+
+- **Kilka stuknięć w „Dodaj" dawało kilka takich samych psów** (zgłoszenie z panelu). Dane stały
+  w polach do odpowiedzi serwera, więc nic nie mówiło, że coś się dzieje. Teraz formularz pustoszeje
+  od razu, a pies staje na końcu katalogu jako „dodaję…"; kolejne stuknięcie nic nie robi. Każde
+  „Dodaj" niesie też token: przy zaginionej odpowiedzi aplikacja sama ponawia zapis, a serwer
+  z tym samym tokenem psa drugi raz nie doda. Gdy zapis się nie uda, wpisane dane wracają do
+  formularza — a gdy prowadząca wpisuje już następnego psa, nieudany zostaje w katalogu jako
+  „nie dodano" i stuknięcie oddaje jego dane. Dodany pies pojawia się w katalogu od razu, także
+  wtedy, gdy prowadząca pisze już kolejnego (review PR #5).
+- **Rezerwacja potrafiła na chwilę „odskoczyć" do wolnej.** Odświeżenie co 15 s, które wyruszyło tuż
+  przed stuknięciem, wracało z odczytem sprzed zapisu i cofało go na ekranie — do następnego
+  odświeżenia. Teraz taki odczyt jest pomijany i aplikacja pyta jeszcze raz. To samo dotyczyło
+  trybu edycji (usunięty pies wracał na chwilę).
+- Formularze trybu edycji („Dodaj psa", „Nowe zadanie" z dniem) nie czyszczą się już przy
+  przerysowaniu — wybrany dzień zadania potrafił wrócić po cichu na dzisiejszy.
+- Sprawdzanie PIN-u bez połączenia nie kończy się ciszą, tylko komunikatem; panel, który nie pobrał
+  stanu serwera, mówi o tym i ma „Spróbuj jeszcze raz" (wcześniej wisiało „Pobieram…").
+- Numer psa i boks w zakładce Psy zapisują się jako tekst (numer jak w Historii od 1.1.1) —
+  „1/26" czy „3-4" arkusz potrafi zamienić na datę, a numer idzie do władz schroniska. Dotyczy psów
+  dodanych i poprawionych od tej wersji; `migrate()` z edytora ustawia format na całych kolumnach
+  (opcjonalnie). **Przed `migrate()` przejrzyj numery w trybie edycji**: numer, który arkusz już
+  zamienił na datę, wygląda jak długi napis z datą — format go nie naprawi, trzeba wpisać ręcznie.
+- Opis „Spacery dla wszystkich psów" w panelu mówił jeszcze o modelu sprzed pól 1/2, 2/2.
+- Drugi komunikat zaraz po pierwszym znikał po ułamku sekundy.
+- „📋 Skopiuj treść" w minionym dniu jest przyciskiem tej samej wysokości co „Wyślij" (z ramką
+  zamiast wypełnienia) — tam, gdzie poczta się nie otwiera, to jedyna droga.
+- Adres maila z „%" jest odrzucany — poczta odkodowuje „%41" na „A" i mail poszedłby gdzie indziej.
+
+- **Dziennik spowolnień w Panelu.** 7–8.10 dwie osoby zgłosiły, że strona długo się ładowała, a potem
+  wisiała. Dziennik wykonań Google z tygodnia (1607 wywołań): zwykle 1–2 s, 99% do ~4,5 s, ale
+  kilka razy Google stanął — otwarcie strony 37 s i 44 s (7.10, 21:31), 12,7 s (8.10, 11:00), odczyt
+  35 s, 189 s i 360 s (limit czasu, 2.10) — bez związku z ruchem ani przerwą w używaniu. Dziennik
+  Google nie mówi, który krok trwał, ani co widział telefon; nasz dziennik mówi (rozdział „Dziennik
+  spowolnień"). Przyczyny to nie usuwa — następnym razem będzie wiadomo, gdzie zeszło.
+- **Przy zastoju telefony nie dokładają odczytów.** Odświeżanie co 15 s wysyłało nowy odczyt także
+  wtedy, gdy poprzedni jeszcze nie wrócił — przy odczycie wiszącym 6 minut jeden telefon dokładał ich
+  ~24, a wszystkie liczą się do jednego konta z limitem równoczesnych wykonań. Teraz czeka na poprzedni
+  (najwyżej minutę — dłużej to odpowiedź, która zginęła).
+- Ankieta: kod 5xx z bramki (502, 504 — pośrednik, za którym bramka mogła ankietę wysłać) to „nie
+  wiadomo, czy wyszła", nie „nie wyszła" — wyzwalacz nie ponawia, „Wyślij teraz" po potwierdzeniu.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 

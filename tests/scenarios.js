@@ -149,12 +149,15 @@ function alive(app){
   app.window.eval('refresh()');
   // teraz user rezerwuje
   app.click('[data-act="reserve"]'); app.type('[data-input="1"]','G'); app.click('[data-act="confirm"]');
-  // odp. na reserve przychodzi pierwsza
-  const fn1 = app.respondNext({dog:dogReserved('G')});
-  // a TERAZ spływa spóźniona odpowiedź starego getData (sprzed rezerwacji!)
+  // odp. na reserve przychodzi pierwsza. Celujemy w nią po nazwie: respondNext bierze pierwsze
+  // w kolejce, czyli getData — i przez lata ten test odpowiadał odwrotnie, niż opisuje, więc
+  // wyścigu nie sprawdzał (przegląd 1.2: stary odczyt cofał rezerwację na ekranie, S113)
+  const at = fn => app.pending.findIndex(p => p.fn===fn);
+  const r = app.pending.splice(at('reserve'), 1)[0]; r.ok({dog:dogReserved('G')});
   const fn2 = app.respondNext({dogs:[dogFree()],tasks:[],today:'2026-07-08'});
-  check('kolejność: '+fn1+','+fn2, true);
+  check('kolejność: reserve, potem spóźniony ' + fn2, fn2==='getData');
   check('stan NIE cofnął się do free', app.state().dogs[0]==='reserved:G', JSON.stringify(app.state()));
+  check('...a stan dociąga się od nowa (nowy getData)', app.pending.some(p => p.fn==='getData'), app.shipped.join(','));
   check('UI żywe', alive(app));
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 })();
