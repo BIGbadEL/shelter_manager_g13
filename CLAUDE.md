@@ -31,6 +31,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `Tasks.gs` | zadania |
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel |
+| `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
@@ -220,6 +221,20 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   `T.pollState` bez odpowiedzi — „bramka długo nie odpowiada". „Wyślij teraz" bez odpowiedzi w czasie
   watchdoga (`fail(msg, lost)`) — „Wysyłka trwa dłużej", panel od razu i po `T.pollRecheck` jeszcze raz.
   Przypięcie ankiety zostaje ręczne.
+- **Dziennik spowolnień** (1.2, `Diag.gs`, B62–B64, S122–S128) — po zgłoszeniu 7–8.10.2026 „strona
+  długo się ładowała, a potem wisiała": dziennik wykonań Google zna tylko łączny czas na serwerze
+  (bez kroków, bez filtra po funkcji), a telefonu nie widzi wcale. **Serwer** (`diagServer_`, właściwość
+  `diagServer`): wywołanie dłuższe niż `DIAG_SLOW_MS` z krokami — `doGet` (szablon, odczyty stanu
+  startowego, strona; plus nieudany stan startowy, dawniej połykany po cichu w `bootJson_`), `getData`
+  (`readState_(parts)`: ustawienia, psy, spacery, zadania, reszta; **pod blokadą nie** — tam mierzy
+  `withLock_`), każde `withLock_` (blokada, praca, zapis; błąd blokady zawsze; nazwa akcji z ramki stosu —
+  `diagCaller_`, w razie czego „?"). Liczy NASZ kod — czasu, zanim Google go uruchomi, nie widzi.
+  **Telefon** (`reportDiag`, publiczne bez PIN-u — wpisy sprawdzane jak obce: `diagClean_`, znane pola,
+  przycięte, ms ≤ 1 h; właściwość `diagPhones`). Oba dzienniki: najwyżej `DIAG_KEEP` wpisów i `DIAG_BYTES`
+  bajtów UTF-8 (limit 9 KB na właściwość), bez powtórek po `id`, świeży odczyt, **zapis bez blokady**
+  (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
+  nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
+  Panel: `getDiagnostics().diag`. Bez imion i treści.
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -354,6 +369,17 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   `busyEditing`); inaczej pies zostaje w katalogu jako **„nie dodano"** (`failed`), a stuknięcie
   (`reAddDog`) oddaje dane do pustego formularza z tym samym tokenem. Wcześniej taki pies
   przepadał bez śladu, z komunikatem bez imienia (review PR #5, S112f, S112g).
+- **Dziennik spowolnień — strona telefonu** („DZIENNIK SPOWOLNIEŃ" w `Script.html`): `diagNote(kind, …)`
+  zapisuje `call` (zapis z kolejki albo odczyt wolniejszy niż `T.diagSlow` lub nieudany — `diagCall`
+  w `settle`, `refresh`, `fetchPast`), `call` „bez odpowiedzi" (odczyt w `readsInFlight` dłużej niż
+  `T.diagNoReply`, raz), `start` (od `served` z `doGet` do startu skryptu — sieć, opakowanie Google, ramka;
+  zegar zły o godzinę i więcej = bez wpisu), `freeze` (zegar `diagTick` co `T.diagBeat` spóźnił się
+  o `T.diagFreeze`, a strona była widoczna) i `error` (błąd skryptu, wywrotka `render`, wyjątek w akcji;
+  ten sam komunikat raz na minutę). Kolejka do 20 wpisów w `localStorage` (`g13diag`; nie ma go — działa
+  w pamięci), znak telefonu `g13dev` (losowy, nie mówi czyj), opis z `uaLabel`. `sendDiag` co `T.diagSend`,
+  **tylko gdy nie leci żaden zapis**, jeden naraz, po 10. **Każde `confirm` idzie przez `ask()`** —
+  okienko zatrzymuje skrypt, a bez `diagAwake()` każde dłuższe zastanowienie byłoby „zamrożeniem";
+  karta w tle tak samo (`visibilitychange`, `pageshow`).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -436,7 +462,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1368 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
+Aktualnie **1461 asercji, wszystkie zielone**. Nowa funkcja bez testu nie jest skończona.
 
 **Test, który nie potrafi zapalić się na czerwono, niczego nie dowodzi.** Nowy test na buga
 sprawdzaj na starym kodzie (`git stash push -- <pliki>` → uruchom → `git stash pop`),
@@ -453,7 +479,8 @@ po resecie — pierwsza wersja S76 sprawdzała zaznaczenia i przechodziła bez t
 Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymanie kafelka mierzy
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
 ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
-`scenarios15` czeka na zegar komunikatu (~3 s).
+`scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
+spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -466,6 +493,12 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   kafelki w kolejności (`m5` główny, `s5.1` odłączony), `opts.timing` skraca czasy listy.
   Klik przez `app.click` to klik „programowy" (bez osłony stuknięć); prawdziwe stuknięcie palcem
   = `pointerdown` + `MouseEvent('click', {detail:1})` (patrz `tap()` w `scenarios14.js`).
+  **`reportDiag` (dziennik spowolnień) harness obsługuje sam** — trafia do `app.diagReports`, NIE do
+  `pending`, inaczej `respondNext` starszych testów odpowiadałby jemu; `opts.diagManual` — jak każde
+  inne wywołanie. `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
+  prawdziwym adresem, nie na about:blank), `opts.storage` (localStorage przed startem), `__diag()` —
+  kolejka dziennika. `let`/`const` skryptu nie są widoczne z `window.eval` (osobny zakres eval) —
+  do stanu przez wystawione `__…`.
 - `tests/backend-harness.js` — uruchamia prawdziwe pliki `.gs` na atrapie arkusza
   z **zamrożonym, ale przestawialnym zegarem** (`env.setNow(iso)`), więc przejście przez
   godzinę resetu da się sprawdzić w jednym scenariuszu. Wszystkie `.gs` sklejane w jeden
@@ -485,6 +518,10 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51). `env.http` to
   `UrlFetchApp` na niby: `http.calls` (adres, opcje) i `http.handler(url, opts)` → `{code, body}`
   albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_nearMinute`, `_tz` (B57).
+  **`env.cost`** — koszt usług w ms przy zamrożonym zegarze: `read[zakładka]` (każde `getValues`),
+  `waitLock` (`lockFail` — blokada rzuca), `flush`, `template`, `evaluate`; `env.now()`, `env.html.evaluated`
+  (szablony z `doGet`: `boot`, `served`). Uwaga: pusta zakładka nie woła `getValues` — koszt jej odczytu
+  się nie liczy (B62–B64).
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -526,7 +563,9 @@ za komunikatem (przegląd 1.2), S116–S119 ankieta tygodniowa w panelu (domyśl
 grupy", zapis, te same reguły co serwer, szkic przeżywa przerysowanie, „Wyślij teraz" z potwierdzeniem),
 S120 stan konta bota osobnym pytaniem (panel nie czeka, „sprawdzam…", bramka nie odpowiada), S121 „nie wiadomo,
 czy wyszła" (sprawdź w grupie, wysłać mimo to — `force`; „trwa dłużej" po watchdogu i ponowne sprawdzenie) —
-review PR #5, runda 2,
+review PR #5, runda 2, S122–S128 dziennik spowolnień — telefon (wolne i nieudane wywołania, odczyt bez
+odpowiedzi, strona stała — ale nie karta w tle ani okienko pytania, dojście strony, błędy skryptu, pamięć
+między otwarciami, wysyłka tylko w ciszy, Panel, opis telefonu z userAgent, kontrakt telefon → serwer),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -554,6 +593,8 @@ przez północ, błąd bez tokenu, „w toku", świeży odczyt), B59 grupy bota 
 B60 zgoda na bramkę (`authorizeWhatsApp` + `requireScopes`, komunikat przy braku zgody — `env.consent` w atrapie),
 B61 nieznany wynik wysyłki (bramka przyjęła, odpowiedź zginęła: „nie wiadomo", bez drugiej ankiety; `force`;
 pewne „nie wyszło" przy braku zgody),
+B62 dziennik spowolnień — serwer (kroki `doGet`/`getData`/`withLock_`, błąd blokady, nieudany stan startowy,
+nazwa akcji, awaria właściwości nic nie psuje), B63 sufity dziennika i `reportDiag`, B64 dziennik w Panelu,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -769,8 +810,18 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   „Grafik", instancja Green API połączona kodem QR, trzy właściwości skryptu (osobno test i produkcja),
   `authorizeWhatsApp()` z edytora po wdrożeniu (nowe uprawnienie), w panelu grupa / dzień / godzina /
   „wysyłaj co tydzień". Tokenów nie przekazuje się w czacie — tylko we właściwościach skryptu.
-  Nie sprawdzone na prawdziwej bramce (testy znają ją tylko z dokumentacji): pierwsza próba
-  „Wyślij teraz" do grupy z samym sobą.
+  **Sprawdzone na teście z prawdziwą bramką** (październik 2026): „Wyślij teraz" i wysyłka z wyzwalacza.
+  Pierwsza próba wyzwalacza „nic nie wysłała", bo ankieta na ten tydzień poszła już ręcznie tego dnia
+  (znacznik `pollSent` — tak ma być); po usunięciu znacznika poszła sama.
+- **„Strona długo się ładowała i wisiała" (7–8.10.2026, dwie osoby z iPhone'ami w schronisku, dane
+  komórkowe).** Dziennik wykonań produkcji z tygodnia (1.10–8.10, 1607 wywołań, przeczytany przez Claude
+  in Chrome): mediana 1,7 s, 99% do ~4,5 s, ale pojedyncze przestoje Google bez związku z ruchem ani
+  z przerwą w używaniu — `doGet` 37 s i 44 s (7.10 21:31, zgłoszenie z tej minuty), 12,7 s (8.10 11:00), `getData` 35 s,
+  189 s i 360 s (limit czasu, 2.10), zapis 9–10 s. Zimny start odrzucony (po przerwach 60+ min max 4,4 s;
+  test po wielu godzinach — 2,8 s). Dziennik Google nie mówi, który krok trwał, i nie widzi telefonu —
+  stąd dziennik spowolnień (1.2). Kodem tego nie usuniemy; po następnym zgłoszeniu: Panel → „Dziennik
+  spowolnień". **Do sprawdzenia po wdrożeniu na test:** czy wpis serwera ma nazwę akcji (`diagCaller_`
+  czyta stos Apps Script — format ramek zgadnięty z V8; „?" = nie dało się odczytać, wpis i tak jest).
 - **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
   (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
   `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —

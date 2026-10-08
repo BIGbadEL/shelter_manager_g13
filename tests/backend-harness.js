@@ -6,7 +6,7 @@ const vm = require('vm');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs'];
+const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs','Diag.gs'];
 
 /* ---------- atrapa arkusza ---------- */
 let sheetSeq = 0;
@@ -56,6 +56,7 @@ function makeSheet(name, rows, onRename){
       return {
         getValues(){
           sheet._reads++;
+          if(sheet._onRead) sheet._onRead(sheet._name);
           const out = [];
           for(let i=0;i<rows;i++){
             const line = cell(row+i, col+cols-1);
@@ -91,9 +92,20 @@ function makeContext(opts){
   let propReads = 0;
   let propFail = null;             // (klucz, 'get'|'set') -> true = usługa właściwości rzuca (limit, awaria)
   const sheets = {};
+  // Koszt usług w ms — zegar jest zamrożony, więc „wolne" wywołanie (dziennik spowolnień, Diag.gs)
+  // odgrywamy, przesuwając go: `read[zakładka]` przy każdym odczycie wartości, `waitLock` przy braniu
+  // blokady (`lockFail` — komunikat: blokada rzuca, jak po 20 s w Apps Script), `flush`, `template`
+  // i `evaluate` (HtmlService). Domyślnie wszystko 0 — reszta testów tego nie widzi.
+  const cost = { read: {}, waitLock: 0, lockFail: null, flush: 0, template: 0, evaluate: 0 };
+  const spend = ms => { nowMs += ms || 0; };
+  const html = { evaluated: [] };   // szablony złożone przez doGet (z polami: boot, served)
   // zmiana nazwy zakładki (przywrócenie kopii po cofnięciu wdrożenia) — pod nową nazwą w arkuszu
   const rename = (old, n, sh) => { if(sheets[old] === sh) delete sheets[old]; sheets[n] = sh; };
-  const addSheet = (n, rows) => (sheets[n] = makeSheet(n, rows, rename));
+  const addSheet = (n, rows) => {
+    const sh = (sheets[n] = makeSheet(n, rows, rename));
+    sh._onRead = name => spend(cost.read[name]);
+    return sh;
+  };
   (opts.sheets||[]).forEach(s=>{
     const sh = addSheet(s.name, s.rows);
     sh._strict = !!s.strictWidth;
@@ -134,11 +146,27 @@ function makeContext(opts){
           return sh;
         },
       }),
-      flush(){},
+      flush(){ spend(cost.flush); },
+    },
+    HtmlService: {
+      createTemplateFromFile(name){
+        spend(cost.template);
+        const tpl = { _name: name, evaluate(){
+          spend(cost.evaluate);
+          html.evaluated.push({ name, boot: tpl.boot, served: tpl.served });
+          const out = { setTitle(){ return out; }, addMetaTag(){ return out; } };
+          return out;
+        } };
+        return tpl;
+      },
+      createHtmlOutputFromFile: () => ({ getContent: () => '' }),
     },
     Utilities: { formatDate },
     Session: { getScriptTimeZone: ()=>'Europe/Warsaw' },
-    LockService: { getScriptLock: ()=>({ waitLock(){}, releaseLock(){} }) },
+    LockService: { getScriptLock: ()=>({
+      waitLock(){ spend(cost.waitLock); if(cost.lockFail) throw new Error(cost.lockFail); },
+      releaseLock(){},
+    }) },
     PropertiesService: { getScriptProperties: ()=>({
       getProperty: k => { if(propFail && propFail(k, 'get')) throw new Error('Usługa właściwości: awaria'); return k in props ? props[k] : null; },
       getProperties: () => { propReads++; return Object.assign({}, props); },
@@ -201,9 +229,11 @@ function makeContext(opts){
                           addTask, setTaskDone, removeTask, readTasks_, bootJson_, setGroup,
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_,
                           pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
-                          sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState };
+                          sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState,
+                          doGet, reportDiag, diagServer_, diagBytes_, diagCaller_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
-                           VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS };
+                           VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
+                           DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0; };
   `;
@@ -214,7 +244,8 @@ function makeContext(opts){
   // przez cały scenariusz i testy nie widziałyby tego, co widzi prawdziwy serwer.
   const api = {};
   Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
-  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, consent, setNow, newExecution: ctx.__newExecution,
+  return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, consent, cost, html, setNow, newExecution: ctx.__newExecution,
+           now: () => nowMs,
            propReads: () => propReads, failProps: f => { propFail = f || null; } };
 }
 

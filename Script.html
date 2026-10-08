@@ -18,9 +18,15 @@
    *   busyMin  — najkrótszy czas pokazania dymka, żeby w ogóle dało się go zobaczyć,
    *   pollRecheck — po „Wyślij teraz" bez odpowiedzi: tyle później panel pyta, czy ankieta wyszła
    *              (bramka potrafi odpowiadać do minuty, dłużej niż watchdog),
-   *   pollState — tyle czekamy na stan konta bota z bramki, zanim panel powie, że nie odpowiada.
+   *   pollState — tyle czekamy na stan konta bota z bramki, zanim panel powie, że nie odpowiada,
+   *   diagSlow / diagNoReply / diagFreeze / diagSend — dziennik spowolnień (patrz „DZIENNIK
+   *              SPOWOLNIEŃ"): wywołanie wolniejsze niż diagSlow (tam i z powrotem) trafia do
+   *              dziennika, odczyt bez odpowiedzi po diagNoReply też, przerwa, w której strona
+   *              stała, od diagFreeze; wysyłka do serwera najczęściej co diagSend; diagBeat — co ile
+   *              zegar sprawdza, czy strona żyje.
    */
-  const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000 }, window.__G13_TIMING || {});
+  const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
+    diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -237,6 +243,135 @@
     if(state.view==='diag') safeRender();
   }
 
+  /* =========================================================
+     DZIENNIK SPOWOLNIEŃ — co widział TEN telefon (serwer: Diag.gs)
+     7–8.10.2026 „strona długo się ładowała, a potem wisiała" i nie było czym tego zbadać:
+     dziennik Google zna tylko czas na serwerze, a tego, co działo się na telefonie, nikt nie
+     widział. Telefon zapisuje więc wywołania wolniejsze niż T.diagSlow i nieudane, odczyt bez
+     odpowiedzi po T.diagNoReply, stronę, która długo do niego szła, przerwy, w których strona
+     stała, choć była na ekranie (T.diagFreeze), i błędy skryptu — i dosyła je serwerowi
+     (reportDiag), gdy nic innego nie leci. Niewysłane czekają w localStorage, więc przeżywają
+     przeładowanie strony. Bez imion i treści: co, ile trwało i jaki telefon.
+     To kosmetyka — każdy błąd dziennika połykamy, aplikacja ma działać dalej.
+     ========================================================= */
+  const DIAG_KEEP = 20;            // tyle czeka na wysłanie; więcej — najstarsze przepadają
+  const DIAG_BATCH = 10;           // tyle na jedno wywołanie (DIAG_REPORT_MAX w Config.gs)
+  const DIAG_STORE = 'g13diag';    // localStorage: niewysłane wpisy
+  const DIAG_BEAT = T.diagBeat;    // zegar, który sprawdza, czy strona żyje
+  function diagGet(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } }
+  function diagSet(k, v){ try{ window.localStorage.setItem(k, v); }catch(e){} }
+  function diagId(){ return (Math.random().toString(36).slice(2) + '00000000').slice(0, 8); }
+  /** Krótki opis telefonu z userAgent: „iPhone iOS 17.5 · Safari 17.5", „Android 14 · Chrome 129". */
+  function uaLabel(ua){
+    ua = String(ua || '');
+    let m, os = '', br = '';
+    if((m = ua.match(/(iPhone|iPad|iPod).*? OS (\d+)_(\d+)/))) os = m[1] + ' iOS ' + m[2] + '.' + m[3];
+    else if((m = ua.match(/Android (\d+(?:\.\d+)?)/))) os = 'Android ' + m[1];
+    else if(/Windows/.test(ua)) os = 'Windows';
+    else if(/Mac OS X/.test(ua)) os = 'Mac';
+    else if(/Linux/.test(ua)) os = 'Linux';
+    if(/WhatsApp/i.test(ua)) br = 'WhatsApp';
+    else if(/FBAN|FBAV|FB_IAB|Messenger/.test(ua)) br = 'Facebook';
+    else if(/Instagram/.test(ua)) br = 'Instagram';
+    else if((m = ua.match(/CriOS\/(\d+)/))) br = 'Chrome ' + m[1];
+    else if((m = ua.match(/FxiOS\/(\d+)|Firefox\/(\d+)/))) br = 'Firefox ' + (m[1] || m[2]);
+    else if((m = ua.match(/EdgiOS\/(\d+)|EdgA?\/(\d+)/))) br = 'Edge ' + (m[1] || m[2]);
+    else if((m = ua.match(/OPR\/(\d+)|OPT\/(\d+)|OPiOS\/(\d+)/))) br = 'Opera ' + (m[1] || m[2] || m[3]);
+    else if((m = ua.match(/SamsungBrowser\/(\d+)/))) br = 'Samsung ' + m[1];
+    else if(/; wv\)/.test(ua)) br = 'WebView';
+    else if((m = ua.match(/Chrome\/(\d+)/))) br = 'Chrome ' + m[1];
+    else if((m = ua.match(/Version\/(\d+(?:\.\d+)?).*Safari/))) br = 'Safari ' + m[1];
+    else if(/iPhone|iPad|iPod/.test(ua)) br = 'WebView';
+    return [os, br].filter(Boolean).join(' · ').slice(0, 60) || 'nieznany';
+  }
+  /** Ten sam telefon pod tym samym znakiem — kilka wpisów z jednego aparatu widać razem. Nie mówi, czyj. */
+  const diagDev = (()=>{ let d = diagGet('g13dev'); if(!/^[a-z0-9]{6}$/.test(d || '')){ d = diagId().slice(0, 6); diagSet('g13dev', d); } return d; })();
+  const diagUa = uaLabel(navigator.userAgent);
+  let diagPending = [];
+  try{
+    const v = JSON.parse(diagGet(DIAG_STORE) || '[]');
+    if(Array.isArray(v)) diagPending = v.filter(e => e && typeof e.id === 'string').slice(-DIAG_KEEP);
+  }catch(e){}
+  const diagSeen = {};             // błąd skryptu: ten sam komunikat najwyżej raz na minutę
+
+  /** Wpis do dziennika: kind = call | start | freeze | error (DIAG_KINDS w Diag.gs). */
+  function diagNote(kind, f){
+    try{
+      const e = Object.assign({ id: diagId(), at: Date.now(), kind, dev: diagDev, ua: diagUa }, f || {});
+      if(e.msg) e.msg = String(e.msg).slice(0, 120); else delete e.msg;
+      if(e.ms != null) e.ms = Math.round(e.ms);
+      if(kind === 'error'){
+        if(diagSeen[e.msg] && e.at - diagSeen[e.msg] < 60000) return;
+        diagSeen[e.msg] = e.at;
+      }
+      diagPending.push(e);
+      if(diagPending.length > DIAG_KEEP) diagPending.splice(0, diagPending.length - DIAG_KEEP);
+      diagSet(DIAG_STORE, JSON.stringify(diagPending));
+    }catch(err){}
+  }
+
+  /** Wywołanie do dziennika, gdy wolne albo nieudane. `ms` — tam i z powrotem, jak widział telefon. */
+  function diagCall(fn, ms, ok, msg){
+    if(!ok || ms >= T.diagSlow) diagNote('call', { fn, ms, msg: ok ? (msg || '') : (msg || 'błąd') });
+  }
+
+  /**
+   * Wysyłka do serwera: jedna naraz, gdy nie leci żaden zapis (zapisy wolontariuszy mają
+   * pierwszeństwo), po DIAG_BATCH wpisów. Nieudana zostaje w kolejce — serwer odrzuca powtórki
+   * po `id`, więc ponowienie po zaginionej odpowiedzi niczego nie dubluje.
+   */
+  let diagSentAt = 0;
+  function sendDiag(){
+    if(!diagPending.length || isSending() || queue.length) return;
+    if(diagSentAt && Date.now() - diagSentAt < T.diagNoReply) return;
+    const batch = diagPending.slice(0, DIAG_BATCH);
+    const sent = {};
+    batch.forEach(e => { sent[e.id] = true; });
+    diagSentAt = Date.now();
+    try{
+      google.script.run
+        .withSuccessHandler(()=>{
+          diagSentAt = 0;
+          diagPending = diagPending.filter(e => !sent[e.id]);
+          diagSet(DIAG_STORE, JSON.stringify(diagPending));
+        })
+        .withFailureHandler(()=>{ diagSentAt = 0; })
+        .reportDiag(batch);
+    }catch(e){ diagSentAt = 0; }
+  }
+
+  /** Odczyty getData w drodze: {at, noted} — odczyt bez odpowiedzi widać w dzienniku, zanim wróci (albo nigdy). */
+  const readsInFlight = new Set();
+  let beatAt = Date.now(), diagSendAt = Date.now();
+  /**
+   * Co sekundę: czy zegar się nie spóźnił (spóźnia się, gdy przeglądarka nie wykonuje skryptu —
+   * strona stoi i nie reaguje na palec), czy jakiś odczyt nie wisi za długo, czy pora wysłać
+   * dziennik. Karta w tle i okienko potwierdzenia też zatrzymują zegar — to nie zamrożenie,
+   * więc wtedy liczymy od nowa (visibilitychange, pageshow, ask()).
+   */
+  function diagTick(){
+    try{
+      const now = Date.now();
+      const gap = now - beatAt;
+      beatAt = now;
+      if(!document.hidden && gap - DIAG_BEAT >= T.diagFreeze) diagNote('freeze', { ms: gap });
+      readsInFlight.forEach(r => {
+        if(!r.noted && now - r.at >= T.diagNoReply){ r.noted = true; diagNote('call', { fn:'getData', ms: now - r.at, msg:'bez odpowiedzi' }); }
+      });
+      if(now - diagSendAt >= T.diagSend){ diagSendAt = now; sendDiag(); }
+    }catch(e){}
+  }
+  function diagAwake(){ beatAt = Date.now(); }
+  /** confirm() zatrzymuje skrypt na czas pytania — bez tego każde dłuższe zastanowienie byłoby „zamrożeniem". */
+  function ask(msg){ const ok = confirm(msg); diagAwake(); return ok; }
+  window.addEventListener('error', e => {
+    diagNote('error', { msg: String(e && e.message || 'błąd') + (e && e.lineno ? ' (linia ' + e.lineno + ')' : '') });
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const r = e && e.reason;
+    diagNote('error', { msg: 'obietnica: ' + String(r && r.message || r || '') });
+  });
+
   /**
    * Awaryjne wejście do panelu bez PIN-u: 5 tapnięć w datę u góry.
    * Liczymy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa
@@ -357,6 +492,7 @@
       clearTimeout(watchdog);
       inflight.delete(job.lane);             // NAJPIERW zwolnij tor — nic poniżej tego nie cofnie
       logCall(job.fn, Date.now() - slot.at, outcome.ok ? 'ok' : (outcome.msg||'błąd'));
+      diagCall(job.fn, Date.now() - slot.at, outcome.ok, outcome.msg);
 
       // nieudany, ale bezpieczny do ponowienia zapis -> jedna automatyczna powtórka
       if(!outcome.ok && job.attempts === 0 && RETRIABLE.has(job.fn)){
@@ -492,14 +628,25 @@
   function refresh(){
     if(isSending() || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
     const seq = writeSeq;
+    // dziennik spowolnień: odczyt wolny, nieudany albo bez odpowiedzi (diagTick)
+    const read = { at: Date.now(), noted: false };
+    readsInFlight.add(read);
+    const readDone = (ok, msg) => {
+      readsInFlight.delete(read);
+      diagCall('getData', Date.now() - read.at, ok, ok && read.noted ? 'odpowiedź po czasie' : msg);
+    };
     google.script.run
       .withSuccessHandler(res=>{
+        readDone(true);
         if(isSending() || queue.length) return;   // w międzyczasie ruszył zapis
         // zapis ruszył i zdążył się skończyć: odczyt jest sprzed niego — pytamy jeszcze raz
         if(seq !== writeSeq){ needRefresh = true; pump(); return; }
         applyData(res); safeRender();
       })
-      .withFailureHandler(()=>{ if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>'; })
+      .withFailureHandler(err=>{
+        readDone(false, err && err.message ? err.message.replace(/^Error:\s*/,'') : '');
+        if(!state.loaded) viewEl.innerHTML='<div class="empty">Brak połączenia. Odśwież stronę.</div>';
+      })
       .getData();
   }
 
@@ -519,13 +666,15 @@
     days.forEach(d=>{ state.pastLoading[d] = now; });
     google.script.run
       .withSuccessHandler(res=>{
+        diagCall('getHistoryDays', Date.now() - now, true);
         const got = {};
         days.forEach(d=>{ got[d] = []; delete state.pastLoading[d]; });
         ((res && res.history) || []).forEach(e=>{ if(got[e.date]) got[e.date].push(e); });
         Object.assign(state.past, got);
         if(state.view==='today' && isPast(state.date)) safeRender();
       })
-      .withFailureHandler(()=>{
+      .withFailureHandler(err=>{
+        diagCall('getHistoryDays', Date.now() - now, false, err && err.message ? err.message.replace(/^Error:\s*/,'') : '');
         days.forEach(d=>{ delete state.pastLoading[d]; });
         if(state.view==='today' && state.date===date){
           viewEl.innerHTML = '<div class="empty">Nie udało się wczytać tego dnia — spróbuj strzałką jeszcze raz.</div>';
@@ -820,6 +969,7 @@
       viewEl.innerHTML = '<div class="empty">Coś poszło nie tak — odświeżam dane…</div>';
       lastHtml = null;
       needRefresh = true;
+      diagNote('error', { msg: 'rysowanie: ' + (e && e.message || e) });
       if(Date.now() - rescueAt > RESCUE_GAP_MS && !isSending() && !queue.length){
         rescueAt = Date.now();
         refresh();
@@ -1452,6 +1602,57 @@
     return o;
   }
 
+  /**
+   * Dziennik spowolnień (getDiagnostics().diag, Diag.gs): serwer i telefony na jednej liście,
+   * od najnowszego. Serwer — wolne wywołanie z krokami (od 100 ms), telefon — co widział.
+   * Brak wpisu serwera przy długim czekaniu telefonu = czas zjadła sieć albo Google przed naszym kodem.
+   */
+  const DIAG_FN = { doGet:'otwarcie strony', getData:'odczyt listy', getHistoryDays:'miniony dzień' };
+  function diagSec(ms){ return ((Number(ms) || 0) / 1000).toFixed(1).replace('.', ',') + ' s'; }
+  function diagWhen(at){
+    const t = new Date(Number(at) || 0), p = n => String(n).padStart(2, '0');
+    return t.getDate() + '.' + p(t.getMonth() + 1) + ' ' + p(t.getHours()) + ':' + p(t.getMinutes()) + ':' + p(t.getSeconds());
+  }
+  function diagEntry(src, e){
+    const fn = DIAG_FN[e.fn] || e.fn || '?';
+    let who, what, more = '';
+    if(src === 'server'){
+      who = 'serwer';
+      what = fn + ' ' + diagSec(e.ms) + (e.err ? ' — ' + e.err : '');
+      const parts = e.parts && typeof e.parts === 'object' ? e.parts : {};
+      more = Object.keys(parts).filter(k => Number(parts[k]) >= 100).map(k => k + ' ' + diagSec(parts[k])).join(' · ');
+    } else {
+      who = 'telefon ' + (e.dev || '?') + (e.ua ? ' · ' + e.ua : '');
+      what = e.kind === 'start' ? 'strona szła do telefonu ' + diagSec(e.ms)
+           : e.kind === 'freeze' ? 'strona stała ' + diagSec(e.ms)
+           : e.kind === 'error' ? 'błąd skryptu'
+           : fn + ' ' + diagSec(e.ms);
+      if(e.msg) what += ' — ' + e.msg;
+      if(e.rx && e.at && e.rx - e.at > 60000) more = 'dosłane ' + diagWhen(e.rx);
+    }
+    return `<div class="diaglog" data-src="${src}"><div><span>${diagWhen(e.at)}</span> <b>${esc(who)}</b></div>
+      <div>${esc(what)}</div>${more ? `<div class="diagmore">${esc(more)}</div>` : ''}</div>`;
+  }
+  function renderDiagLog(log){
+    const list = [];
+    (Array.isArray(log.server) ? log.server : []).forEach(e => { if(e) list.push({src:'server', e}); });
+    (Array.isArray(log.phones) ? log.phones : []).forEach(e => { if(e) list.push({src:'phone', e}); });
+    list.sort((a, b) => (Number(b.e.at) || 0) - (Number(a.e.at) || 0));
+    const rows = list.map(x => diagEntry(x.src, x.e)).join('')
+      || '<div class="diagrow"><span>Pusto — nic wolnego ani nieudanego.</span></div>';
+    return `
+      <div class="panelbox">
+        <h3>Dziennik spowolnień</h3>
+        <div class="hint">Serwer: wywołania dłuższe niż ${diagSec(log.slowMs || 3000)} z rozbiciem na kroki
+        (blokada — czekanie na inne zapisy, praca, zapis; przy otwarciu strony: szablon, odczyty, strona).
+        Liczy tylko nasz kod. Telefony: wywołania wolniejsze niż ${diagSec(T.diagSlow)} albo nieudane, odczyt bez
+        odpowiedzi, strona, która długo szła, chwile, w których strona stała, i błędy skryptu. Telefon czekał
+        długo, a serwer nie ma wpisu z tej chwili — czas zjadła sieć albo Google, zanim nasz kod ruszył. Zegar
+        telefonu może się mylić o kilka sekund. Po ${log.keep || 30} ostatnich wpisów z każdej strony.</div>
+        <div class="diag">${rows}</div>
+      </div>`;
+  }
+
   function renderDiagView(){
     const d = state.diag && !state.diag.failed ? state.diag : null;
     const settings = state.admin ? `
@@ -1523,7 +1724,7 @@
       <div class="panelbox">
         <h3>Stan serwera</h3>
         <div class="diag">${serverRows}</div>${retry}
-      </div>
+      </div>${d && d.diag ? renderDiagLog(d.diag) : ''}
       <div class="panelbox">
         <h3>Ostatnie wywołania</h3>
         <div class="hint">Czas przelotu tam i z powrotem. Powyżej ~3000 ms wina jest po stronie
@@ -2490,7 +2691,10 @@
     // rezerwacji ani spacerów „przy okazji", także z puszczenia przytrzymanego palca
     if(state.select){ try{ togglePick(e); }catch(err){ cancelSelect(); } return; }
     try{ handleAction(e); }
-    catch(err){ toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!isSending() && !queue.length) refresh(); }
+    catch(err){
+      diagNote('error', { msg: 'akcja: ' + (err && err.message || err) });
+      toast('Coś poszło nie tak — spróbuj ponownie'); needRefresh=true; if(!isSending() && !queue.length) refresh();
+    }
   });
 
   function handleAction(e){
@@ -2542,7 +2746,7 @@
     }
     if(act==='remove'){
       const dog=findDog(id);
-      if(!confirm('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
+      if(!ask('Usunąć psa: '+(dog?dogLabel(dog):'')+'?')) return;
       state.dogs=state.dogs.filter(x=>x.id!==id);   // optymistycznie znika od razu
       render('self');
       enqueue('removeDog',[id,state.pin],{reconcile:applyFull_});
@@ -2591,7 +2795,7 @@
       if(ns === 'pending'){ toast('Ankieta na ten tydzień właśnie się wysyła (od ' + p.now.at + ')'); return; }
       // nie wiadomo, czy wyszła (review PR #5, runda 2): druga ankieta w grupie rozbiłaby głosy — najpierw sprawdzić
       const force = ns === 'unknown';
-      if(!confirm(force
+      if(!ask(force
         ? 'Nie wiadomo, czy ankieta „' + p.now.question + '" wyszła do grupy ' + group + ' (próba ' + p.now.at + ').\n'
           + 'Sprawdź w grupie, czy jej tam nie ma. Wysłać mimo to?'
         : 'Wysłać teraz ankietę „' + p.now.question + '" do grupy ' + group + '?')) return;
@@ -2625,7 +2829,7 @@
     }
     if(act==='allWalks'){
       const w = Number(btn.dataset.walks)===2 ? 2 : 1;
-      if(!confirm(w===2 ? 'Ustawić DWA spacery dziennie dla wszystkich psów?'
+      if(!ask(w===2 ? 'Ustawić DWA spacery dziennie dla wszystkich psów?'
                         : 'Wrócić do JEDNEGO spaceru dziennie dla wszystkich psów?')) return;
       enqueue('setAllWalks',[w,state.pin],{reconcile:res=>{
         applyFull_(res);
@@ -2634,7 +2838,7 @@
     }
     if(act==='taskRemove'){
       const t=state.tasks.find(x=>x.id===id);
-      if(!confirm('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
+      if(!ask('Usunąć zadanie: '+(t?t.text:'')+'?')) return;
       state.tasks=state.tasks.filter(x=>x.id!==id);   // optymistycznie
       render('self');
       enqueue('removeTask',[id,state.pin],{reconcile:applyFull_});
@@ -2677,6 +2881,23 @@
   const boot = bootData();
   if(boot){ applyData(boot); render('self'); }
   else refresh();
+
+  /**
+   * Dziennik spowolnień: ile strona szła do telefonu — od chwili, gdy serwer ją oddał (`served`
+   * z doGet), do tego miejsca: sieć, opakowanie Google, ramka, wczytanie skryptu. Zegary telefonu
+   * i serwera różnią się zwykle o sekundę–dwie; różnica większa niż godzina to zły zegar, nie sieć.
+   */
+  (function diagStart(){
+    try{
+      const el = document.getElementById('served');
+      const served = el ? Number(JSON.parse(el.textContent)) : 0;
+      const ms = served > 0 ? Date.now() - served : NaN;
+      if(ms >= T.diagSlow && ms < 3600000) diagNote('start', { ms, msg: boot ? '' : 'bez danych w stronie' });
+    }catch(e){}
+  })();
+  setInterval(diagTick, DIAG_BEAT);
+  document.addEventListener('visibilitychange', diagAwake);   // karta w tle to nie zamrożenie
+  window.addEventListener('pageshow', diagAwake);
   // co 15 s, ale tylko gdy karta widoczna, kolejka pusta i nikt nie pisze w polu
   setInterval(()=>{ if(!document.hidden && !isSending() && !queue.length && !busyEditing()) refresh(); }, 15000);
   // strażnik zawieszonych zapisów: cyklicznie...

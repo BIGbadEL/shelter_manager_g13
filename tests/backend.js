@@ -1916,5 +1916,187 @@ const pollEnv = (now, extra) => { const env = build([{id:1, name:'Borys'}], Obje
   check('...po zgodzie wyzwalacz w oknie wysyła normalnie (drugie wywołanie bramki, pierwsze bez zgody)', sends(nc).length === 2 && r2 === 'sent', r2);
 })();
 
+// ---------------------------------------------------------------------------
+// B62–B64: dziennik spowolnień (Diag.gs). Zegar atrapy stoi, więc „wolne" usługi odgrywa
+// env.cost: odczyt zakładki, branie blokady, flush i HtmlService przesuwają go o zadany czas.
+// ---------------------------------------------------------------------------
+const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
+
+// B62: serwer zapisuje wolne wywołania z rozbiciem na kroki
+(function(){
+  console.log('B62: dziennik spowolnień — serwer: wolne otwarcie strony, odczyt i zapis z krokami, błąd blokady, nic przy zwykłej pracy');
+  const env = build([{id:1, name:'Borys'}, {id:2, name:'Luna'}], { walks: [{date:'2026-08-04', dogId:1, status:'reserved', who:'Ania'}] });
+  env.api.getData();
+  env.api.reserve(2, 'Ola', '2026-08-04', 1);
+  env.api.doGet();
+  check('zwykła praca: dziennik nietknięty (żaden zapis właściwości)', !('diagServer' in env.props) && !('diagPhones' in env.props));
+  check('doGet oddaje stronę ze stanem i chwilą oddania (served)', env.html.evaluated.length === 1
+    && JSON.parse(env.html.evaluated[0].boot).dogs.length === 2 && env.html.evaluated[0].served === env.now());
+
+  env.cost.read['Spacery'] = 4000;
+  env.api.getData();
+  let l = diagOf(env);
+  check('wolny odczyt: wpis getData z krokami (spacery ≥ 4 s, psy 0)', l.length === 1 && l[0].fn === 'getData' && l[0].ms >= 4000
+    && l[0].parts.spacery >= 4000 && l[0].parts.psy === 0 && 'zadania' in l[0].parts && 'ustawienia' in l[0].parts, JSON.stringify(l));
+  check('...z godziną z zegara serwera, bez imion i treści', l[0].at === env.now() && !/Borys|Luna|Ania/.test(env.props.diagServer));
+
+  env.api.doGet();
+  l = diagOf(env);
+  check('wolne otwarcie strony: JEDEN wpis doGet (odczyt w środku nie liczy się drugi raz)', l.length === 2 && l[1].fn === 'doGet'
+    && l[1].ms >= 4000 && l[1].parts.spacery >= 4000 && 'szablon' in l[1].parts && 'strona' in l[1].parts, JSON.stringify(l[1]));
+  env.cost.read['Spacery'] = 0;
+  env.cost.evaluate = 3500;
+  env.api.doGet();
+  l = diagOf(env);
+  check('...wolne składanie strony: strona ≥ 3,5 s', l.length === 3 && l[2].parts.strona >= 3500 && l[2].parts.spacery === 0, JSON.stringify(l[2]));
+  env.cost.evaluate = 0;
+  env.cost.template = 3200;
+  env.api.doGet();
+  check('...wolny szablon: szablon ≥ 3,2 s', diagOf(env)[3].parts.szablon >= 3200, JSON.stringify(diagOf(env)[3]));
+  env.cost.template = 0;
+
+  // stan startowy nie dał się odczytać: strona idzie bez niego, błąd w dzienniku (wcześniej znikał po cichu)
+  const psy = env.sheets['Psy'];
+  delete env.sheets['Psy'];
+  env.api.doGet();
+  env.sheets['Psy'] = psy;
+  l = diagOf(env);
+  check('nieudany stan startowy: strona bez danych („null"), wpis z błędem mimo szybkiego otwarcia', env.html.evaluated[env.html.evaluated.length - 1].boot === 'null'
+    && l.length === 5 && l[4].fn === 'doGet' && /^stan startowy: /.test(l[4].err) && l[4].ms < 3000, JSON.stringify(l[4]));
+
+  // zapisy pod blokadą: czekanie na blokadę, praca, zapis do arkusza — i kto ją wziął
+  env.cost.waitLock = 5000;
+  const r = env.api.reserve(1, 'Ola', '2026-08-05', 1);
+  env.cost.waitLock = 0;
+  l = diagOf(env);
+  check('wolny zapis: wpis z nazwą akcji (reserve), blokada ≥ 5 s, praca i zapis osobno', l.length === 6 && l[5].fn === 'reserve'
+    && l[5].parts.blokada >= 5000 && 'praca' in l[5].parts && 'zapis' in l[5].parts && !l[5].err, JSON.stringify(l[5]));
+  check('...a rezerwacja zapisana jak zwykle', r.slot && r.slot.status === 'reserved' && r.slot.who === 'Ola');
+  env.cost.flush = 3100;
+  env.api.markWalked(1, 'Ania', 1, '2026-08-04');
+  env.cost.flush = 0;
+  l = diagOf(env);
+  check('wolny flush: zapis ≥ 3,1 s, akcja markWalked', l.length === 7 && l[6].fn === 'markWalked' && l[6].parts.zapis >= 3100, JSON.stringify(l[6]));
+  env.cost.read['Spacery'] = 3500;
+  let e1 = '';
+  try { env.api.reserve(1, 'Ola', '2026-08-06', 5); } catch(e){ e1 = e.message; }
+  env.cost.read['Spacery'] = 0;
+  l = diagOf(env);
+  check('wolny zapis, który rzucił: błąd idzie dalej i jest w dzienniku', /Nie ma takiego spaceru/.test(e1) && l.length === 8
+    && l[7].fn === 'reserve' && /Nie ma takiego spaceru/.test(l[7].err), JSON.stringify(l[7]));
+  let e2 = '';
+  try { env.api.reserve(1, 'Ola', '2026-08-06', 5); } catch(e){ e2 = e.message; }
+  check('...szybki błąd (zwykła odmowa) — bez wpisu', /Nie ma takiego spaceru/.test(e2) && diagOf(env).length === 8);
+  env.cost.lockFail = 'Lock timeout: another process was holding the lock for too long.';
+  env.cost.waitLock = 20000;
+  let e3 = '';
+  try { env.api.reserve(2, 'Ola', '2026-08-06', 1); } catch(e){ e3 = e.message; }
+  env.cost.lockFail = null;
+  env.cost.waitLock = 0;
+  l = diagOf(env);
+  check('blokada nie przyszła: błąd idzie dalej, wpis z błędem i czekaniem ≥ 20 s', /Lock timeout/.test(e3) && l.length === 9
+    && l[8].fn === 'reserve' && /Lock timeout/.test(l[8].err) && l[8].parts.blokada >= 20000, JSON.stringify(l[8]));
+  check('...a blokada nie została „wzięta" (następny zapis działa)', env.api.reserve(2, 'Ola', '2026-08-06', 1).slot.status === 'reserved');
+
+  // pełny stan spod blokady (akcja edycyjna) — jeden wpis za całą akcję, nie drugi za getData w środku
+  env.cost.read['Spacery'] = 3500;
+  env.api.updateDog(2, {name:'Luna', dif:'easy'}, TEST_PIN);
+  env.cost.read['Spacery'] = 0;
+  l = diagOf(env);
+  check('akcja edycyjna: jeden wpis (updateDog), bez osobnego getData', l.length === 10 && l[9].fn === 'updateDog', JSON.stringify(l.slice(9)));
+  env.cost.flush = 4000;
+  env.api.endOfDay();
+  env.cost.flush = 0;
+  check('nocne czyszczenie też (wyzwalacz)', diagOf(env)[10].fn === 'endOfDay', JSON.stringify(diagOf(env)[10]));
+
+  // dziennik nigdy nie zatrzymuje aplikacji
+  const bad = build([{id:1, name:'Borys'}]);
+  bad.failProps(k => k === 'diagServer');
+  bad.cost.waitLock = 5000;
+  let ok = true;
+  try { ok = bad.api.reserve(1, 'Ola', '2026-08-04', 1).slot.status === 'reserved'; } catch(e){ ok = false; }
+  bad.cost.read['Spacery'] = 4000;
+  try { ok = ok && bad.api.getData().dogs.length === 1; } catch(e){ ok = false; }
+  check('awaria właściwości dziennika: zapis i odczyt działają, wpisu brak', ok && !('diagServer' in bad.props));
+  bad.failProps(null);
+  bad.props.diagServer = '{zepsute';
+  bad.api.getData();
+  check('zepsuty dziennik zaczyna się od nowa', diagOf(bad).length === 1);
+})();
+
+// B63: sufity dziennika i wpisy z telefonów
+(function(){
+  console.log('B63: dziennik spowolnień — sufity (wpisy, bajty) i reportDiag: tylko poprawne wpisy, przycięte, bez powtórek, bez PIN-u');
+  const env = build([{id:1, name:'Borys'}]);
+  env.cost.read['Psy'] = 3000;
+  for(let i = 0; i < 35; i++) env.api.getData();
+  env.cost.read['Psy'] = 0;
+  let l = diagOf(env);
+  check('najwyżej DIAG_KEEP wpisów, najnowsze zostają (każdy odczyt przesuwa zegar o 3 s)', l.length === env.conf.DIAG_KEEP
+    && l[l.length - 1].at === env.now() && l[0].at === env.now() - 29 * 3000, l.length + ' / ' + (env.now() - l[0].at));
+  for(let i = 0; i < 30; i++) env.ctx.__api.diagServer_('reserve', 5000, { blokada: 4000 }, 'ż'.repeat(200));
+  l = diagOf(env);
+  const bytes = env.ctx.__api.diagBytes_(env.props.diagServer);
+  check('najwyżej DIAG_BYTES bajtów (polskie znaki liczone podwójnie), błąd przycięty do 160', bytes <= env.conf.DIAG_BYTES && l.length < 30
+    && l[l.length - 1].err.length === 160, bytes + ' B, ' + l.length);
+  check('diagBytes_: ASCII 1, „ż" 2, „—" 3, emoji 4', env.ctx.__api.diagBytes_('a') === 1 && env.ctx.__api.diagBytes_('ż') === 2
+    && env.ctx.__api.diagBytes_('—') === 3 && env.ctx.__api.diagBytes_('🐕') === 4);
+
+  const ph = build([{id:1, name:'Borys'}]);
+  const P = () => diagOf(ph, 'diagPhones');
+  check('nie lista: odmowa, nic nie zapisane', ph.api.reportDiag('x').ok === false && ph.api.reportDiag(null).ok === false && !('diagPhones' in ph.props));
+  const good = (id, o) => Object.assign({ id, at: Date.parse('2026-08-04T09:59:00+02:00'), kind: 'call', dev: 'a3f9c1', ua: 'iPhone iOS 17.5 · Safari 17.5', fn: 'getData', ms: 41234, msg: 'bez odpowiedzi' }, o);
+  const r = ph.api.reportDiag([
+    good('aaaaaaa1'),
+    good('x'),                                   // za krótki id
+    good('<b>xx</b>'),                           // nie znaki z id
+    good('aaaaaaa2', { kind: 'hack' }),          // nieznany rodzaj
+    'tekst', null,
+    good('aaaaaaa3', { kind: 'freeze', fn: '', msg: 'a\u0000b\nc' + 'x'.repeat(200), ua: 'u'.repeat(100), dev: 'd'.repeat(30), ms: -5 }),
+    good('aaaaaaa4', { kind: 'start', ms: 1e12, at: 'wczoraj' }),
+    good('aaaaaaa5', { kind: 'error', ms: 'dużo', fn: 'f'.repeat(50) }),
+  ]);
+  const p = P();
+  check('przyjęte tylko poprawne (4 z 9), bez PIN-u', r.ok === true && r.n === 4 && p.length === 4, JSON.stringify(r));
+  check('wpis jak z telefonu: wszystkie pola, rx = zegar serwera', p[0].id === 'aaaaaaa1' && p[0].kind === 'call' && p[0].fn === 'getData'
+    && p[0].ms === 41234 && p[0].msg === 'bez odpowiedzi' && p[0].dev === 'a3f9c1' && p[0].ua === 'iPhone iOS 17.5 · Safari 17.5'
+    && p[0].at === Date.parse('2026-08-04T09:59:00+02:00') && p[0].rx === ph.now(), JSON.stringify(p[0]));
+  check('przycięte: komunikat 120 bez znaków sterujących, opis telefonu 60, znak 12, ms ≥ 0, puste pole pominięte',
+    p[1].msg.length === 120 && !/[\u0000-\u001f]/.test(p[1].msg) && /^a b c/.test(p[1].msg) && p[1].ua.length === 60 && p[1].dev.length === 12
+    && p[1].ms === 0 && !('fn' in p[1]), JSON.stringify(p[1]));
+  check('ms najwyżej godzina, zły czas zdarzenia = chwila odbioru', p[2].ms === 3600000 && p[2].at === p[2].rx);
+  check('niby-liczba ms pominięta, nazwa funkcji 30', !('ms' in p[3]) && p[3].fn.length === 30);
+  const over = [];
+  for(let i = 0; i < 12; i++) over.push(good('bbbbbb' + String(i).padStart(2, '0')));
+  check('najwyżej DIAG_REPORT_MAX na raz', ph.api.reportDiag(over).n === env.conf.DIAG_REPORT_MAX && P().length === 14);
+  ph.api.reportDiag([good('aaaaaaa1'), good('bbbbbb00'), good('cccccc01')]);
+  check('powtórka (zaginiona odpowiedź, telefon wysyła drugi raz) nie dubluje wpisów', P().length === 15
+    && P().filter(e => e.id === 'aaaaaaa1').length === 1);
+  for(let i = 0; i < 4; i++) ph.api.reportDiag(Array.from({length: 10}, (_, j) => good('dd' + i + 'ddd' + String(j).padStart(2, '0'))));
+  check('telefony też najwyżej DIAG_KEEP, najnowsze zostają', P().length === env.conf.DIAG_KEEP && P()[P().length - 1].id === 'dd3ddd09');
+  check('wpisy telefonów nie mieszają się z serwerowymi', !('diagServer' in ph.props));
+})();
+
+// B64: dziennik w Panelu
+(function(){
+  console.log('B64: dziennik spowolnień w Panelu (getDiagnostics, PIN): serwer i telefony, próg, zepsuty wpis = pusto');
+  const env = build([{id:1, name:'Borys'}]);
+  const empty = env.api.getDiagnostics(TEST_PIN).diag;
+  check('pusty dziennik: dwie puste listy, próg 3 s, sufit 30', Array.isArray(empty.server) && !empty.server.length
+    && Array.isArray(empty.phones) && !empty.phones.length && empty.slowMs === 3000 && empty.keep === 30, JSON.stringify(empty));
+  env.cost.read['Psy'] = 3300;
+  env.api.getData();
+  env.cost.read['Psy'] = 0;
+  env.api.reportDiag([{ id: 'abcdef12', at: 1, kind: 'freeze', ms: 5000 }]);
+  const d = env.api.getDiagnostics(TEST_PIN).diag;
+  check('w Panelu: wpis serwera i wpis telefonu', d.server.length === 1 && d.server[0].fn === 'getData' && d.server[0].parts.psy >= 3300
+    && d.phones.length === 1 && d.phones[0].kind === 'freeze', JSON.stringify(d));
+  check('tylko z PIN-em', throws(() => env.api.getDiagnostics('zły')));
+  env.props.diagServer = 'nie json';
+  env.props.diagPhones = '{"a":1}';
+  const z = env.api.getDiagnostics(TEST_PIN).diag;
+  check('zepsuty dziennik nie zabiera Panelu: puste listy', z.server.length === 0 && z.phones.length === 0);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

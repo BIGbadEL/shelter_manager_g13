@@ -208,3 +208,16 @@ const MAX_DAYS_AHEAD = 365;
  * a wtedy zapisuje się w Script Properties (patrz Settings.gs).
  */
 const DEFAULT_RESET_HOUR = 22;
+
+/**
+ * Dziennik spowolnień (Diag.gs, Panel → „Dziennik spowolnień"). Wywołanie serwera dłuższe niż
+ * DIAG_SLOW_MS trafia do dziennika z rozbiciem na kroki; telefony dosyłają, co same widziały
+ * (reportDiag). Zwykle wywołanie trwa ~1–2 s (dziennik wykonań Google z 1–8.10.2026: połowa
+ * do 1,7 s, 99% do 4,4 s), więc 3 s to już coś do obejrzenia, a nie codzienny szum.
+ * Sufity, bo właściwość ma limit 9 KB na wartość: DIAG_KEEP wpisów na stronę (serwer, telefony),
+ * DIAG_BYTES bajtów razem, DIAG_REPORT_MAX wpisów z telefonu na jedno wywołanie.
+ */
+const DIAG_SLOW_MS = 3000;
+const DIAG_KEEP = 30;
+const DIAG_BYTES = 8000;
+const DIAG_REPORT_MAX = 10;

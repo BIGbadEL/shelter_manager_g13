@@ -16,10 +16,11 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Tasks.gs` | zadania na dziś: odczyt + akcje |
 | `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
+| `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z rozbiciem na kroki + to, co dosłały telefony (`reportDiag`) — w Panelu |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios16`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios17`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -444,7 +445,27 @@ tak samo, w tym samym kolorze.
 
 ## Zakładka „Panel"
 
-Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, a przede wszystkim **czasy przelotu ostatnich 30 wywołań**. To jedyny sposób, żeby na telefonie rozstrzygnąć, czy wisi Apps Script, czy przeglądarka.
+Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, **dziennik spowolnień** (niżej) i **czasy przelotu ostatnich 30 wywołań tego telefonu**.
+
+### Dziennik spowolnień (od 1.2)
+
+Gdy ktoś zgłasza „strona długo się ładowała i wisiała", zajrzyj tu, zanim zajrzysz do dziennika
+wykonań Google (on zna tylko łączny czas na serwerze i nie filtruje po funkcji). Wpisy z obu stron,
+od najnowszego, po 30 ostatnich z każdej:
+
+- **serwer** — każde wywołanie dłuższe niż 3 s z rozbiciem na kroki: otwarcie strony (szablon,
+  odczyty zakładek, składanie strony), odczyt listy (ustawienia, psy, spacery, zadania), zapis
+  (czekanie na blokadę — czyli na zapisy innych osób, praca, zapis do arkusza), do tego błąd blokady
+  i strona oddana bez danych. Liczy tylko nasz kod;
+- **telefon** (znak telefonu + opis, np. „iPhone iOS 17.5 · Safari 17.5") — wywołania wolniejsze niż
+  6 s i nieudane, odczyt bez odpowiedzi po 20 s, strona, która długo szła do telefonu (od oddania
+  przez serwer), chwile, w których strona stała, choć była na ekranie, i błędy skryptu. Telefon
+  dosyła je, gdy nic innego nie leci; bez zasięgu czekają w pamięci przeglądarki („dosłane" przy wpisie).
+  Bez imion i treści.
+
+Jak czytać: **telefon czekał długo, a serwer nie ma wpisu z tej chwili** — czas zjadła sieć albo Google,
+zanim nasz kod ruszył (tego nie naprawimy kodem). **Jest wpis serwera** — widać, który krok trwał.
+Zegar telefonu może się mylić o kilka sekund.
 
 ## Ankieta tygodniowa na WhatsAppie
 
@@ -596,6 +617,13 @@ Przegląd kodu przed dalszą pracą nad panelem — poprawki:
 - „📋 Skopiuj treść" w minionym dniu jest przyciskiem tej samej wysokości co „Wyślij" (z ramką
   zamiast wypełnienia) — tam, gdzie poczta się nie otwiera, to jedyna droga.
 - Adres maila z „%" jest odrzucany — poczta odkodowuje „%41" na „A" i mail poszedłby gdzie indziej.
+
+- **Dziennik spowolnień w Panelu.** 7–8.10 dwie osoby zgłosiły, że strona długo się ładowała, a potem
+  wisiała. Dziennik wykonań Google z tygodnia (1607 wywołań): zwykle 1–2 s, 99% do ~4,5 s, ale
+  kilka razy Google stanął — otwarcie strony 37 s i 44 s (7.10, 21:31), 12,7 s (8.10, 11:00), odczyt
+  35 s, 189 s i 360 s (limit czasu, 2.10) — bez związku z ruchem ani przerwą w używaniu. Dziennik
+  Google nie mówi, który krok trwał, ani co widział telefon; nasz dziennik mówi (rozdział „Dziennik
+  spowolnień"). Przyczyny to nie usuwa — następnym razem będzie wiadomo, gdzie zeszło.
 
 ### 1.1.2 — wdrożone 2026-10-03 (@19)
 

@@ -21,6 +21,8 @@ const PROP_DOG_ADDS = 'dogAdds';               // ostatnie dodania psów z panel
 const PROP_POLL = 'poll';                      // ankieta tygodniowa (JSON, panel) — patrz Poll.gs
 const PROP_POLL_SENT = 'pollSent';             // wysłane ankiety {'<grupa>|<poniedziałek>': {at, pending}} — każda raz
 const PROP_POLL_LAST = 'pollLast';             // ostatnia próba wysłania (JSON) — do panelu
+const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
+const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)
 // Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:
 // nigdy w kodzie, nigdy w getData ani w odpowiedzi do przeglądarki (token daje pełny dostęp do konta).
 const PROP_GREEN_URL = 'greenApiUrl';          // apiUrl instancji, np. https://7103.api.greenapi.com

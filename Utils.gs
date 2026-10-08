@@ -58,18 +58,36 @@ let lockDepth_ = 0;
  * które musi założyć brakującą zakładkę) puściłoby blokadę zewnętrzną
  * w połowie jej pracy. Zagnieżdżone wywołanie po prostu działa pod tą,
  * którą już trzymamy.
+ *
+ * Zapis wolniejszy niż DIAG_SLOW_MS i każdy błąd blokady trafiają do dziennika spowolnień
+ * (Diag.gs) z rozbiciem: `blokada` — czekanie na inne zapisy, `praca` — nasz kod pod blokadą,
+ * `zapis` — flush do arkusza i zwolnienie. Mierzymy zawsze (to tylko zegar), piszemy rzadko.
  */
 function withLock_(fn) {
   if (lockDepth_ > 0) return fn();
+  const t0 = Date.now();
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);   // czekaj max 20 s
+  try {
+    lock.waitLock(20000);   // czekaj max 20 s
+  } catch (e) {
+    diagServer_(diagCaller_(), Date.now() - t0, { blokada: Date.now() - t0 }, e);
+    throw e;
+  }
+  const t1 = Date.now();
+  let t2 = t1, err = null;
   lockDepth_++;
   try {
     return fn();
+  } catch (e) {
+    err = e;
+    throw e;
   } finally {
     lockDepth_--;
+    t2 = Date.now();
     SpreadsheetApp.flush();
     lock.releaseLock();
+    const ms = Date.now() - t0;
+    if (ms >= DIAG_SLOW_MS) diagServer_(diagCaller_(), ms, { blokada: t1 - t0, praca: t2 - t1, zapis: Date.now() - t2 }, err);
   }
 }
 

@@ -330,6 +330,12 @@
   .diagrow:last-child{border-bottom:0;}
   .diagrow b{color:var(--ink);font-weight:700;min-width:88px;}
   .diagrow span:last-child{margin-left:auto;text-align:right;}
+  /* dziennik spowolnień: wpis w trzech linijkach (kiedy i kto, co, kroki) — długie, więc bez flexa */
+  .diaglog{padding:5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;}
+  .diaglog:last-child{border-bottom:0;}
+  .diaglog b{color:var(--ink);font-weight:700;}
+  .diaglog > div:nth-child(2){color:var(--ink);}
+  .diagmore{color:var(--muted);}
 
   /* datę tapie się 5x — nie pozwól przeglądarce zamienić tego w zaznaczanie/zoom */
   #today{touch-action:manipulation;-webkit-user-select:none;user-select:none;
