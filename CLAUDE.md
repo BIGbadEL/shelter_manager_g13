@@ -718,10 +718,11 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 `deployments:test`) — jedyna różnica to `-P .clasp.test.json`. **Kolejność zawsze ta sama:
 `npm run deploy:test` → sprawdzenie na telefonie → `npm run deploy:prod`.**
 
-**Wersje** (decyzja właściciela): numer `1.X.Y`.
-- **X — wydanie z poważnymi nowymi funkcjami**, o którym wolontariusze dostają wiadomość
-  (np. z filmikiem): 1.1 → 1.2.
-- **Y — drobne zmiany w tle**, bez ogłaszania: 1.1 → 1.1.1 → 1.1.2.
+**Wersje** (decyzja właściciela, zasada od 2026-10-08; wcześniejsze numery zostają, jak były): numer `1.X.Y`.
+- **X — duże zmiany**: 1.1 → 1.2.
+- **Y — drobne poprawki i błędy w tym, czego dotyczyło ostatnie X**: 1.2 → 1.2.1 → 1.2.2.
+- **Informacja dla wolontariuszy — wtedy, gdy trzeba**, niezależnie od numeru. Wersja jej nie
+  wyznacza (dawniej: X = ogłaszane, np. z filmikiem; Y = bez ogłaszania).
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`

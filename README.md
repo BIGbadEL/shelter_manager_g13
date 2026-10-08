@@ -88,8 +88,9 @@ na produkcję.
 
 ### Wersje
 
-Numer `1.X.Y`: **X** rośnie przy wydaniu z poważnymi nowymi funkcjami, o którym wolontariusze
-dostają wiadomość; **Y** — przy drobnych zmianach w tle. Wersja jest też w `package.json`.
+Numer `1.X.Y`: **X** rośnie przy dużych zmianach; **Y** — przy drobnych poprawkach i błędach
+w tym, czego dotyczyło ostatnie X. Wolontariuszy informujemy wtedy, gdy trzeba — niezależnie od
+numeru. Wersja jest też w `package.json`.
 
 | wersja | co | gałąź | wdrożenie |
 |---|---|---|---|
@@ -570,8 +571,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ### 1.2 — wdrożone 2026-10-08 (@20)
 
-Wydanie z poważnymi zmianami (numer X) — wolontariusze i prowadząca dostaną wiadomość.
-Temat: zarządzanie aplikacją (zaczęło się od panelu prowadzącej, skończyło głównie na narzędziach
+Duże zmiany (numer X). Temat: zarządzanie aplikacją (zaczęło się od panelu prowadzącej, skończyło głównie na narzędziach
 administratora: ankieta, dziennik spowolnień, przegląd kodu).
 
 - **Mail do schroniska wysyła się z telefonu.** W minionym dniu „✉️ Wyślij e-mail z listą psów"
