@@ -20,9 +20,9 @@ function setup() {
   if (dogs.getLastRow() === 0) {
     dogs.getRange(1, 1, 1, DOG_WIDTH).setValues([DOG_HEADERS]);
     dogs.getRange(2, 1, 3, DOG_WIDTH).setValues([
-      [1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', '', '', 1, '', '', ''],
-      [2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', '', '', 2, '', '', ''],  // pies na 2 spacery dziennie
-      [3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', '', '', 1, '', '', ''],  // nowy pies: jeszcze bez imienia
+      [1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', '', '', 1, '', '', '', ''],
+      [2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', '', '', 2, '', '', '', ''],  // pies na 2 spacery dziennie
+      [3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', '', '', 1, '', '', '', ''],  // nowy pies: jeszcze bez imienia
     ]);
     dogs.setFrozenRows(1);
   }
@@ -86,6 +86,11 @@ function migrate() {
   if (dogs && String(dogs.getRange(1, DOG.NOTE_UNTIL).getValue()) !== 'notatka_do') {
     dogs.getRange(1, DOG.NOTE_UNTIL).setValue('notatka_do');   // termin ważności notatki
   }
+  if (dogs && !dogColumns_(dogs)) {
+    // grupa psa (1.3): kolumna, nagłówek i format; czyjejś innej kolumny w tym miejscu nie nadpisujemy
+    console.log('UWAGA: kolumna ' + DOG.TEAM + ' w zakładce Psy ma inny nagłówek niż „' + DOG_HEADERS[DOG.TEAM - 1] +
+                '" — grupa psa nie będzie się zapisywać. Przesuń tamtą kolumnę i uruchom migrate() jeszcze raz.');
+  }
   setup();   // dołoży brakujące zakładki i formaty
 }
 
@@ -107,6 +112,9 @@ function applyTextFormats_() {
     if (!sh) return;
     cols.forEach(c => sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@'));
   });
+  // grupa psa — tylko nasza kolumna (czyjejś innej w tym miejscu formatu nie zmieniamy)
+  const dogs = s.getSheetByName(SHEETS.DOGS);
+  if (dogs && teamHead_(dogs) === DOG_HEADERS[DOG.TEAM - 1]) dogs.getRange(1, DOG.TEAM, dogs.getMaxRows(), 1).setNumberFormat('@');
 }
 
 /**

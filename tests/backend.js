@@ -2123,5 +2123,136 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
   check('zepsuty dziennik nie zabiera Panelu: puste listy', z.server.length === 0 && z.phones.length === 0);
 })();
 
+/* ---------- B65–B66: grupa psa (psy innych grup, 1.3) ---------- */
+// Kolumna `grupa_psa` doszła w 1.3: produkcyjna zakładka Psy bywa od niej węższa, a getRange poza
+// szerokość rzuca błędem (strictWidth) — wdrożenie przed migrate() nie może położyć aplikacji.
+const strictDogs = (dogs, extra) => [
+  { name:'Psy', strictWidth: true, rows: [DOG_HEADERS.concat(extra ? [extra.head] : []),
+      ...dogs.map(o => dogRow(o).concat(extra ? [o.extra || ''] : []))] },
+  { name:'Historia', rows: [HIST_HEADERS] },
+  { name:'Zadania',  rows: [TASK_HEADERS] },
+];
+const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].team;
+
+(function(){
+  console.log('B65: grupa psa — zakładka bez kolumny działa, pierwszy zapis innej grupy dokłada kolumnę, pisownia ujednolicona');
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', walks:2}]) });
+  const P = env.sheets['Psy'];
+  const d0 = env.api.getData();
+  check('zakładka sprzed kolumny: getData działa, każdy pies nasz (team "")', d0.dogs.length === 2 && d0.dogs.every(d => d.team === ''),
+    JSON.stringify(d0.dogs.map(d => d.team)));
+  env.api.addDog({name:'Rex'}, TEST_PIN, 'dteam0000001');
+  check('nasz pies (bez grupy) — kolumny nie trzeba dokładać', P.getMaxColumns() === 14 && teamOf(env, 3) === '', P.getMaxColumns());
+  env.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dteam0000002');
+  check('pies innej grupy: kolumna dołożona, nagłówek grupa_psa, wartość', P.getMaxColumns() === 15 && P._data[0][14] === 'grupa_psa'
+    && P._data[4][14] === 'G7' && teamOf(env, 4) === 'G7', JSON.stringify(P._data[0]) + ' ' + JSON.stringify(P._data[4]));
+  check('...kolumna jako tekst, zanim coś do niej trafiło', P._formatRanges.some(f => f.col === 15 && f.row === 1 && f.f === '@'));
+  env.api.addDog({name:'Bella', team:'  g 7 '}, TEST_PIN, 'dteam0000003');
+  check('„ g 7 " przy istniejącej „G7" — ta sama grupa, pisownia już używana', teamOf(env, 5) === 'G7', teamOf(env, 5));
+  env.api.addDog({name:'Fado', team:'g13'}, TEST_PIN, 'dteam0000004');
+  check('nasza grupa w innej pisowni („g13") — pusta, pies nasz', teamOf(env, 6) === '' && P._data[6][14] === '', JSON.stringify(P._data[6]));
+  env.api.addDog({name:'Max', team:'Grupa\u0007 bardzo   długa nazwa ponad limit'}, TEST_PIN, 'dteam0000005');
+  const long = teamOf(env, 7);
+  check('bez znaków sterujących, spacje ujednolicone, najwyżej MAX_LEN.TEAM (20)', long === 'Grupa bardzo długa n', JSON.stringify(long));
+  env.api.addDog({name:'Kropka', team:'G7'}, TEST_PIN, 'dteam0000002');
+  check('powtórka tego samego „Dodaj" (token) nie dokłada psa drugi raz', env.api.getData().dogs.length === 7);
+
+  // edycja: karta sprzed 1.3 nie wysyła grupy — grupa zostaje (inaczej poprawka imienia przenosiłaby psa na naszą listę)
+  env.api.updateDog(4, {name:'Tośka', walks:1}, TEST_PIN);
+  check('edycja bez `team` (karta sprzed 1.3): grupa zostaje', teamOf(env, 4) === 'G7' && P._data[4][1] === 'Tośka');
+  env.api.updateDog(4, {name:'Tośka', team:''}, TEST_PIN);
+  check('edycja z `team` "" — pies wraca do naszej grupy', teamOf(env, 4) === '' && P._data[4][14] === '');
+  env.api.updateDog(4, {name:'Tośka', team:'G9'}, TEST_PIN);
+  check('edycja na nową grupę', teamOf(env, 4) === 'G9');
+  env.api.updateDog(4, {name:'Tośka', team:'g9'}, TEST_PIN);
+  check('jedyny pies grupy może zmienić jej pisownię (siebie nie liczy)', teamOf(env, 4) === 'g9', teamOf(env, 4));
+  env.api.updateDog(5, {name:'Bella', team:'G9'}, TEST_PIN);
+  check('...a kolejny pies tej grupy dostaje pisownię już używaną', teamOf(env, 5) === 'g9', teamOf(env, 5));
+
+  // nocne czyszczenie (closeDogs_) i migrate() na zakładce bez kolumny
+  const n = build([], { sheets: strictDogs([{id:1, name:'Borys', note:'Zdjęcia'}]) });
+  let err = '';
+  try { n.api.endOfDay(); } catch(e) { err = e.message; }
+  check('endOfDay na zakładce sprzed kolumny — bez błędu', !err && n.sheets['Psy']._data[1][9] === '', err);
+  n.api.migrate();
+  const NP = n.sheets['Psy'];
+  check('migrate() dokłada kolumnę grupy psa z nagłówkiem i formatem', NP._data[0][14] === 'grupa_psa' && NP._formats[15] === '@',
+    JSON.stringify(NP._data[0]) + ' ' + NP._formats[15]);
+  const fresh = makeContext({ props: { pin: TEST_PIN } });
+  fresh.api.setup();
+  check('setup() na pustym projekcie — nagłówek grupa_psa', fresh.sheets['Psy']._data[0][14] === 'grupa_psa'
+    && fresh.sheets['Psy']._data[1].length === 15 && fresh.api.getData().dogs.every(d => d.team === ''));
+})();
+
+(function(){
+  console.log('B66: kolumna grupy psa zajęta przez czyjąś inną — psy zostają nasze, zapis grupy daje błąd, nic w połowie');
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys', extra:'G7'}, {id:2, name:'Luna', extra:'kaganiec'}], { head:'uwagi' }) });
+  const P = env.sheets['Psy'];
+  const d = env.api.getData();
+  check('cudza kolumna (nagłówek „uwagi") nie przenosi psów na listę innych grup', d.dogs.every(x => x.team === ''),
+    JSON.stringify(d.dogs.map(x => x.team)));
+  let err = '';
+  try { env.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbusy0000001'); } catch(e) { err = e.message; }
+  check('dodanie psa innej grupy: wyraźny błąd, psa nie ma', /zajęta/.test(err) && env.api.getData().dogs.length === 2, err);
+  err = '';
+  try { env.api.updateDog(2, {name:'Lunka', team:'G7'}, TEST_PIN); } catch(e) { err = e.message; }
+  check('edycja na inną grupę: błąd PRZED zapisem — imię nie zmienione w połowie', /zajęta/.test(err) && P._data[2][1] === 'Luna', err);
+  env.api.updateDog(2, {name:'Lunka', team:''}, TEST_PIN);
+  check('edycja naszego psa działa i nie rusza cudzej kolumny', P._data[2][1] === 'Lunka' && P._data[2][14] === 'kaganiec');
+  env.api.addDog({name:'Rex'}, TEST_PIN, 'dbusy0000002');
+  check('dodanie naszego psa działa', env.api.getData().dogs.length === 3);
+  const log = console.log; let said = '';
+  console.log = s => { said += s; };
+  try { env.api.migrate(); } finally { console.log = log; }
+  check('migrate() nie nadpisuje cudzego nagłówka i mówi o tym', P._data[0][14] === 'uwagi' && /grupa_psa/.test(said), said.slice(0, 120));
+})();
+
+(function(){
+  console.log('B67: „Bierze G7" (markTeam) — spacer bierze grupa psa: tylko wolny bez grupy, idempotentny, nie do Historii');
+  const D = '2026-08-04';
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Tosia', extra:'G7', lastWalk:'2026-07-30'},
+    {id:3, name:'Bella', walks:2, extra:'G7'}, {id:4, name:'Max', extra:'G9'}], { head:'grupa_psa' }) });
+  env.api.markTeam(2, D, 1);
+  const t = slotAt(env, 2, D, 1);
+  check('spacer psa G7: stan „team", kto = grupa z katalogu', t.status === 'team' && t.who === 'G7' && t.time === '', JSON.stringify(t));
+  const rows = openRows(env).length;
+  const again = env.api.markTeam(2, D, 1);
+  check('powtórka niczego nie zmienia i oddaje stan (RETRIABLE)', openRows(env).length === rows && again.slot.status === 'team');
+  check('nasz pies — błąd, spacer wolny', throws(() => env.api.markTeam(1, D, 1)) && slotAt(env, 1, D, 1).status === 'free');
+  env.api.reserve(3, 'Ola', D, 1);
+  const r = env.api.markTeam(3, D, 1);
+  check('zarezerwowany przez nas — zostaje nasz (odpowiedź mówi, jaki jest)', r.slot.status === 'reserved' && slotAt(env, 3, D, 1).who === 'Ola');
+  env.api.markTeam(3, D, 2);
+  check('pies dwuspacerowy: 1/2 nasz, 2/2 bierze G7', slotAt(env, 3, D, 2).status === 'team' && slotAt(env, 3, D, 1).status === 'reserved');
+  env.api.markTeam(2, '2026-08-06', 1);
+  check('z wyprzedzeniem — jak rezerwacja', slotAt(env, 2, '2026-08-06', 1).status === 'team');
+  check('dzień miniony — błąd', throws(() => env.api.markTeam(4, '2026-08-03', 1)));
+  env.api.setGroup(D, ['1:1', '4:1'], 0);
+  env.api.markTeam(4, D, 1);
+  check('spacer w naszej grupie spacerowej — nasz, nie do wzięcia', slotAt(env, 4, D, 1).status === 'free' && slotAt(env, 4, D, 1).group === 1);
+  env.api.setGroup(D, ['1:1', '4:1', '2:1'], 1);
+  check('wzięty przez grupę psa nie dołącza do spaceru grupowego', slotAt(env, 2, D, 1).group === 0 && slotAt(env, 1, D, 1).group === 1,
+    JSON.stringify(slotAt(env, 2, D, 1)));
+  env.api.setFree(2, D, {status:'reserved', who:'Ola'}, 1);
+  check('„Cofnij" z innym widzianym stanem nie zwalnia', slotAt(env, 2, D, 1).status === 'team');
+  env.api.setFree(2, D, {status:'team', who:'G7'}, 1);
+  check('„Cofnij" z widzianym stanem — spacer znów wolny', slotAt(env, 2, D, 1).status === 'free');
+  env.api.markTeam(2, D, 1);
+  env.api.markWalked(3, 'Ola', 1, D);
+
+  env.setNow('2026-08-04T22:30:00+02:00');          // po godzinie czyszczenia: 4.08 minął, ale jeszcze niezamknięty
+  const open = env.api.getHistoryDays(D, D).history;
+  check('podgląd dnia jeszcze niezamkniętego: tylko nasz spacer (Bella z Olą)', open.length === 1 && open[0].who === 'Ola',
+    JSON.stringify(open));
+  env.api.endOfDay();
+  const h = hist(env);
+  check('Historia: nasz spacer z psem G7 jest, spacery wzięte przez G7 — nie', h.length === 1 && h[0][1] === 'Bella' && h[0][2] === 'Ola',
+    JSON.stringify(h));
+  check('...ale to spacer psa: ostatni_spacer Tosi = 4.08 (bez „bez spaceru od…")', env.sheets['Psy']._data[2][8] === D,
+    JSON.stringify(env.sheets['Psy']._data[2]));
+  check('wiersze zamkniętego dnia znikają z Spacery, przyszły „bierze" zostaje',
+    openRows(env).every(x => x[0] !== D) && slotAt(env, 2, '2026-08-06', 1).status === 'team');
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

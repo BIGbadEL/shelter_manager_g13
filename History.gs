@@ -181,7 +181,7 @@ function endOfDay() {
 }
 
 /**
- * Zamyka spacery zakładki Spacery spełniające `match`: odbyte trafiają do Historii
+ * Zamyka spacery zakładki Spacery spełniające `match`: odbyte (nasze) trafiają do Historii
  * pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania, który dzień właśnie
  * się skończył. Pies na dwa spacery daje dwa wpisy. Wpis niesie numer grupy dnia
  * (podgląd minionego dnia pokazuje, kto szedł razem) i numer psa z katalogu w tej chwili.
@@ -201,10 +201,12 @@ function closeWalks_(match) {
     const s = mapSlotRow_(r);
     if (!isDate_(s.date) || !(s.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
     if (!match(s)) { keep.push(r); return; }
-    if (s.status !== STATUS.WALKED) return;            // rezerwacja, z której nic nie wyszło — przepada
+    if (!slotDone_(s)) return;                         // rezerwacja, z której nic nie wyszło — przepada
+    if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
+    // spacer wzięty przez grupę psa (1.3) to spacer psa, ale nie nasz: do Historii i maila nie idzie
+    if (s.status === STATUS.TEAM) return;
     toHist.push({ row: [s.date, labels[s.dogId] || ('Pies ' + s.dogId), s.who, s.time, s.group || '', idents[s.dogId] || ''],
                   slot: s.slot });
-    if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
   });
   if (keep.length === rows.length) return lastWalk;
 
@@ -232,7 +234,8 @@ function closeDogs_(current, lastWalk) {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return;
-  const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
+  const width = dogWidth_(sh);   // zakładka sprzed kolumny grupy psa bywa węższa niż DOG_WIDTH
+  const vals = sh.getRange(2, 1, last - 1, width).getValues();
   vals.forEach(r => {
     const lw = lastWalk[Number(r[DOG.ID - 1])];
     if (lw && lw > cellDate_(r[DOG.LAST_WALK - 1])) r[DOG.LAST_WALK - 1] = lw;
@@ -242,7 +245,7 @@ function closeDogs_(current, lastWalk) {
       r[DOG.NOTE_UNTIL - 1] = '';
     }
   });
-  sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
+  sh.getRange(2, 1, vals.length, width).setValues(vals);
 }
 
 function clearDoneTasks_() {

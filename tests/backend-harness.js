@@ -230,7 +230,7 @@ function makeContext(opts){
                           isDate_, posInt_, volNorm_, volAssign_, readSlots_, walksSheet_, trimSlots_,
                           pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
                           sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState,
-                          doGet, reportDiag, diagServer_, diagBytes_, diagCaller_ };
+                          doGet, reportDiag, diagServer_, diagBytes_, diagCaller_, dogTeam_, markTeam };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES };
