@@ -725,7 +725,7 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
-  (merge `7546154`, 2026-10-03).
+  (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08).
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -839,8 +839,20 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja 1.1.2 (PR #4, `e0df6c8`, merge `7546154`) od 2026-10-03, 17:58 — wdrożenie
-  @19.** Pełna Historia dostaje wiersze, e-mail z listą psów dla schroniska (przycisk w minionym
+- **Produkcja: wersja 1.2 (PR #5, `0ae939a`, merge `7cbd870`) od 2026-10-08, 17:12 — wdrożenie @20.**
+  Zarządzanie aplikacją: ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik
+  spowolnień, przegląd kodu (README, changelog 1.2). Arkusz bez nowych kolumn; nowe właściwości powstają
+  przy pierwszym zapisie. PR #5 na GitHubie ma stan „Closed", nie „Merged" — GitHub długo pokazywał w nim
+  stary commit, więc merge poszedł lokalnie (`7cbd870`, ta sama treść co `release/1.2`), a PR zamknął się
+  sam po pushu `main`. **Po wdrożeniu, do zrobienia przez właściciela:** `authorizeWhatsApp()` w edytorze
+  produkcji (dopiero gdy ankieta ma działać na produkcji — strona i reszta działają bez tego), po 18:00
+  rzut oka w Wykonania, czy `endOfDay` przeszedł na 1.2; ankieta na produkcji — właściwości `greenApi*`,
+  informacja dla grupy, że nowe konto to automat przez zewnętrzną usługę, wyłączenie w konsoli Green API
+  powiadomień o wiadomościach przychodzących, najpierw grupa próbna i „Wyślij teraz", potem „Grafik".
+  Poprzednia to 1.1.2 = @19 = `e0df6c8` (gałąź `release/1.1.2`) — do niej się cofa zwykłym `deploy:prod`
+  z tej gałęzi; wyzwalacz `sendWeeklyPoll` (jeśli założony) usunąć ręcznie, otwarte karty przeładować.
+- Wersja 1.1.2 (PR #4, `e0df6c8`, merge `7546154`) od 2026-10-03, 17:58 — wdrożenie
+  @19. Pełna Historia dostaje wiersze, e-mail z listą psów dla schroniska (przycisk w minionym
   dniu, treść w panelu). Arkusz bez nowych kolumn; właściwość `mailTemplate` powstaje dopiero przy
   zapisie z panelu. **Czyszczenie na produkcji jest od 2026-10-03 o 18:00** (ustawione w panelu,
   wcześniej 19:00) — okno bez wdrożeń to teraz 18:00–18:59. Poprzednia to 1.1.1 = @18 = `985dc1a`
