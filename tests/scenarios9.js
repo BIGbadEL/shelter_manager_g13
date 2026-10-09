@@ -59,8 +59,9 @@ const data    = env => Object.assign({dogs:[dogFree()], tasks:[], today:'2026-09
   app.seed(data('prod'));
   check('po danych z produkcji nadal schowany', !visible(app));
 
-  // ...a kolejne odświeżenia nie mogą go zapalić
-  app.window.document.dispatchEvent(new app.window.Event('visibilitychange'));
+  // ...a kolejne odświeżenia nie mogą go zapalić (wprost refresh(): powrót do karty od 1.3 nie odświeża
+  // tuż po poprzednim odczycie — S138)
+  app.window.eval('refresh()');
   const job = app.pending[app.pending.length-1];
   check('poszło odświeżenie', job && job.fn==='getData', app.pending.map(p=>p.fn).join(','));
   app.respondNext(data('prod'));

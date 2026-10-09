@@ -25,11 +25,14 @@
    *              stała, od diagFreeze; wysyłka do serwera najczęściej co diagSend; diagBeat — co ile
    *              zegar sprawdza, czy strona żyje,
    *   refresh  — odświeżanie listy z serwera (getData) co tyle,
-   *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać.
+   *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać
+   *              (20 s, nie 60 — 1.3: zastój Google dotyka pojedynczego wykonania, równoległe idą po 1,5 s,
+   *              więc drugi odczyt prawie zawsze przechodzi; dziennik wykonań produkcji 2–9.10.2026),
+   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle.
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
     diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
-    refresh:15000, readStale:60000 }, window.__G13_TIMING || {});
+    refresh:15000, readStale:20000, wake:15000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -56,6 +59,9 @@
     pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
     pollChats:null,        // grupy konta bota z bramki („Pobierz grupy"): [{id, name}]; null = jeszcze nie pobrane
     pollChatsLoading:false,
+    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatId, chatName, enabled}
+    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{id, name, phone}]; null = jeszcze nie pobrane
+    dayReportContactsLoading:false,
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -75,6 +81,40 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function dogLabel(d){ return d.name || (d.ident ? '#'+d.ident : 'Pies '+d.id); }
   function findDog(id){ return state.dogs.find(x=>x.id===id); }
+
+  /* ---------- grupa psa (1.3) ----------
+     Pomagamy wyprowadzać psy innych grup wolontariuszy; żeby zapisy szły przez aplikację, stoją
+     w naszym katalogu z grupą (`team`, kolumna `grupa_psa`). '' = nasza grupa (HOME_TEAM — ta sama
+     stała w Config.gs). Na liście dnia to osobna lista pod naszą, sortowana osobno (SORTING.md). */
+  const HOME_TEAM = 'G13';
+  const TEAM_MAX = 20;                              // tyle, ile MAX_LEN.TEAM w Config.gs
+  const TEAM_NEW = '__new';                         // „Inna grupa…" na liście wyboru — pokazuje pole do wpisania
+  const OTHERS_TITLE = 'Psy innych grup';           // nagłówek drugiej listy dnia
+  function teamKey(t){ return String(t==null?'':t).replace(/\s+/g,'').toLowerCase(); }
+  /** Ta sama reguła co dogTeam_ na serwerze: nasza grupa (w dowolnej pisowni) = '', znana — w znanej pisowni. */
+  function teamClean(v, known){
+    const s = String(v==null?'':v).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0, TEAM_MAX).trim();
+    const k = teamKey(s);
+    if(!k || k === teamKey(HOME_TEAM)) return '';
+    return (known || []).filter(t => teamKey(t) === k)[0] || s;
+  }
+  /** Pies innej grupy. Serwer sprzed 1.3 nie przysyła `team` — wtedy każdy pies jest nasz. */
+  function isOther(dog){ return !!(dog && teamClean(dog.team)); }
+  /**
+   * Grupy psów z katalogu, bez naszej, po kolei („G7" przed „G10") — do wyboru w formularzach.
+   * Raz wpisana grupa jest tu, dopóki ma choć jednego psa. `exceptId` — bez tego psa (pisownia
+   * przy zapisie poprawianego psa, jak knownTeams_ na serwerze).
+   */
+  function knownTeams(exceptId){
+    const out = [], seen = new Set();
+    state.dogs.forEach(d => {
+      const t = teamClean(d.team);
+      if(!t || d.id === exceptId || seen.has(teamKey(t))) return;
+      seen.add(teamKey(t)); out.push(t);
+    });
+    return out.sort((a, b) => a.localeCompare(b, 'pl', {numeric:true}));
+  }
+
   /**
    * Napis na przycisku „spacer odbyty" — jedno miejsce dla kafelka, pól 1/2 i 2/2 i grupy.
    * Krótki, bo wiersz spaceru (opiekun + ten przycisk + „Zwolnij") ma się mieścić w jednej
@@ -97,7 +137,12 @@
   }
   /** Numer grupy: dodatnia liczba całkowita albo 0 (jak posInt_ na serwerze) — 1.5 wywracało rysowanie. */
   function posInt(v){ const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 0; }
-  function hasState(s){ return s.status==='reserved' || s.status==='walked' || s.group > 0; }
+  function hasState(s){ return s.status==='reserved' || s.status==='walked' || s.status==='team' || s.group > 0; }
+  /**
+   * Spacer załatwiony: odbyty przez nas albo wzięty przez grupę psa ('team', „Bierze G7" — 1.3;
+   * jak slotDone_ na serwerze). Dla listy jedno i drugie znaczy „ten pies już nie czeka".
+   */
+  function isDone(s){ return s.status==='walked' || s.status==='team'; }
   /** Ile spacerów ma pies danego dnia — jak slotCount_ na serwerze (dalszy spacer ze stanem zostaje widoczny). */
   function slotCount(dog, date){
     let n = dog.walks===2 ? 2 : 1;
@@ -131,7 +176,7 @@
     for(const k in state.slots){
       const p = k.split('|'), s = state.slots[k], key = p[0]+'|'+p[1], m = Number(p[2]);
       if(hasState(s) && m > (count.get(key) || 0)) count.set(key, m);
-      if(s.status==='walked' && isPast(p[0]) && p[0] > (lastWalk.get(p[1]) || '')) lastWalk.set(p[1], p[0]);
+      if(isDone(s) && isPast(p[0]) && p[0] > (lastWalk.get(p[1]) || '')) lastWalk.set(p[1], p[0]);
     }
     slotMemo = {count, lastWalk};
     try{ return fn(); } finally{ slotMemo = null; }
@@ -357,6 +402,8 @@
     for(const r of readsInFlight) if(now - r.at < T.readStale) return true;
     return false;
   }
+  /** Kiedy poszedł ostatni odczyt (refresh) — powrót do karty nie dokłada odczytu tuż po poprzednim (T.wake). */
+  let lastReadAt = 0;
   let beatAt = Date.now(), diagSendAt = Date.now();
   /**
    * Co sekundę: czy zegar się nie spóźnił (spóźnia się, gdy przeglądarka nie wykonuje skryptu —
@@ -438,7 +485,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -644,6 +691,7 @@
   function refresh(){
     if(isSending() || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
     const seq = writeSeq;
+    lastReadAt = Date.now();
     // dziennik spowolnień: odczyt wolny, nieudany albo bez odpowiedzi (diagTick)
     const read = { at: Date.now(), noted: false };
     readsInFlight.add(read);
@@ -766,16 +814,17 @@
    * Tu powstaje klucz bez kryterium 5 — to jedno zależy od innych kafelków dnia.
    */
   function tileKey(t){
-    return [ t.slots.every(s => s.status==='walked') ? 1 : 0,
+    return [ t.slots.every(isDone) ? 1 : 0,
              t.slots.some(s => s.status==='free') ? 0 : 1,
              -(t.dog.walks===2 ? 2 : 1),
-             t.all.filter(s => s.status==='walked').length,
+             t.all.filter(isDone).length,
              t.idx,
              t.slots[0].n ];
   }
   function cmpKey(a, b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]-b[i]; } return 0; }
   function refOf(t, s){ return t.dog.id+'.'+s.n; }
-  function blockOf(t){ return t.gid ? 'g'+t.gid : t.id; }
+  /** Grupa z psami z obu list to dwa bloki: część na naszej liście, część na liście innych grup. */
+  function blockOf(t){ return t.gid ? 'g'+t.gid+(isOther(t.dog) ? 'o' : '') : t.id; }
 
   /**
    * Opiekun kafelka: jedna osoba, która ma wszystkie jego zarezerwowane spacery, a na kafelku całym
@@ -785,8 +834,8 @@
    */
   function ownerOf(t){
     if(t.gid) return '';
-    const done = t.slots.every(s => s.status==='walked');
-    const who = new Set(t.slots.filter(s => s.status===(done ? 'walked' : 'reserved')).map(s => volNorm(s.who)));
+    const done = t.slots.every(isDone);
+    const who = new Set(t.slots.filter(s => done ? isDone(s) : s.status==='reserved').map(s => volNorm(s.who)));
     return who.size === 1 ? [...who][0] : '';
   }
 
@@ -813,10 +862,18 @@
   }
 
   /**
-   * Kolejność spacerów policzona od nowa: bloki (kafelek główny albo cała grupa) po kluczu
-   * swojego najpilniejszego kafelka, w bloku kafelki po własnym kluczu (rankKeys).
+   * Kolejność spacerów policzona od nowa. Dwie listy, każda sortowana osobno, jakby drugiej nie
+   * było (decyzja właściciela, 1.3): nasze psy — nawet wszystkie odbyte — zawsze nad psami innych
+   * grup, a pies innej grupy — nawet czekający na chętnego — nigdy na naszej liście.
    */
   function sortedRefs(tiles){
+    return sortedSide(tiles.filter(t => !isOther(t.dog))).concat(sortedSide(tiles.filter(t => isOther(t.dog))));
+  }
+  /**
+   * Jedna lista: bloki (kafelek główny albo cała grupa) po kluczu swojego najpilniejszego kafelka,
+   * w bloku kafelki po własnym kluczu (rankKeys).
+   */
+  function sortedSide(tiles){
     const keys = rankKeys(tiles), blocks = new Map();
     tiles.forEach(t => {
       const b = blockOf(t), k = keys.get(t), cur = blocks.get(b);
@@ -829,11 +886,17 @@
     return out;
   }
 
-  /** Zamrożona kolejność dopasowana do tego, co dziś istnieje: znikłe wypadają, nowe na koniec. */
+  /**
+   * Zamrożona kolejność dopasowana do tego, co dziś istnieje: znikłe wypadają, nowe na koniec swojej
+   * listy. Granica list obowiązuje zawsze, także w zamrożeniu: pies przeniesiony do innej grupy
+   * (zmiana w panelu, odświeżenie) przechodzi na drugą listę od razu, jak pies dodany albo usunięty.
+   */
   function effectiveOrder(fresh){
     const have = new Set(fresh), seq = order.filter(r => have.has(r)), got = new Set(seq);
     fresh.forEach(r => { if(!got.has(r)) seq.push(r); });
-    return seq;
+    const other = new Set(state.dogs.filter(isOther).map(d => String(d.id)));
+    const side = r => other.has(r.split('.')[0]);
+    return seq.filter(r => !side(r)).concat(seq.filter(side));
   }
   function sameSeq(a, b){ if(a.length!==b.length) return false; for(let i=0;i<a.length;i++) if(a[i]!==b[i]) return false; return true; }
 
@@ -879,11 +942,12 @@
     d.seq.forEach(r => {
       const t = tileOf.get(r);
       if(!t || seen.has(blockOf(t))) return;
-      seen.add(blockOf(t));
-      if(!t.gid){ items.push({kind:'tile', tiles:[t]}); return; }
-      const members = tiles.filter(x => x.gid===t.gid)
+      const b = blockOf(t), other = isOther(t.dog);
+      seen.add(b);
+      if(!t.gid){ items.push({kind:'tile', other, tiles:[t]}); return; }
+      const members = tiles.filter(x => blockOf(x)===b)
         .sort((x,y) => pos.get(refOf(x, x.slots[0])) - pos.get(refOf(y, y.slots[0])));
-      items.push({kind:'group', gid:t.gid, tiles:members});
+      items.push({kind:'group', gid:t.gid, other, tiles:members});
     });
     return {items, moved:d.moved};
   }
@@ -906,7 +970,7 @@
   let fingerDown = null;                       // ostatnie przyłożenie palca: {at, version}
 
   function sigOf(items){
-    return items.map(it => it.tiles.map(t => t.id + ':' + t.slots.map(s => s.n).join('')).join('+')).join(',');
+    return items.map(it => (it.other ? 'o' : '') + it.tiles.map(t => t.id + ':' + t.slots.map(s => s.n).join('')).join('+')).join(',');
   }
   function noteLayout(items, cause){
     const sig = sigOf(items);
@@ -920,7 +984,7 @@
     if(prev && prev.html === clean) return;
     tileSeen[id] = {html:clean, at: prev ? Date.now() : 0, cause};
   }
-  const GUARDED = new Set(['reserve','confirm','walk','free']);
+  const GUARDED = new Set(['reserve','confirm','walk','free','team']);
   function tapRefused(e, btn){
     if(!(e.detail > 0) || !fingerDown || Date.now() - fingerDown.at > 1500) return false;
     if(!GUARDED.has(btn.dataset.act)) return false;
@@ -1053,8 +1117,7 @@
       li.outerHTML = html;
       noteTile(t.id, html, cause);
     }
-    const cnt = viewEl.querySelector('.count');
-    if(cnt) cnt.innerHTML = countLine();
+    patchCounts();
     invalidateHtml();
     updateBusy();
   }
@@ -1108,7 +1171,7 @@
     for(const k in state.slots){
       const p = k.split('|');                      // data|pies|spacer
       if(Number(p[1])!==dog.id || !isPast(p[0])) continue;
-      if(state.slots[k].status==='walked' && p[0] > last) last = p[0];
+      if(isDone(state.slots[k]) && p[0] > last) last = p[0];
     }
     return last;
   }
@@ -1121,7 +1184,7 @@
    */
   function missBadge(dog){
     if(state.date!==state.bizDate) return '';
-    if(slotsOf(state.date, dog).some(s => s.status==='walked')) return '';   // dziś już wyszedł
+    if(slotsOf(state.date, dog).some(isDone)) return '';   // dziś już wyszedł (z nami albo ze swoją grupą)
     const last = lastWalkOf(dog);
     if(!last || !state.bizDate) return '';
     const n = dayDiff(last, state.bizDate);
@@ -1141,6 +1204,8 @@
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
     const pills=[];
+    const team = teamPill(dog);
+    if(team) pills.push(team);
     const miss = t.full ? missBadge(dog) : '';
     if(miss) pills.push(miss);
     if(!bits.length && !pills.length) return '';
@@ -1285,6 +1350,7 @@
           <input type="text" data-ef="box" maxlength="20" value="${esc(dog.box)}" placeholder="Boks">
           <select data-ef="dif">${opts}</select>
         </div>
+        ${teamField('data-ef="team"', 'data-ef="teamNew"', teamClean(dog.team), '')}
         <div class="adminrow">
           <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka (np. zdjęcia o 12:00)">
         </div>
@@ -1326,7 +1392,7 @@
     const one = t.slots.length === 1 ? t.slots[0] : null;
     const pending = t.slots.some(s => isPending(keySlot(dog.id, s.n, state.date)));
     const label = esc(dogLabel(dog)) + (pending ? ' <span class="saving" title="zapisuję…"></span>' : '');
-    const allDone = t.slots.every(s => s.status==='walked');
+    const allDone = t.slots.every(isDone);
     const badge = one && count > 1 ? ` <span class="slotno">${one.n}/${count}</span>` : '';
     const resv = one && count === 1 && one.status==='reserved' ? `\n          <span class="resv-pill">zarezerwowany</span>` : '';
     const pk = pickBits(t);
@@ -1342,6 +1408,18 @@
         <div class="row"><span class="name${allDone?' done':''}">${label}</span>${badge}${resv}<span class="flex"></span>${difChipHtml(dm)}</div>
         ${dogMeta(dog, t)}${dogNote(dog)}
         ${fields}${pk.box}</li>`;
+  }
+
+  /**
+   * Grupa psa innej grupy — plakietka „grupa G7" w linijce z numerem i boksem (decyzja właściciela,
+   * wersja D z czterech makiet): linijka imienia zostaje jak na naszej liście, więc długie imię
+   * z „zarezerwowany" i trudnością nie wypycha niczego za kafelek. Na pełnym kafelku (lista innych
+   * grup) i w katalogu; nasze psy — nic. Kafelek odłączony (spacer w grupie, jeden wiersz) jej nie
+   * ma, jak numeru i boksu — są na pełnym kafelku psa.
+   */
+  function teamPill(dog){
+    const t = teamClean(dog.team);
+    return t ? `<span class="teampill">grupa ${esc(t)}</span>` : '';
   }
 
   /** Imię wolontariusza w kapsułce jego koloru dnia (patrz volColor). Samo imię zostaje tekstem. */
@@ -1360,7 +1438,11 @@
   function slotParts(dog, s){
     const at = `data-id="${dog.id}" data-slot="${s.n}"`;
     if(s.status==='free'){
-      return {line: `<button class="btn reserve" data-act="reserve" ${at}>Zarezerwuj</button>`,
+      // pies innej grupy: „Bierze G7" — wyprowadza go jego grupa (1.3). Nie przy spacerze w naszej
+      // grupie spacerowej (ten jest nasz) i nie na kafelku odłączonym (to zawsze spacer w grupie)
+      const team = isOther(dog) && !s.group ? teamClean(dog.team) : '';
+      return {line: `<button class="btn reserve" data-act="reserve" ${at}>Zarezerwuj</button>`
+          + (team ? `<button class="btn theirs" data-act="team" ${at}>Bierze ${esc(team)}</button>` : ''),
         after: `<div class="entry hidden" data-entry="${dog.id}" data-slot="${s.n}">
           <input type="text" maxlength="40" placeholder="Twoje imię" data-input="${dog.id}" data-slot="${s.n}">
           <button class="btn reserve" data-act="confirm" ${at}>OK</button>
@@ -1379,6 +1461,11 @@
       }
       return {line: `<span class="who">${volChip(s.who)}</span>
           <span class="acts">${walkBtn}<button class="btn ghost" data-act="free" ${at}>Zwolnij</button></span>`, after: wait};
+    }
+    if(s.status==='team'){
+      // wzięty przez grupę psa: nie nasz spacer, bez koloru wolontariusza — „Cofnij" go zwalnia
+      return {line: `<span class="who"><span class="teamdone">✓ ${esc(s.who)}</span></span>
+        <button class="btn ghost spacer" data-act="free" ${at}>Cofnij</button>`, after: ''};
     }
     return {line: `<span class="who">${volChip(s.who, '✓ ') || '✓'}</span>
         <button class="btn ghost spacer" data-act="free" ${at}>Cofnij</button>`, after: ''};
@@ -1409,7 +1496,7 @@
     const bits=[];
     if(dog.ident) bits.push(`nr ${esc(dog.ident)}`);
     if(dog.box)   bits.push(`boks ${esc(dog.box)}`);
-    const pill = dog.walks===2 ? `<span class="twice">🐾 2 spacery dziennie</span>` : '';
+    const pill = teamPill(dog) + (dog.walks===2 ? `<span class="twice">🐾 2 spacery dziennie</span>` : '');
     const meta = (pill || bits.length)
       ? `<div class="dogmeta">${pill}${pill&&bits.length?' ':''}${bits.join(' · ')}</div>` : '';
     return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
@@ -1466,10 +1553,10 @@
   function renderAddingDog(a){
     const dm=DIF[a.dif]||DIF.easy;
     if(a.failed) return `<li class="dog adding failed" data-act="reAddDog" data-token="${esc(a.token)}" style="border-left-color:${dm.color}">
-      <div class="row"><span class="name">${esc(dogLabel(a))}</span><span class="flex"></span><span class="addnote">nie dodano</span></div>
+      <div class="row"><span class="name">${esc(dogLabel(a))}</span>${teamPill(a)}<span class="flex"></span><span class="addnote">nie dodano</span></div>
       <div class="addhint">Zapis nie przeszedł — stuknij, żeby wpisać go ponownie.</div></li>`;
     return `<li class="dog adding" style="border-left-color:${dm.color}">
-      <div class="row"><span class="name">${esc(dogLabel(a))} <span class="saving" title="zapisuję…"></span></span>
+      <div class="row"><span class="name">${esc(dogLabel(a))} <span class="saving" title="zapisuję…"></span></span>${teamPill(a)}
         <span class="flex"></span><span class="addnote">dodaję…</span></div></li>`;
   }
 
@@ -1477,8 +1564,8 @@
      Wartości pól „Dodaj psa" i „Nowe zadanie" żyją w stanie (state.form), nie tylko w DOM:
      przerysowanie katalogu (odpowiedź serwera, odświeżenie, gdy palec akurat nie jest w polu)
      wymieniało formularz na pusty, a wybrany dzień zadania wracał po cichu na bieżący. */
-  const FORM_FIELDS = ['newName','newIdent','newBox','newDif','newTask','newTaskDate'];
-  const DOG_FORM = ['newName','newIdent','newBox','newDif'];
+  const FORM_FIELDS = ['newName','newIdent','newBox','newDif','newTeam','newTeamName','newTask','newTaskDate'];
+  const DOG_FORM = ['newName','newIdent','newBox','newDif','newTeam','newTeamName'];
   function formVal(id, def){ const v = state.form[id]; return v === undefined ? (def || '') : v; }
 
   function renderAdminAddBox(){
@@ -1493,9 +1580,34 @@
       <div class="adminrow" style="margin-top:7px">
         <input type="text" id="newBox" maxlength="20" placeholder="Boks" value="${esc(formVal('newBox'))}">
         <select id="newDif">${opt('easy','łatwy')}${opt('med','wymagający')}${opt('hard','b. wymagający')}</select>
+      </div>
+      ${teamField('id="newTeam"', 'id="newTeamName"', formVal('newTeam'), formVal('newTeamName'))}
+      <div class="adminrow" style="margin-top:7px">
         <button class="btn add-btn" data-act="add">Dodaj</button>
       </div>
     </div>`;
+  }
+
+  /**
+   * Grupa psa w formularzu (dodanie i edycja): nasza (domyślnie), jedna z grup psów z katalogu albo
+   * „Inna grupa…" z polem do wpisania — raz wpisana grupa jest potem na liście (knownTeams).
+   * `sel` — wybrana pozycja ('' = nasza, TEAM_NEW = wpisywana), `typed` — wpisana nazwa.
+   */
+  function teamField(selAttr, newAttr, sel, typed){
+    const teams = knownTeams();
+    if(sel && sel !== TEAM_NEW && teams.indexOf(sel) < 0) sel = '';   // grupa bez psów zniknęła z listy
+    const opt = (v, label) => `<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(label)}</option>`;
+    return `<div class="adminrow teamrow">
+        <span class="teamlbl">Grupa</span>
+        <select ${selAttr}>${opt('', HOME_TEAM + ' (nasza)')}${teams.map(t => opt(t, t)).join('')}${opt(TEAM_NEW, 'Inna grupa…')}</select>
+        <input type="text" ${newAttr} maxlength="${TEAM_MAX}" placeholder="Nazwa grupy, np. G7" value="${esc(typed)}"
+               class="${sel===TEAM_NEW?'':'hidden'}">
+      </div>`;
+  }
+  /** Grupa wybrana w formularzu: null — „Inna grupa…" bez nazwy (zapis nie idzie), inaczej '' albo nazwa. */
+  function teamPicked(sel, typed, exceptId){
+    if(sel === TEAM_NEW && !teamKey(typed)) return null;
+    return teamClean(sel === TEAM_NEW ? typed : sel, knownTeams(exceptId));
   }
 
   /**
@@ -1505,7 +1617,7 @@
    * te same dane = to samo dodanie (pies mógł powstać, a zaginęła tylko odpowiedź), inne = nowy pies.
    * Zaczyna się literą — w JSON-ie na serwerze klucz z samych cyfr zmieniłby kolejność (przycinanie).
    */
-  function dogSig(f){ return [f.name, f.ident, f.box, f.dif].join('\u0001'); }
+  function dogSig(f){ return [f.name, f.ident, f.box, f.dif, f.team || ''].join('\u0001'); }
   function addDogToken(f){
     const t = state.form.addToken;
     if(t && t.sig === dogSig(f)) return t.token;
@@ -1528,6 +1640,9 @@
       if(state.adding.some(x => !x.done && !x.failed)) return;
       toast('Podaj imię lub nr identyfikacyjny'); document.getElementById('newName').focus(); return;
     }
+    const sel = document.getElementById('newTeam');
+    f.team = sel ? teamPicked(sel.value, v('newTeamName')) : '';
+    if(f.team === null){ toast('Wpisz nazwę grupy'); document.getElementById('newTeamName').focus(); return; }
     const a = Object.assign({token: addDogToken(f), done:false, failed:false}, f);
     DOG_FORM.concat('addToken').forEach(id => { delete state.form[id]; });
     state.adding.push(a);
@@ -1552,7 +1667,9 @@
   function dogFormEmpty(){ return !['newName','newIdent','newBox'].some(id => String(state.form[id] || '').trim()); }
   /** Dane psa z powrotem w formularzu — z tym samym tokenem: te same dane to wciąż to samo dodanie. */
   function fillDogForm(a){
+    const known = !a.team || knownTeams().indexOf(a.team) >= 0;
     Object.assign(state.form, {newName:a.name, newIdent:a.ident, newBox:a.box, newDif:a.dif,
+                               newTeam: known ? (a.team || '') : TEAM_NEW, newTeamName: known ? '' : a.team,
                                addToken:{token:a.token, sig:dogSig(a)}});
   }
   /** Stuknięcie w „nie dodano": dane wracają do formularza, jeśli nie stoi w nim inny pies. */
@@ -1565,11 +1682,19 @@
     render('self');
   }
 
-  /** Podsumowanie nad listą (liczone w spacerach) — osobno, bo podmieniamy je też przy patchDog(). */
-  function countLine(){
-    const c = {free:0, reserved:0, walked:0};
-    state.dogs.forEach(d => slotsOf(state.date, d).forEach(s => { c[s.status] = (c[s.status] || 0) + 1; }));
-    return `<b>${c.reserved}</b> zarezerwowane · <b>${c.walked}</b> wyprowadzone · <b>${c.free}</b> wolne`;
+  /**
+   * Podsumowanie nad listą (liczone w spacerach) — osobno, bo podmieniamy je też przy patchDog().
+   * Każda lista liczy swoje psy: `other` — lista innych grup, inaczej nasza.
+   */
+  function countLine(other){
+    const c = {free:0, reserved:0, walked:0, team:0};
+    state.dogs.forEach(d => { if(isOther(d) === !!other) slotsOf(state.date, d).forEach(s => { c[s.status] = (c[s.status] || 0) + 1; }); });
+    return `<b>${c.reserved}</b> zarezerwowane · <b>${c.walked}</b> wyprowadzone`
+      + (c.team ? ` · <b>${c.team}</b> u swojej grupy` : '') + ` · <b>${c.free}</b> wolne`;
+  }
+  /** Linijki podsumowania obu list po patchDog — lista innych grup ma swoją pod nagłówkiem. */
+  function patchCounts(){
+    viewEl.querySelectorAll('.count[data-list]').forEach(el => { el.innerHTML = countLine(el.dataset.list === 'other'); });
   }
 
   /**
@@ -1594,13 +1719,24 @@
         <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
       </div>
       ${top}
-      <div class="count">${countLine()}</div>
+      <div class="count" data-list="home">${countLine(false)}</div>
       <ul>`;
-    lay.items.forEach(it => it.tiles.forEach(t => {
-      const h = renderTile(t);
-      noteTile(t.id, h, why);
-      html += h;
-    }));
+    let other = false;
+    lay.items.forEach(it => {
+      if(it.other && !other){
+        // lista innych grup: pod naszą, z nagłówkiem i własnym podsumowaniem (sortowana osobno — sortedRefs)
+        other = true;
+        html += `</ul>
+      <div class="others"><h2>${OTHERS_TITLE}</h2>
+        <div class="count" data-list="other">${countLine(true)}</div></div>
+      <ul class="others-list">`;
+      }
+      it.tiles.forEach(t => {
+        const h = renderTile(t);
+        noteTile(t.id, h, why);
+        html += h;
+      });
+    });
     return html + `</ul>`;
   }
 
@@ -1714,7 +1850,7 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>${d && d.poll ? renderPollBox(d.poll) : ''}` : '';
+      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}` : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -2051,6 +2187,94 @@
     state.diag.poll = Object.assign({}, panel, {state: panel.state || (prev && prev.state) || null});
   }
 
+  /* ---------- lista dnia do prowadzącej na WhatsAppie (1.3) ----------
+     Po nocnym czyszczeniu bot wysyła prowadzącej treść „📋 Skopiuj treść" każdego domkniętego dnia ze
+     spacerami (serwer: dayReportText_ — ta sama reguła co mailText, S139). Ustawienia jak ankieta: szkic
+     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty"). */
+  const DAY_REPORT_FIELDS = ['reportChat','reportEnabled'];
+  function dayReportSaved(){
+    const s = (state.diag && state.diag.dayReport && state.diag.dayReport.settings) || {};
+    return {chatId: s.chatId || '', chatName: s.chatName || '', enabled: !!s.enabled};
+  }
+  function dayReportForm(){ return state.dayReportDraft || dayReportSaved(); }
+  function dayReportDirty(){ return !!state.dayReportDraft && JSON.stringify(state.dayReportDraft) !== JSON.stringify(dayReportSaved()); }
+  /** Te same reguły co setDayReportSettings na serwerze — komunikat od razu. '' = w porządku. */
+  function dayReportProblem(f, configured){
+    if(f.enabled && !f.chatId) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
+    if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
+    return '';
+  }
+  /** Pola panelu -> szkic. Nazwa kontaktu z wybranej pozycji (bez numeru — numer jest w opisie pozycji). */
+  function readDayReportForm(){
+    const chat = viewEl.querySelector('#reportChat'), en = viewEl.querySelector('#reportEnabled');
+    const opt = chat && chat.selectedIndex >= 0 ? chat.options[chat.selectedIndex] : null;
+    return {chatId: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
+  }
+  function showDayReportDirty(){
+    const d = dayReportDirty();
+    viewEl.querySelectorAll('.reportdirty, [data-act="reportReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    invalidateHtml();
+  }
+  function renderDayReportBox(r){
+    const f = dayReportForm(), s = r.settings;
+    const list = (state.dayReportContacts || []).slice();
+    if(f.chatId && !list.some(c => c.id === f.chatId)) list.unshift({id: f.chatId, name: f.chatName || f.chatId, phone: '+' + f.chatId.split('@')[0]});
+    const opts = (f.chatId ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + list.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    const dirty = dayReportDirty();
+    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || s.chatId)}.`
+      : 'Wysyłanie po czyszczeniu jest wyłączone.';
+    const L = r.last;
+    const last = !L ? ''
+      : L.ok ? `<div class="hint">Ostatnia: lista z ${esc(plDate(L.day))} — wysłana ${esc(L.at)}${L.chatName ? ' do ' + esc(L.chatName) : ''}${L.manual ? ' (ręcznie)' : ''}.</div>`
+      : L.unknown ? `<div class="hint pollerr">Ostatnia próba: lista z ${esc(plDate(L.day))} (${esc(L.at)}) — nie wiadomo, czy wyszła (bramka
+          nie odpowiedziała). Sprawdź na WhatsAppie prowadzącej.</div>`
+      : `<div class="hint pollerr">Ostatnia próba: lista z ${esc(plDate(L.day))} (${esc(L.at)}) — NIE WYSZŁA: ${esc(L.msg)}</div>`;
+    const day = r.day;
+    const sendBtn = day ? `<div class="adminrow" style="margin-top:8px"><button class="btn outline" data-act="reportSend">Wyślij listę z ${esc(day.label)}</button></div>` : '';
+    return `
+      <div class="panelbox">
+        <h3>Lista dnia do prowadzącej na WhatsAppie</h3>
+        <label class="mailfl" for="reportChat">Prowadząca — z kontaktów telefonu bota</label>
+        <div class="pollchat"><select id="reportChat">${opts}</select>
+          <button class="btn outline" data-act="reportContacts"${state.dayReportContactsLoading ? ' disabled' : ''}>${state.dayReportContactsLoading ? 'Pobieram…' : 'Pobierz kontakty'}</button></div>
+        <div class="pollchecks">
+          <label class="check"><input type="checkbox" id="reportEnabled"${f.enabled ? ' checked' : ''}> wysyłaj po nocnym czyszczeniu</label>
+        </div>
+        <div class="reportdirty${dirty ? '' : ' hidden'}">Niezapisane zmiany — wysyłka idzie według zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="reportSave">Zapisz</button>
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="reportReset">Przywróć zapisane</button></div>
+        <div class="hint">${state1}</div>
+        ${last}
+        ${sendBtn}
+        <div class="hint">Treść to dokładnie to, co kopiuje „📋 Skopiuj treść" w minionym dniu (szablon maila wyżej, z datą i listą
+        psów). Każdy dzień idzie najwyżej raz; dzień bez spacerów — nic. Czyszczenie nie czeka na bota — gdy bramka zawiedzie,
+        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota.</div>
+      </div>`;
+  }
+  /** „Pobierz kontakty": kontakty z telefonu bota z bramki (czytanie — bez kolejki). */
+  function loadDayReportContacts(){
+    if(state.dayReportContactsLoading) return;
+    state.dayReportContactsLoading = true;
+    render('nav');
+    const done = () => { state.dayReportContactsLoading = false; if(state.view==='diag') safeRender('nav'); };
+    google.script.run
+      .withSuccessHandler(list => {
+        state.dayReportContacts = Array.isArray(list) ? list : [];
+        if(!state.dayReportContacts.length) toast('W telefonie bota nie ma zapisanych kontaktów — dodaj prowadzącą do kontaktów tego telefonu');
+        done();
+      })
+      .withFailureHandler(err => {
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się pobrać kontaktów');
+        done();
+      })
+      .getDayReportContacts(state.pin);
+  }
+  function applyDayReportPanel(panel){
+    if(!panel || !state.diag || state.diag.failed) return;
+    state.diag.dayReport = panel;
+  }
+
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
   function minutesOf(t){ const m=String(t||'').match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1])*60+Number(m[2]) : 9999; }
 
@@ -2244,6 +2468,7 @@
   /** Czy spacer można zaznaczyć: odbyty nie ma czego planować — chyba że już jest w tej grupie. */
   function canPick(ref){
     const sel = state.select, r = parseRef(ref), s = slotOf(sel.date, r.id, r.n);
+    if(s.status === 'team') return false;          // wzięty przez grupę psa — nie nasz spacer, do grupy nie idzie
     return s.status !== 'walked' || (sel.gid && s.group === sel.gid);
   }
 
@@ -2282,7 +2507,7 @@
     const field = el.closest('[data-slot]');
     if(field && li.contains(field)) return sref(id, Number(field.dataset.slot));
     const ns = String(li.dataset.slots || '1').split(',').map(Number);
-    const open = ns.filter(n => slotOf(state.date, id, n).status !== 'walked');
+    const open = ns.filter(n => !isDone(slotOf(state.date, id, n)));
     return sref(id, (open.length ? open : ns)[0]);
   }
   /** Kafelek, w którym stoi spacer. */
@@ -2332,7 +2557,7 @@
       // `seen` — skład, który widać teraz na ekranie; serwer zdejmie tylko spośród niego
       state.select = {date:state.date, anchor:ref, gid:s.group, ids, seen:ids.slice()};
     } else {
-      if(s.status === 'walked') return;
+      if(isDone(s)) return;
       state.select = {date:state.date, anchor:ref, gid:0, ids:[ref], seen:[]};
     }
     render('nav');
@@ -2551,6 +2776,27 @@
   }
 
   /**
+   * „Bierze G7" (1.3): spacer psa innej grupy bierze jego własna grupa — pies przestaje na nas czekać
+   * i schodzi na dół listy jak odbyty (w zamrożonej liście — dopiero po ciszy i zapowiedzi). Tylko
+   * wolny spacer bez grupy, dzień bieżący albo przyszły (jak rezerwacja: „bierze" to też zapowiedź).
+   * Do Historii taki spacer nie trafia. Cofnięcie — „Cofnij" (doFree, z widzianym stanem).
+   */
+  function doTeam(id, n){
+    const date=state.date;
+    if(!date) return;
+    if(isPast(date)){ dayClosed(); return; }
+    const dog=findDog(id), s=slotOf(date, id, n), team=dog ? teamClean(dog.team) : '';
+    if(!team || s.status!=='free' || s.group) return;
+    setSlot(date, id, n, Object.assign({}, s, {status:'team', who:team, time:''}));
+    enqueue('markTeam',[id,date,n],{key:keySlot(id,n,date),reconcile:res=>{
+      const got = applySlot(date, id, n, res);
+      if(got && got.status!=='team') toast('Ten spacer ma już innego opiekuna — pokazuję aktualny stan');
+      if(date===state.date && !busyEditing()) patchDog(id);
+    }});
+    patchDog(id, 'self');
+  }
+
+  /**
    * „Zwolnij" (rezerwacja) albo „Cofnij" (spacer) — dokładnie jak setFree na serwerze.
    * Zwolniony spacer zostaje w grupie, a grupa znów czeka na jego rezerwację. Cofnięty
    * wychodzi z grupy (leaveGroup): kafelki dawnych towarzyszy też się wtedy zmieniają.
@@ -2684,10 +2930,25 @@
   viewEl.addEventListener('input', keepForm);
   viewEl.addEventListener('change', keepForm);
 
+  // „Inna grupa…" w wyborze grupy psa — pole na nazwę od razu (przy fokusie na liście wyboru przerysowania nie ma)
+  viewEl.addEventListener('change', e => {
+    const sel = e.target, edit = sel.matches && sel.matches('[data-ef="team"]');
+    if(sel.id !== 'newTeam' && !edit) return;
+    const box = sel.parentNode.querySelector(edit ? '[data-ef="teamNew"]' : '#newTeamName');
+    if(!box) return;
+    box.classList.toggle('hidden', sel.value !== TEAM_NEW);
+    invalidateHtml();                                // DOM zmieniony poza render()
+    if(sel.value === TEAM_NEW) box.focus();
+  });
+
   // ankieta tygodniowa — szkic w stanie, jak mail (panel przerysowuje się po każdym wywołaniu serwera)
   const keepPoll = e => { if(POLL_FIELDS.indexOf(e.target.id) < 0) return; state.pollDraft = readPollForm(); showPollDirty(); };
   viewEl.addEventListener('input', keepPoll);
   viewEl.addEventListener('change', keepPoll);
+  // lista dnia do prowadzącej — szkic w stanie, jak ankieta
+  const keepDayReport = e => { if(DAY_REPORT_FIELDS.indexOf(e.target.id) < 0) return; state.dayReportDraft = readDayReportForm(); showDayReportDirty(); };
+  viewEl.addEventListener('input', keepDayReport);
+  viewEl.addEventListener('change', keepDayReport);
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -2738,6 +2999,7 @@
       if(g) doGroupWalk(g); else doWalk(id, n);
     }
     if(act==='free') doFree(id, n);
+    if(act==='team') doTeam(id, n);
 
     /* --- wolontariusze: zadania (✕ ma własny data-act, więc tu nie wpada) --- */
     if(act==='taskToggle') doTaskToggle(id);
@@ -2754,6 +3016,8 @@
       if(fields.noteUntil && fields.noteUntil!==NOTE_FOREVER && state.today && fields.noteUntil < state.today){
         toast('Data notatki nie może być z przeszłości'); return;
       }
+      fields.team = teamPicked(ef('team'), ef('teamNew'), id);
+      if(fields.team === null){ toast('Wpisz nazwę grupy'); viewEl.querySelector('[data-ef="teamNew"]').focus(); return; }
       const dog=findDog(id);
       if(dog) Object.assign(dog, fields);           // optymistycznie od razu
       state.editId=null;
@@ -2822,6 +3086,44 @@
           fetchDiag();                                // panel pokaże, co się stało (ostatnia próba, „wysyła się od…")
           if(!lost) return;
           // odpowiedź nie przyszła w czasie watchdoga — bramka bywa wolniejsza; ankieta mogła właśnie wyjść
+          toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
+          setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
+        }});
+    }
+    if(act==='reportContacts') loadDayReportContacts();
+    if(act==='reportReset'){ state.dayReportDraft = null; render('nav'); }
+    if(act==='reportSave'){
+      const r = state.diag && state.diag.dayReport;
+      if(!r) return;
+      const f = readDayReportForm();
+      const problem = dayReportProblem(f, r.configured);  // od razu: zapis jest w RETRIABLE (jak ankieta i mail)
+      if(problem){ toast(problem); return; }
+      enqueue('setDayReportSettings',[f,state.pin],{key:'dayReport',reconcile:res=>{
+        applyDayReportPanel(res);
+        state.dayReportDraft = null;
+        toast(res && res.settings && res.settings.enabled ? 'Zapisane — lista pójdzie po nocnym czyszczeniu' : 'Zapisane', 'ok');
+        safeRender();
+      }});
+    }
+    if(act==='reportSend'){
+      const r = state.diag && state.diag.dayReport;
+      if(!r || !r.day) return;
+      if(dayReportDirty()){ toast('Najpierw zapisz zmiany — „Wyślij listę" wysyła według zapisanych ustawień'); return; }
+      if(!r.settings.chatId){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
+      if(!r.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
+      const who = r.settings.chatName || r.settings.chatId, st = r.day.status;
+      if(st === 'pending'){ toast('Lista z ' + r.day.label + ' właśnie się wysyła (od ' + r.day.at + ')'); return; }
+      // już poszła albo nie wiadomo — prywatna wiadomość drugi raz nikomu nie szkodzi, ale pytamy
+      const force = st === 'sent' || st === 'unknown';
+      if(!ask(st === 'sent' ? 'Lista z ' + r.day.label + ' już poszła do ' + who + ' (' + r.day.at + '). Wysłać jeszcze raz?'
+        : st === 'unknown' ? 'Nie wiadomo, czy lista z ' + r.day.label + ' doszła do ' + who + ' (próba ' + r.day.at + '). Wysłać jeszcze raz?'
+        : 'Wysłać teraz listę z ' + r.day.label + ' do ' + who + '?')) return;
+      // nie w RETRIABLE: powtórka po zaginionej odpowiedzi trafiłaby w „właśnie się wysyła"
+      enqueue('sendDayReportNow', force ? [state.pin, r.day.date, true] : [state.pin, r.day.date], {key:'dayReport',
+        reconcile:res=>{ applyDayReportPanel(res && res.panel); toast('Lista z ' + r.day.label + ' wysłana do ' + who, 'ok'); safeRender(); },
+        fail:(msg, lost)=>{
+          fetchDiag();                                // panel pokaże, co się stało
+          if(!lost) return;
           toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
           setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
         }});
@@ -2923,10 +3225,13 @@
   function onTouch(){ checkStuck(); markTap(); }
   document.addEventListener('pointerdown', onTouch, true);
   document.addEventListener('touchstart', onTouch, true);
-  // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież
+  // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież —
+  // ale nie, gdy poprzedni odczyt wciąż w drodze albo poszedł przed chwilą (T.wake). 8.10.2026 karta na
+  // komputerze dostawała „widoczna" co 6 s i przez 10 minut wysłała 100 odczytów, także w czasie, gdy
+  // jeden wisiał 36 s (dziennik wykonań produkcji) — ta droga jako jedyna omijała readWaiting.
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden) return;
     checkStuck();
-    if(!isSending() && !queue.length && !busyEditing()) refresh();
+    if(!isSending() && !queue.length && !busyEditing() && !readWaiting() && Date.now() - lastReadAt >= T.wake) refresh();
   });
 </script>

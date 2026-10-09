@@ -32,7 +32,7 @@ załatać kolejnym wyjątkiem:
 
 | pole | znaczenie |
 |---|---|
-| `status` | `free` (czeka na chętnego) · `reserved` (ktoś się zapisał) · `walked` (odbyty) |
+| `status` | `free` (czeka na chętnego) · `reserved` (ktoś się zapisał) · `walked` (odbyty) · `team` (1.3: psa innej grupy bierze jego grupa — „Bierze G7"; dla kolejności **załatwiony jak odbyty**: `isDone`) |
 | `who`, `time` | kto zarezerwował / wyprowadził, o której (godzina tylko po spacerze) |
 | `group` | numer grupy tego dnia, 0 = spacer bez grupy |
 
@@ -127,6 +127,23 @@ do części „czeka na chętnego" — popołudnie wciąż jest do obsadzenia.
   przeskoczyć wcześniejszych reguł tak, jak grupa podciąga swój skład.
 - Kolejność spacerów do wyświetlenia (`sortedRefs`): bloki po kluczu → w bloku kafelki po
   kluczu → w kafelku spacery rosnąco. To lista odnośników `'pies.nr'`.
+
+## 4a. Dwie listy: nasza i psy innych grup (1.3)
+
+Psy innych grup wolontariuszy (`team` w katalogu, kolumna `grupa_psa`) stoją na **osobnej liście pod naszą**,
+z nagłówkiem „Psy innych grup" i własnym podsumowaniem. Decyzja właściciela: **dwie listy to dwie osobne
+instancje sortowania** — nasze psy, nawet wszystkie odbyte, zawsze nad ich psami, a ich pies, nawet czekający
+na chętnego, nigdy na naszej liście.
+
+- `sortedRefs` = `sortedSide(nasze)` + `sortedSide(ich)` — każda lista ma cały klucz z p. 3 dla siebie, także
+  opiekuna (kryterium 5 nie łączy psów ponad granicą list, S130).
+- **Spacer grupowy z psami z obu list to dwa bloki** (`blockOf` z dopiskiem listy): nasza część na naszej liście,
+  ich część na ich, ten sam kolor grupy. Grupa dalej jest jedna — „Wrócił ✓" odhacza wszystkie jej spacery (S131).
+- **Zamrożenie nie przesuwa granicy:** `effectiveOrder` dzieli zamrożoną kolejność na dwie listy. Pies, któremu
+  prowadząca zmieniła grupę, przechodzi na drugą listę od razu (to zmiana z zewnątrz — osłona stuknięć ją widzi),
+  w obrębie list kolejność czeka na ciszę jak zawsze; nowy pies staje na końcu SWOJEJ listy (S132).
+- **„Bierze G7"** (`team`): spacer psa innej grupy bierze jego własna grupa — dla klucza to spacer załatwiony
+  (kryteria 1 i 4 liczą go jak odbyty, opiekunem kafelka jest grupa), więc pies schodzi na dół swojej listy.
 
 ## 5. Psy dwuspacerowe
 
@@ -271,7 +288,8 @@ wolne), Bibi, Ever (1/2 zarezerwowany, ale 2/2 wolny — też „czekają"), Fin
 3. Testy, które opisują kolejność i trzeba je zaktualizować świadomie: **S90** (reguły),
    **S104** (opiekun — kryterium 5, z losowymi dniami),
    **S47** (lista z terenu), S43–S45 (zamrożenie), S80, S91, S97 (pies w dwóch miejscach,
-   stabilność układu), S93–S94 (osłona i zapowiedź). Każdy nowy wyjątek = nowy scenariusz.
+   stabilność układu), S93–S94 (osłona i zapowiedź), S130–S132 i S137 (dwie listy, p. 4a). Każdy nowy
+   wyjątek = nowy scenariusz.
 4. **Trzeci spacer:** model i sortowanie są gotowe (numery spacerów, `slotCount`).
    Potrzebne byłoby: dopuszczenie 3 w `validWalks_` i w edycji psa, sprawdzenie układu pól
    w kafelku na wąskim ekranie. Reguła 3 (−spacery dziennie) sama da takim psom pierwszeństwo.

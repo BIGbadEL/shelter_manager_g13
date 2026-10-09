@@ -21,6 +21,9 @@ const PROP_DOG_ADDS = 'dogAdds';               // ostatnie dodania psów z panel
 const PROP_POLL = 'poll';                      // ankieta tygodniowa (JSON, panel) — patrz Poll.gs
 const PROP_POLL_SENT = 'pollSent';             // wysłane ankiety {'<grupa>|<poniedziałek>': {at, pending}} — każda raz
 const PROP_POLL_LAST = 'pollLast';             // ostatnia próba wysłania (JSON) — do panelu
+const PROP_DAY_REPORT = 'dayReport';           // lista dnia do prowadzącej na WhatsAppie (JSON, panel) — patrz Poll.gs
+const PROP_DAY_REPORT_SENT = 'dayReportSent';  // wysłane listy {'<dzień>': {at, pending, unknown}} — każdy dzień raz
+const PROP_DAY_REPORT_LAST = 'dayReportLast';  // ostatnia próba wysłania listy (JSON) — do panelu
 const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
 const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)
 // Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:

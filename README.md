@@ -99,6 +99,7 @@ numeru. Wersja jest też w `package.json`.
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) = `main` | @20, 2026-10-08 |
+| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (PR #6) | w przygotowaniu (test) |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -295,6 +296,10 @@ Zakładka **Psy** to katalog — kim jest pies. Stan konkretnego dnia żyje w za
 prostu wiersz z sobotnią datą; rezerwacja popołudniowego spaceru psa dwuspacerowego — wiersz
 ze `spacer = 2`.
 
+Od 1.3 Psy mają kolumnę **`grupa_psa`** (O): pusta = nasza grupa (G13), inaczej nazwa grupy psa. Arkusz bez
+tej kolumny działa — dokłada się sama przy pierwszym psie innej grupy. W Spacery dochodzi status **`team`**
+(„Bierze G7", w `kto` nazwa grupy): przy czyszczeniu nie idzie do Historii, tylko do `ostatni_spacer`.
+
 **Przepisanie starego układu Spacery dzieje się samo** (wersja z wierszem na psa i drugim
 spacerem w `kto1`/`godzina1`): przy pierwszym dostępie wiersz z odbytym pierwszym spacerem
 rozpada się na spacer 1/2 (odbyty, z tą samą osobą i godziną) i 2/2 (stan bieżący), a grupa
@@ -442,7 +447,8 @@ tak samo, w tym samym kolorze.
   Nowe zadanie dostaje dzień, od którego ma się pokazać (domyślnie bieżący) — do tego dnia
   wolontariusze go nie widzą.
 - **Katalog psów** — w stałej kolejności z arkusza, z ustawieniem „2 spacery dziennie" zamiast
-  postępu dnia, z edycją i usuwaniem, oraz dodawanie psa.
+  postępu dnia, z edycją i usuwaniem, oraz dodawanie psa. Pies innej grupy ma plakietkę „grupa G7";
+  grupę wybiera się w „Dodaj psa" i w edycji (od 1.3; domyślnie G13).
 
 ## Zakładka „Panel"
 
@@ -486,7 +492,8 @@ prywatnego numeru. Bramka ma dostęp do wszystkich czatów konta bota.
 Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własnymi właściwościami):
 1. Konto bota: osobny numer z WhatsApp (Business). **Dodaj go do społeczności i do samej grupy
    „Grafik"** — do grupy nadrzędnej społeczności i do „Ogłoszeń" bramka nie wyśle.
-2. W konsoli Green API załóż instancję (plan Developer wystarcza: 3 czaty, ankiety bez limitu)
+2. W konsoli Green API załóż instancję (plan Developer: 3 czaty w miesiącu — „Grafik", prowadząca
+   (lista dnia, 1.3) i grupa próbna to komplet; patrz „Limit darmowego planu bramki" niżej)
    i połącz ją z telefonem bota: WhatsApp → Połączone urządzenia → Połącz urządzenie → kod QR
    z konsoli. Telefon bota musi co jakiś czas być włączony z internetem.
 3. W Apps Script: *Ustawienia projektu → Właściwości skryptu* dodaj `greenApiUrl` (apiUrl z konsoli),
@@ -510,6 +517,29 @@ sprawdź w grupie": ankieta mogła dojść, więc wyzwalacz jej nie ponawia, a �
 pyta, czy w grupie jej nie ma (druga ankieta rozbiłaby głosy). Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
 i „Wyślij teraz" się nie dublują. Przypięcie ankiety w grupie zostaje ręczne.
 
+Na liście grup społeczność i jej ogłoszenia mają w WhatsAppie tę samą nazwę co społeczność (np. dwa
+razy „G13"). Od 1.3 takie pozycje dostają dopisek z bramki („cała społeczność — tu bot nie wyśle",
+„piszą tylko administratorzy", liczba osób), a gdy bramka nic nie powie — numer („G13 #1", „G13 #2").
+Ankieta idzie do zwykłej grupy, np. „Grafik".
+
+### Lista dnia do prowadzącej (od 1.3)
+
+Po nocnym czyszczeniu bot wysyła prowadzącej prywatną wiadomość z listą każdego zamkniętego dnia ze
+spacerami — dokładnie tę treść, którą w minionym dniu kopiuje „📋 Skopiuj treść" (szablon maila z panelu
+z datą i listą psów). Panel → „Lista dnia do prowadzącej na WhatsAppie": „Pobierz kontakty" (na liście są
+tylko osoby zapisane w kontaktach telefonu bota), wybierz prowadzącą, zaznacz „wysyłaj po nocnym
+czyszczeniu", „Zapisz". Każdy dzień idzie najwyżej raz, dzień bez spacerów — nic. Czyszczenie nie czeka
+na bota: gdy bramka zawiedzie, Historia i tak się zapisuje, a wynik stoi w panelu; „Wyślij listę z …"
+wyśle ostatni dzień jeszcze raz (po potwierdzeniu). Wymaga tej samej bramki i zgody co ankieta.
+
+**Limit darmowego planu bramki.** Plan Developer Green API pozwala w miesiącu pisać do **3 czatów** (osób
+albo grup) na instancję — kolejny dostaje błąd 466 (panel mówi wtedy wprost o limicie), licznik odnawia się
+1. dnia miesiąca. Darmowa instancja może być tylko jedna, więc test i produkcja zwykle dzielą ten limit.
+Z listą dnia bot pisze już do: „Grafiku", prowadzącej i grupy próbnej — to komplet. Dlatego **na teście
+wysyłanie po czyszczeniu zostaw wyłączone** (inaczej prowadząca co noc dostawałaby listę z arkusza
+testowego), a do próby „Wyślij listę" wybierz **tę samą osobę co na produkcji** — nowy adresat, np. własny
+numer, to czwarty czat. Stan licznika: konsola Green API.
+
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
 ## Kolejność psów na liście
@@ -525,6 +555,10 @@ Pełny opis z przykładami: **`SORTING.md`**. W skrócie kafelki porównuje się
    stoją obok siebie. Tylko jako rozstrzygnięcie remisu: nigdy nie przenosi psa ponad
    wcześniejsze reguły (pies tej osoby na dwa spacery zostaje wśród dwuspacerowych);
 6. **kolejność z arkusza**, a przy kafelkach tego samego psa — numer spaceru.
+
+**Psy innych grup** (od 1.3) mają osobną listę pod naszą i sortują się osobno, tymi samymi regułami —
+nasze psy zawsze stoją wyżej (`SORTING.md`, p. 4a). Pies, którego wzięła jego grupa („Bierze G7"),
+schodzi na dół jak wyprowadzony.
 
 Grupa to jeden blok: stoi tam, gdzie stanąłby jej najpilniejszy spacer. Dla psów
 jednospacerowych wychodzi z tego dokładnie to samo co dawniej: wolne, zarezerwowane,
@@ -568,6 +602,37 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.3 — w przygotowaniu
+
+Duże zmiany (numer X). Temat: psy innych grup — pomagamy wyprowadzać psy innych grup wolontariuszy.
+
+- **Osobna lista „Psy innych grup"** pod naszą. Nasza lista wygląda jak dotąd; każda lista sortuje się
+  osobno, więc nasze psy — nawet wszystkie wyprowadzone — zawsze stoją wyżej, a ich psy nigdy nie wchodzą
+  na naszą. Każda lista ma swoje podsumowanie. Spacer grupowy z psami z obu list widać na obu, w tym samym
+  kolorze; „Wrócił ✓" dalej odhacza całą grupę.
+- **Plakietka „grupa G7"** w linijce z numerem i boksem psa innej grupy (na liście i w katalogu).
+- **Grupa psa w panelu** — w „Dodaj psa" i w edycji psa: domyślnie G13, do wyboru grupy psów z katalogu,
+  „Inna grupa…" do wpisania nowej. „g7" zapisze się jako istniejące „G7", „g13" to nasza grupa.
+- **„Bierze G7"** — obok „Zarezerwuj" przy wolnym spacerze psa innej grupy: psa wyprowadza jego grupa. Pies
+  przestaje na nas czekać i schodzi na dół jak wyprowadzony („✓ G7", „Cofnij" odwraca). Taki spacer **nie trafia
+  do Historii ani do maila** dla schroniska (to nie nasz spacer), ale liczy się jako spacer psa — nie wyskoczy
+  „bez spaceru od…". Działa też z wyprzedzeniem, jak rezerwacja.
+- **Odczyt listy, który utknął po stronie Google, telefon ponawia po 20 s, nie po 60** (pierwsze prawdziwe
+  wpisy dziennika spowolnień, 8.10: jedno wykonanie wisiało 67 s, a równoległe szły po 1,5 s). Powrót do karty
+  nie wysyła odczytu, gdy poprzedni wisi albo poszedł przed chwilą (8.10 jedna karta wysłała 100 odczytów
+  w 10 minut).
+- **Lista dnia do prowadzącej na WhatsAppie** — po nocnym czyszczeniu bot wysyła prowadzącej treść
+  „📋 Skopiuj treść" każdego zamkniętego dnia ze spacerami (raz na dzień). Kontakt z kontaktów telefonu bota,
+  włącznik i „Wyślij listę" w panelu. Czyszczenie nigdy nie czeka na bota.
+- **Lista grup bota bez dwóch „G13"** — społeczność i jej ogłoszenia dostają dopisek albo numer.
+- **Numer wersji przy „Spacery"** w nagłówku (v1.3) — ten sam co w `package.json`, pilnuje test T5.
+- Nocne czyszczenie nie dotyka kolumny O w Psy (review PR #6 — wcześniej przepisywało ją co noc, formuły
+  stawały się stałymi).
+- Arkusz: nowa kolumna Psy `grupa_psa` (O) — dokłada się sama przy pierwszym psie innej grupy, `migrate()`
+  niepotrzebne. Jeśli kolumna O jest zajęta przez coś innego (inny nagłówek albo same wpisy bez nagłówka),
+  aplikacja jej nie nadpisze i powie o tym przy zapisie grupy. Przed wdrożeniem na produkcję cała kolumna O
+  w Psy ma być pusta.
 
 ### 1.2 — wdrożone 2026-10-08 (@20)
 

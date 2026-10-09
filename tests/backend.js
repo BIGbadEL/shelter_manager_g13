@@ -2123,5 +2123,351 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
   check('zepsuty dziennik nie zabiera Panelu: puste listy', z.server.length === 0 && z.phones.length === 0);
 })();
 
+/* ---------- B65–B66: grupa psa (psy innych grup, 1.3) ---------- */
+// Kolumna `grupa_psa` doszła w 1.3: produkcyjna zakładka Psy bywa od niej węższa, a getRange poza
+// szerokość rzuca błędem (strictWidth) — wdrożenie przed migrate() nie może położyć aplikacji.
+const strictDogs = (dogs, extra) => [
+  { name:'Psy', strictWidth: true, rows: [DOG_HEADERS.concat(extra ? [extra.head] : []),
+      ...dogs.map(o => dogRow(o).concat(extra ? [o.extra || ''] : []))] },
+  { name:'Historia', rows: [HIST_HEADERS] },
+  { name:'Zadania',  rows: [TASK_HEADERS] },
+];
+const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].team;
+
+(function(){
+  console.log('B65: grupa psa — zakładka bez kolumny działa, pierwszy zapis innej grupy dokłada kolumnę, pisownia ujednolicona');
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', walks:2}]) });
+  const P = env.sheets['Psy'];
+  const d0 = env.api.getData();
+  check('zakładka sprzed kolumny: getData działa, każdy pies nasz (team "")', d0.dogs.length === 2 && d0.dogs.every(d => d.team === ''),
+    JSON.stringify(d0.dogs.map(d => d.team)));
+  env.api.addDog({name:'Rex'}, TEST_PIN, 'dteam0000001');
+  check('nasz pies (bez grupy) — kolumny nie trzeba dokładać', P.getMaxColumns() === 14 && teamOf(env, 3) === '', P.getMaxColumns());
+  env.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dteam0000002');
+  check('pies innej grupy: kolumna dołożona, nagłówek grupa_psa, wartość', P.getMaxColumns() === 15 && P._data[0][14] === 'grupa_psa'
+    && P._data[4][14] === 'G7' && teamOf(env, 4) === 'G7', JSON.stringify(P._data[0]) + ' ' + JSON.stringify(P._data[4]));
+  check('...kolumna jako tekst, zanim coś do niej trafiło', P._formatRanges.some(f => f.col === 15 && f.row === 1 && f.f === '@'));
+  env.api.addDog({name:'Bella', team:'  g 7 '}, TEST_PIN, 'dteam0000003');
+  check('„ g 7 " przy istniejącej „G7" — ta sama grupa, pisownia już używana', teamOf(env, 5) === 'G7', teamOf(env, 5));
+  env.api.addDog({name:'Fado', team:'g13'}, TEST_PIN, 'dteam0000004');
+  check('nasza grupa w innej pisowni („g13") — pusta, pies nasz', teamOf(env, 6) === '' && P._data[6][14] === '', JSON.stringify(P._data[6]));
+  env.api.addDog({name:'Max', team:'Grupa\u0007 bardzo   długa nazwa ponad limit'}, TEST_PIN, 'dteam0000005');
+  const long = teamOf(env, 7);
+  check('bez znaków sterujących, spacje ujednolicone, najwyżej MAX_LEN.TEAM (20)', long === 'Grupa bardzo długa n', JSON.stringify(long));
+  env.api.addDog({name:'Kropka', team:'G7'}, TEST_PIN, 'dteam0000002');
+  check('powtórka tego samego „Dodaj" (token) nie dokłada psa drugi raz', env.api.getData().dogs.length === 7);
+
+  // edycja: karta sprzed 1.3 nie wysyła grupy — grupa zostaje (inaczej poprawka imienia przenosiłaby psa na naszą listę)
+  env.api.updateDog(4, {name:'Tośka', walks:1}, TEST_PIN);
+  check('edycja bez `team` (karta sprzed 1.3): grupa zostaje', teamOf(env, 4) === 'G7' && P._data[4][1] === 'Tośka');
+  env.api.updateDog(4, {name:'Tośka', team:''}, TEST_PIN);
+  check('edycja z `team` "" — pies wraca do naszej grupy', teamOf(env, 4) === '' && P._data[4][14] === '');
+  env.api.updateDog(4, {name:'Tośka', team:'G9'}, TEST_PIN);
+  check('edycja na nową grupę', teamOf(env, 4) === 'G9');
+  env.api.updateDog(4, {name:'Tośka', team:'g9'}, TEST_PIN);
+  check('jedyny pies grupy może zmienić jej pisownię (siebie nie liczy)', teamOf(env, 4) === 'g9', teamOf(env, 4));
+  env.api.updateDog(5, {name:'Bella', team:'G9'}, TEST_PIN);
+  check('...a kolejny pies tej grupy dostaje pisownię już używaną', teamOf(env, 5) === 'g9', teamOf(env, 5));
+
+  // nocne czyszczenie (closeDogs_) i migrate() na zakładce bez kolumny
+  const n = build([], { sheets: strictDogs([{id:1, name:'Borys', note:'Zdjęcia'}]) });
+  let err = '';
+  try { n.api.endOfDay(); } catch(e) { err = e.message; }
+  check('endOfDay na zakładce sprzed kolumny — bez błędu', !err && n.sheets['Psy']._data[1][9] === '', err);
+  n.api.migrate();
+  const NP = n.sheets['Psy'];
+  check('migrate() dokłada kolumnę grupy psa z nagłówkiem i formatem', NP._data[0][14] === 'grupa_psa' && NP._formats[15] === '@',
+    JSON.stringify(NP._data[0]) + ' ' + NP._formats[15]);
+  const fresh = makeContext({ props: { pin: TEST_PIN } });
+  fresh.api.setup();
+  check('setup() na pustym projekcie — nagłówek grupa_psa', fresh.sheets['Psy']._data[0][14] === 'grupa_psa'
+    && fresh.sheets['Psy']._data[1].length === 15 && fresh.api.getData().dogs.every(d => d.team === ''));
+})();
+
+(function(){
+  console.log('B66: kolumna grupy psa zajęta przez czyjąś inną — psy zostają nasze, zapis grupy daje błąd, nic w połowie');
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys', extra:'G7'}, {id:2, name:'Luna', extra:'kaganiec'}], { head:'uwagi' }) });
+  const P = env.sheets['Psy'];
+  const d = env.api.getData();
+  check('cudza kolumna (nagłówek „uwagi") nie przenosi psów na listę innych grup', d.dogs.every(x => x.team === ''),
+    JSON.stringify(d.dogs.map(x => x.team)));
+  let err = '';
+  try { env.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbusy0000001'); } catch(e) { err = e.message; }
+  check('dodanie psa innej grupy: wyraźny błąd, psa nie ma', /zajęta/.test(err) && env.api.getData().dogs.length === 2, err);
+  err = '';
+  try { env.api.updateDog(2, {name:'Lunka', team:'G7'}, TEST_PIN); } catch(e) { err = e.message; }
+  check('edycja na inną grupę: błąd PRZED zapisem — imię nie zmienione w połowie', /zajęta/.test(err) && P._data[2][1] === 'Luna', err);
+  env.api.updateDog(2, {name:'Lunka', team:''}, TEST_PIN);
+  check('edycja naszego psa działa i nie rusza cudzej kolumny', P._data[2][1] === 'Lunka' && P._data[2][14] === 'kaganiec');
+  env.api.addDog({name:'Rex'}, TEST_PIN, 'dbusy0000002');
+  check('dodanie naszego psa działa', env.api.getData().dogs.length === 3);
+  const log = console.log; let said = '';
+  console.log = s => { said += s; };
+  try { env.api.migrate(); } finally { console.log = log; }
+  check('migrate() nie nadpisuje cudzego nagłówka i mówi o tym', P._data[0][14] === 'uwagi' && /grupa_psa/.test(said), said.slice(0, 120));
+
+  // kolumna O bez nagłówka, ale z wpisami (final review PR #6): to też czyjaś kolumna — przejęcie robiło z Luny
+  // psa grupy „kaganiec" z przyciskiem „Bierze kaganiec", przy pierwszym psie innej grupy albo przy migrate()
+  const h = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', extra:'kaganiec'}], { head:'' }) });
+  const HP = h.sheets['Psy'];
+  err = '';
+  try { h.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbare0000001'); } catch(e) { err = e.message; }
+  check('kolumna O bez nagłówka z wpisami: dodanie psa innej grupy — błąd, psa nie ma', /zajęta/.test(err)
+    && h.api.getData().dogs.length === 2, err);
+  err = '';
+  try { h.api.updateDog(1, {name:'Borys', team:'G7'}, TEST_PIN); } catch(e) { err = e.message; }
+  check('...edycja na inną grupę — błąd', /zajęta/.test(err), err);
+  said = '';
+  console.log = s => { said += s; };
+  try { h.api.migrate(); } finally { console.log = log; }
+  check('...migrate() kolumny nie przejmuje i mówi o tym', HP._data[0][14] === '' && HP._formats[15] !== '@' && /zajęta/.test(said),
+    said.slice(0, 120));
+  check('...wpisy zostają, a każdy pies jest nasz', HP._data[2][14] === 'kaganiec' && h.api.getData().dogs.every(x => x.team === ''),
+    JSON.stringify(h.api.getData().dogs.map(x => x.team)));
+  // pusta kolumna O bez nagłówka (zwykły arkusz Google ma 26 kolumn) — przejmujemy; same spacje to też pusto
+  const em = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', extra:'  '}], { head:'' }) });
+  em.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbare0000002');
+  check('pusta kolumna O bez nagłówka: przejęta przy pierwszym psie innej grupy', em.sheets['Psy']._data[0][14] === 'grupa_psa'
+    && teamOf(em, 3) === 'G7' && teamOf(em, 2) === '', JSON.stringify(em.sheets['Psy']._data[0]));
+
+  // nocne czyszczenie zmienia tylko ostatni spacer, notatkę i jej termin — kolumny O nie dotyka (review PR #6):
+  // zapis wartości w cudzą kolumnę zamienia formułę w stałą, a do 1.2 czyszczenie kończyło na kolumnie 14
+  const n = build([], { sheets: strictDogs([{id:1, name:'Borys', note:'Zdjęcia', extra:'=JEŻELI(A2>0;"tak";"")'}], { head:'uwagi' }) });
+  const NP = n.sheets['Psy'], touched = [];
+  const getRange = NP.getRange.bind(NP);
+  NP.getRange = (r, c, nr, nc) => {
+    const g = getRange(r, c, nr, nc), sv = g.setValues, s1 = g.setValue;
+    const hits = c + (nc || 1) - 1 >= 15;
+    g.setValues = v => { if(hits) touched.push(r + ':' + c + '-' + (c + (nc || 1) - 1)); return sv.call(g, v); };
+    g.setValue = v => { if(hits) touched.push(r + ':' + c); return s1.call(g, v); };
+    return g;
+  };
+  n.api.endOfDay();
+  check('nocne czyszczenie nie zapisuje kolumny O (cudza formuła zostaje formułą)', touched.length === 0 && NP._data[1][9] === '',
+    JSON.stringify(touched));
+})();
+
+(function(){
+  console.log('B67: „Bierze G7" (markTeam) — spacer bierze grupa psa: tylko wolny bez grupy, idempotentny, nie do Historii');
+  const D = '2026-08-04';
+  const env = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Tosia', extra:'G7', lastWalk:'2026-07-30'},
+    {id:3, name:'Bella', walks:2, extra:'G7'}, {id:4, name:'Max', extra:'G9'}], { head:'grupa_psa' }) });
+  env.api.markTeam(2, D, 1);
+  const t = slotAt(env, 2, D, 1);
+  check('spacer psa G7: stan „team", kto = grupa z katalogu', t.status === 'team' && t.who === 'G7' && t.time === '', JSON.stringify(t));
+  const rows = openRows(env).length;
+  const again = env.api.markTeam(2, D, 1);
+  check('powtórka niczego nie zmienia i oddaje stan (RETRIABLE)', openRows(env).length === rows && again.slot.status === 'team');
+  check('nasz pies — błąd, spacer wolny', throws(() => env.api.markTeam(1, D, 1)) && slotAt(env, 1, D, 1).status === 'free');
+  env.api.reserve(3, 'Ola', D, 1);
+  const r = env.api.markTeam(3, D, 1);
+  check('zarezerwowany przez nas — zostaje nasz (odpowiedź mówi, jaki jest)', r.slot.status === 'reserved' && slotAt(env, 3, D, 1).who === 'Ola');
+  env.api.markTeam(3, D, 2);
+  check('pies dwuspacerowy: 1/2 nasz, 2/2 bierze G7', slotAt(env, 3, D, 2).status === 'team' && slotAt(env, 3, D, 1).status === 'reserved');
+  env.api.markTeam(2, '2026-08-06', 1);
+  check('z wyprzedzeniem — jak rezerwacja', slotAt(env, 2, '2026-08-06', 1).status === 'team');
+  check('dzień miniony — błąd', throws(() => env.api.markTeam(4, '2026-08-03', 1)));
+  env.api.setGroup(D, ['1:1', '4:1'], 0);
+  env.api.markTeam(4, D, 1);
+  check('spacer w naszej grupie spacerowej — nasz, nie do wzięcia', slotAt(env, 4, D, 1).status === 'free' && slotAt(env, 4, D, 1).group === 1);
+  env.api.setGroup(D, ['1:1', '4:1', '2:1'], 1);
+  check('wzięty przez grupę psa nie dołącza do spaceru grupowego', slotAt(env, 2, D, 1).group === 0 && slotAt(env, 1, D, 1).group === 1,
+    JSON.stringify(slotAt(env, 2, D, 1)));
+  env.api.setFree(2, D, {status:'reserved', who:'Ola'}, 1);
+  check('„Cofnij" z innym widzianym stanem nie zwalnia', slotAt(env, 2, D, 1).status === 'team');
+  env.api.setFree(2, D, {status:'team', who:'G7'}, 1);
+  check('„Cofnij" z widzianym stanem — spacer znów wolny', slotAt(env, 2, D, 1).status === 'free');
+  env.api.markTeam(2, D, 1);
+  env.api.markWalked(3, 'Ola', 1, D);
+
+  env.setNow('2026-08-04T22:30:00+02:00');          // po godzinie czyszczenia: 4.08 minął, ale jeszcze niezamknięty
+  const open = env.api.getHistoryDays(D, D).history;
+  check('podgląd dnia jeszcze niezamkniętego: tylko nasz spacer (Bella z Olą)', open.length === 1 && open[0].who === 'Ola',
+    JSON.stringify(open));
+  env.api.endOfDay();
+  const h = hist(env);
+  check('Historia: nasz spacer z psem G7 jest, spacery wzięte przez G7 — nie', h.length === 1 && h[0][1] === 'Bella' && h[0][2] === 'Ola',
+    JSON.stringify(h));
+  check('...ale to spacer psa: ostatni_spacer Tosi = 4.08 (bez „bez spaceru od…")', env.sheets['Psy']._data[2][8] === D,
+    JSON.stringify(env.sheets['Psy']._data[2]));
+  check('wiersze zamkniętego dnia znikają z Spacery, przyszły „bierze" zostaje',
+    openRows(env).every(x => x[0] !== D) && slotAt(env, 2, '2026-08-06', 1).status === 'team');
+})();
+
+/* ---------- B68: lista grup bota bez dwóch takich samych pozycji ---------- */
+(function(){
+  console.log('B68: „Pobierz grupy" — społeczność i jej ogłoszenia o tej samej nazwie dostają dopisek albo numer (zgłoszenie z 1.3)');
+  const COMM = '120363000000000010@g.us', ANN = '120363000000000011@g.us';
+  const contacts = [{ id: COMM, name: 'G13', type: 'group' }, { id: ANN, name: 'G13', type: 'group' }, { id: GRAFIK, name: 'Grafik', type: 'group' }];
+  const run = groupData => {
+    const env = pollEnv('2026-10-07T10:00:00+02:00');
+    env.http.handler = (url, opts) => {
+      if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(contacts) };
+      if(/\/getGroupData\//.test(url)) return groupData(JSON.parse(opts.payload).groupId);
+      return { code: 404, body: '' };
+    };
+    return { env, names: env.api.getPollChats(TEST_PIN).map(c => c.name) };
+  };
+  const a = run(id => ({ code: 200, body: JSON.stringify(id === COMM ? { isCommunity: true, size: 40 } : { allowParticipantsSendMessages: false, size: 40 }) }));
+  check('dopiski z getGroupData: społeczność i „piszą tylko administratorzy"', JSON.stringify(a.names) ===
+    JSON.stringify(['G13 (cała społeczność — tu bot nie wyśle)', 'G13 (piszą tylko administratorzy)', 'Grafik']), JSON.stringify(a.names));
+  check('bramka pytana tylko o grupy o powtórzonej nazwie', a.env.http.calls.filter(c => /getGroupData/.test(c.url)).length === 2);
+  const b = run(() => ({ code: 400, body: 'nie' }));
+  check('bramka nic nie powie — numery, nadal dwie różne pozycje', JSON.stringify(b.names) === JSON.stringify(['G13 #1', 'G13 #2', 'Grafik']), JSON.stringify(b.names));
+  const c = run(() => ({ code: 200, body: JSON.stringify({ size: 40 }) }));
+  check('ten sam dopisek u obu — też numery', JSON.stringify(c.names) === JSON.stringify(['G13 (40 os.) #1', 'G13 (40 os.) #2', 'Grafik']), JSON.stringify(c.names));
+})();
+
+/* ---------- B69: lista dnia do prowadzącej na WhatsAppie ---------- */
+const ANIA = '48600100200@c.us';
+const msgs = env => env.http.calls.filter(c => /\/sendMessage\//.test(c.url)).map(c => JSON.parse(c.opts.payload));
+function reportGateway(env, send){
+  env.http.handler = (url, opts) => {
+    if(/\/sendMessage\//.test(url)) return send ? send(url, opts) : { code: 200, body: JSON.stringify({ idMessage: 'BAE5MSG1' }) };
+    if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify([
+      { id: ANIA, name: 'Ania', contactName: 'Ania prowadząca', type: 'user' },
+      { id: '48600100300@c.us', name: 'Kasia', type: 'user' },                       // nie w kontaktach telefonu bota
+      { id: '48500100100@c.us', name: '', contactName: 'Basia', type: 'user' },
+      { id: '157000000000001@lid', contactName: 'Ktoś', type: 'user' },
+      { id: GRAFIK, name: 'Grafik', contactName: 'Grafik', type: 'group' },
+    ]) };
+    return { code: 404, body: '' };
+  };
+}
+function reportEnv(o){
+  o = o || {};
+  const env = build([{id:1, name:'Borys', ident:'1/26'}, {id:2, name:'', ident:'2077'}, {id:3, name:'Luna, ta mała'}],
+                    { props: Object.assign({}, GREEN) });
+  reportGateway(env, o.send);
+  if(o.on !== false) env.api.setDayReportSettings({ enabled: true, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
+  return env;
+}
+const walkAll = (env, date) => { env.api.markWalked(1, 'Ola', 1, date); env.api.markWalked(2, 'Iza', 1, date); env.api.markWalked(3, 'Ola', 1, date); };
+const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z grupy G13.\ndata,pies,numer\n04.08.2026,,2077\n'
+  + '04.08.2026,Borys,1/26\n04.08.2026,"Luna, ta mała",\nPozdrawiam,\n';
+
+(function(){
+  console.log('B69: lista dnia do prowadzącej — ustawienia, kontakty z telefonu bota, wysyłka po czyszczeniu raz na dzień');
+  const env = reportEnv({ on: false });
+  check('kontakty tylko z PIN-em', throws(() => env.api.getDayReportContacts('zly')));
+  const list = env.api.getDayReportContacts(TEST_PIN);
+  check('kontakty: tylko zapisane w telefonie bota, prywatne @c.us, po nazwie, z numerem', JSON.stringify(list) === JSON.stringify([
+    { id: ANIA, name: 'Ania prowadząca', phone: '+48600100200' }, { id: '48500100100@c.us', name: 'Basia', phone: '+48500100100' }]),
+    JSON.stringify(list));
+  check('pyta bramkę o czaty prywatne', /\/getContacts\/tok3n5ecret\?group=false$/.test(env.http.calls.slice(-1)[0].url));
+  check('włączenie bez kontaktu — błąd', throws(() => env.api.setDayReportSettings({ enabled: true }, TEST_PIN)));
+  check('kontakt spoza WhatsAppa (grupa, śmieć) — błąd', throws(() => env.api.setDayReportSettings({ chatId: GRAFIK }, TEST_PIN))
+    && throws(() => env.api.setDayReportSettings({ chatId: '48600 100 200' }, TEST_PIN)));
+  check('ustawienia tylko z PIN-em', throws(() => env.api.setDayReportSettings({ enabled: false }, 'zly')));
+
+  // wyłączone (kontakt zapisany): czyszczenie nic nie wysyła
+  env.api.setDayReportSettings({ enabled: false, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
+  walkAll(env, '2026-08-04');
+  env.setNow('2026-08-04T22:30:00+02:00');
+  env.api.endOfDay();
+  check('wyłączone — po czyszczeniu nic nie idzie', msgs(env).length === 0 && hist(env).length === 3);
+
+  const on = reportEnv();
+  check('panel: włączone, kontakt prowadzącej', on.api.dayReportPanel_().settings.enabled && on.api.dayReportPanel_().settings.chatName === 'Ania prowadząca');
+  walkAll(on, '2026-08-04');
+  on.api.reserve(1, 'Ola', '2026-08-05', 1);
+  on.setNow('2026-08-04T22:30:00+02:00');
+  on.api.endOfDay();
+  const m = msgs(on);
+  check('po czyszczeniu: jedna wiadomość do prowadzącej', m.length === 1 && m[0].chatId === ANIA, JSON.stringify(m));
+  check('...treść jak „Skopiuj treść": szablon z datą i CSV (pies raz, bez imienia — pusta kolumna, przecinek w cudzysłowie)',
+    m[0].message === LIST_0408, JSON.stringify(m[0].message));
+  check('...Historia zapisana normalnie', hist(on).length === 3);
+  on.api.endOfDay();
+  check('drugie czyszczenie tego samego dnia — nic drugi raz', msgs(on).length === 1);
+  const p = on.api.dayReportPanel_();
+  check('panel: ostatni dzień 04.08 — wysłana; ostatnia próba ok', p.day.date === '2026-08-04' && p.day.status === 'sent' && p.last.ok
+    && p.last.day === '2026-08-04' && !p.last.manual, JSON.stringify(p));
+  let err = '';
+  try { on.api.sendDayReportNow(TEST_PIN, '2026-08-04'); } catch(e){ err = e.message; }
+  check('„Wyślij listę" już wysłanej — komunikat, nic nie idzie', /już poszła/.test(err) && msgs(on).length === 1, err);
+  const again = on.api.sendDayReportNow(TEST_PIN, '2026-08-04', true);
+  check('...z potwierdzeniem (force) — idzie jeszcze raz, oznaczona jako ręczna', msgs(on).length === 2 && again.sent.day === '2026-08-04'
+    && again.panel.last.manual === true);
+  check('„Wyślij listę" za dzień niezamknięty — błąd', throws(() => on.api.sendDayReportNow(TEST_PIN, '2026-08-05', true)));
+  check('„Wyślij listę" bez PIN-u — błąd', throws(() => on.api.sendDayReportNow('zly', '2026-08-04', true)));
+  check('w getDiagnostics', !!on.api.getDiagnostics(TEST_PIN).dayReport);
+
+  // dzień bez spacerów (sama rezerwacja 5.08) i dwa zaległe dni naraz
+  on.setNow('2026-08-05T22:30:00+02:00');
+  on.api.endOfDay();
+  check('dzień bez spacerów — nic', msgs(on).length === 2);
+  let none = '';
+  try { on.api.sendDayReportNow(TEST_PIN, '2026-08-05', true); } catch(e){ none = e.message; }
+  check('...ręcznie też nic — komunikat, że nie ma spacerów', /nie ma spacerów/.test(none) && msgs(on).length === 2, none);
+  walkAll(on, '2026-08-06');
+  on.setNow('2026-08-07T10:00:00+02:00');
+  on.api.markWalked(1, 'Ola', 1, '2026-08-07');
+  on.setNow('2026-08-08T23:00:00+02:00');           // czyszczenie nie szło dwa dni
+  on.api.endOfDay();
+  const late = msgs(on).slice(2).map(x => x.message.match(/z (\d\d\.\d\d\.\d{4})/)[1]);
+  check('zaległe dni: każdy osobno, po kolei', JSON.stringify(late) === '["06.08.2026","07.08.2026"]', JSON.stringify(late));
+})();
+
+(function(){
+  console.log('B70: lista dnia — bramka zawodzi: czyszczenie i Historia i tak idą, wynik w panelu, ponowna wysyłka');
+  const e5 = reportEnv({ send: () => ({ code: 502, body: 'bad gateway' }) });
+  walkAll(e5, '2026-08-04');
+  e5.setNow('2026-08-04T22:30:00+02:00');
+  let thrown = '';
+  try { e5.api.endOfDay(); } catch(e){ thrown = e.message; }
+  check('bramka 502: czyszczenie bez błędu, Historia zapisana', !thrown && hist(e5).length === 3, thrown);
+  const p5 = e5.api.dayReportPanel_();
+  check('...panel: „nie wiadomo" (mogła dojść), znacznik zostaje', p5.last && p5.last.ok === false && p5.last.unknown === true
+    && p5.day.status === 'unknown' && !/tok3n5ecret/.test(JSON.stringify(p5)), JSON.stringify(p5));
+  let err = '';
+  try { e5.api.sendDayReportNow(TEST_PIN, '2026-08-04'); } catch(e){ err = e.message; }
+  check('...ręcznie bez potwierdzenia — „nie wiadomo", nic nie idzie', /Nie wiadomo/.test(err) && msgs(e5).length === 1, err);
+  reportGateway(e5);
+  e5.api.sendDayReportNow(TEST_PIN, '2026-08-04', true);
+  check('...z potwierdzeniem — idzie, panel: wysłana', msgs(e5).length === 2 && e5.api.dayReportPanel_().day.status === 'sent');
+
+  const e4 = reportEnv({ send: () => ({ code: 400, body: 'zły numer' }) });
+  walkAll(e4, '2026-08-04');
+  e4.setNow('2026-08-04T22:30:00+02:00');
+  e4.api.endOfDay();
+  const p4 = e4.api.dayReportPanel_();
+  check('bramka 400: „nie wyszła" (pewne), znacznik zdjęty', p4.last.ok === false && !p4.last.unknown && p4.day.status === '' && /400/.test(p4.last.msg),
+    JSON.stringify(p4));
+  reportGateway(e4);
+  e4.api.sendDayReportNow(TEST_PIN, '2026-08-04');
+  check('...ręcznie bez potwierdzenia — idzie od razu', msgs(e4).length === 2);
+
+  // limit planu Developer (3 czaty w miesiącu) — bramka odpowiada 466: po ludzku, pewne „nie wyszła"
+  const e6 = reportEnv({ send: () => ({ code: 466, body: JSON.stringify({ correspondentsStatus: { used: 3, total: 3 } }) }) });
+  walkAll(e6, '2026-08-04');
+  e6.setNow('2026-08-04T22:30:00+02:00');
+  e6.api.endOfDay();
+  const p6 = e6.api.dayReportPanel_();
+  check('bramka 466 (limit planu): komunikat o limicie, „nie wyszła", można ponowić', /limit planu/.test(p6.last.msg) && !p6.last.unknown
+    && p6.day.status === '', JSON.stringify(p6.last));
+
+  // dwa zaległe dni, pierwszy nie wychodzi — drugi i tak idzie
+  const e2 = reportEnv({ send: (url, opts) => /04\.08\.2026/.test(JSON.parse(opts.payload).message)
+    ? { code: 400, body: 'nie' } : { code: 200, body: JSON.stringify({ idMessage: 'OK2' }) } });
+  walkAll(e2, '2026-08-04');
+  e2.setNow('2026-08-05T10:00:00+02:00');
+  e2.api.markWalked(1, 'Ola', 1, '2026-08-05');
+  e2.setNow('2026-08-06T23:00:00+02:00');
+  let t3 = '';
+  try { e2.api.endOfDay(); } catch(e){ t3 = e.message; }
+  check('zaległe dni: pierwszy nie wyszedł, drugi poszedł mimo to', !t3 && msgs(e2).length === 2
+    && e2.api.dayReportPanel_().last.ok === true && e2.api.dayReportPanel_().last.day === '2026-08-05', t3 || JSON.stringify(e2.api.dayReportPanel_()));
+
+  const noGw = build([{id:1, name:'Borys'}]);
+  noGw.api.setDayReportSettings({ enabled: true, chatId: ANIA, chatName: 'Ania' }, TEST_PIN);
+  noGw.api.markWalked(1, 'Ola', 1, '2026-08-04');
+  noGw.setNow('2026-08-04T22:30:00+02:00');
+  let t2 = '';
+  try { noGw.api.endOfDay(); } catch(e){ t2 = e.message; }
+  check('bez bramki: czyszczenie bez błędu, w panelu — co ustawić', !t2 && hist(noGw).length === 1
+    && /greenApiInstance/.test(noGw.api.dayReportPanel_().last.msg), t2);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

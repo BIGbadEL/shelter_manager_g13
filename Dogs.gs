@@ -18,8 +18,11 @@
 
 /* ---------- KATALOG ---------- */
 
-/** Surowy wiersz zakładki Psy -> pies z katalogu (kim jest, bez stanu dnia). */
-function mapDogRow_(r) {
+/**
+ * Surowy wiersz zakładki Psy -> pies z katalogu (kim jest, bez stanu dnia).
+ * `teamCol` — czy zakładka ma kolumnę grupy psa (hasTeamColumn_); bez niej każdy pies jest nasz.
+ */
+function mapDogRow_(r, teamCol) {
   return {
     id:        Number(r[DOG.ID - 1]),
     name:      String(r[DOG.NAME - 1] || ''),
@@ -30,21 +33,112 @@ function mapDogRow_(r) {
     note:      String(r[DOG.NOTE - 1] || ''),
     walks:     Number(r[DOG.WALKS - 1]) === 2 ? 2 : 1,
     noteUntil: cellDate_(r[DOG.NOTE_UNTIL - 1]),
+    team:      teamCol ? dogTeam_(r[DOG.TEAM - 1]) : '',
   };
 }
 
+/** Katalog z nagłówkiem w tym samym odczycie — po nim poznajemy, czy kolumna grupy psa jest nasza. */
 function readDogCatalog_() {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues()
+  const rows = sh.getRange(1, 1, last, dogWidth_(sh)).getValues();
+  const teamCol = hasTeamColumn_(rows[0]);
+  return rows.slice(1)
     .filter(r => r[DOG.ID - 1] !== '' && r[DOG.ID - 1] !== null)
-    .map(mapDogRow_);
+    .map(r => mapDogRow_(r, teamCol));
 }
 
 /** Wiersz psa po numerze wiersza — jeden odczyt zakresu. */
 function readDogRow_(sh, row) {
-  return sh.getRange(row, 1, 1, DOG_WIDTH).getValues()[0];
+  return sh.getRange(row, 1, 1, dogWidth_(sh)).getValues()[0];
+}
+
+/**
+ * Ile kolumn Psy wolno czytać: najwyżej tyle, ile zakładka ma. Kolumna grupy psa doszła w 1.3,
+ * a getRange poza szerokość zakładki rzuca błędem — bez tego wdrożenie przed migrate() kładłoby
+ * całą aplikację (to samo co z Historią, histWidth_).
+ */
+function dogWidth_(sh) { return Math.min(DOG_WIDTH, sh.getMaxColumns()); }
+
+/**
+ * Czy kolumna grupy psa to nasza kolumna — po nagłówku `grupa_psa`. Kolumna o tym numerze bez
+ * tego nagłówka (pusta albo czyjaś własna, dopisana w arkuszu ręcznie) nie przenosi psów na listę
+ * innych grup: każdy pies jest wtedy nasz.
+ */
+function hasTeamColumn_(header) {
+  return !!header && String(header[DOG.TEAM - 1] == null ? '' : header[DOG.TEAM - 1]).trim() === DOG_HEADERS[DOG.TEAM - 1];
+}
+
+/**
+ * Kolumna grupy psa — dokłada brakującą (kolumna, nagłówek, format tekstowy, zanim coś do niej
+ * trafi). Zwraca false, gdy w jej miejscu stoi już czyjaś kolumna — z innym nagłówkiem albo bez
+ * nagłówka, ale z wpisami pod nim (review PR #6: „kaganiec" przy Lunie robił z niej psa grupy
+ * „kaganiec") — tej nie nadpisujemy. Tylko pod blokadą albo z edytora.
+ */
+function dogColumns_(sh) {
+  const missing = DOG_WIDTH - sh.getMaxColumns();
+  if (missing > 0) sh.insertColumnsAfter(sh.getMaxColumns(), missing);
+  const head = teamHead_(sh);
+  if (head === DOG_HEADERS[DOG.TEAM - 1]) return true;
+  if (head || teamCellsUsed_(sh)) return false;
+  sh.getRange(1, DOG.TEAM).setValue(DOG_HEADERS[DOG.TEAM - 1]);
+  sh.getRange(1, DOG.TEAM, sh.getMaxRows(), 1).setNumberFormat('@');
+  return true;
+}
+
+/** Nagłówek kolumny grupy psa ('' — pusty albo zakładka węższa). */
+function teamHead_(sh) {
+  if (sh.getMaxColumns() < DOG.TEAM) return '';
+  const v = sh.getRange(1, DOG.TEAM).getValue();
+  return String(v == null ? '' : v).trim();
+}
+
+/** Czy pod nagłówkiem kolumny grupy psa coś stoi (same spacje się nie liczą). */
+function teamCellsUsed_(sh) {
+  const last = sh.getLastRow();
+  if (last < 2) return false;
+  return sh.getRange(2, DOG.TEAM, last - 1, 1).getValues()
+    .some(r => String(r[0] == null ? '' : r[0]).trim() !== '');
+}
+
+/** Grupa psa do porównań: „G7", „g 7" i „ g7 " to ta sama grupa. */
+function teamKey_(t) { return String(t == null ? '' : t).replace(/\s+/g, '').toLowerCase(); }
+
+/**
+ * Grupa psa z arkusza albo z panelu: bez znaków sterujących, spacje ujednolicone, najwyżej
+ * MAX_LEN.TEAM znaków. Nasza grupa (HOME_TEAM w dowolnej pisowni) i puste = ''. `known` — grupy
+ * psów z katalogu: ta sama grupa wpisana inaczej („g7" przy istniejącej „G7") dostaje pisownię
+ * już używaną — inaczej z jednej grupy robiłyby się dwie. Ta sama reguła w Script.html (teamClean).
+ */
+function dogTeam_(v, known) {
+  const s = String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ')
+    .trim().slice(0, MAX_LEN.TEAM).trim();
+  const k = teamKey_(s);
+  if (!k || k === teamKey_(HOME_TEAM)) return '';
+  const same = (known || []).filter(t => teamKey_(t) === k)[0];
+  return same || s;
+}
+
+/**
+ * Czy da się zapisać grupę psa (pod blokadą, PRZED jakimkolwiek innym zapisem psa — żeby błąd nie
+ * zostawił psa zapisanego w połowie). Inna grupa niż nasza: dokłada kolumnę, a gdy w jej miejscu
+ * stoi czyjaś inna — wyraźny błąd, nie cisza. Nasza grupa: zapis tylko tam, gdzie kolumna już jest
+ * nasza (przy zakładce bez niej każdy pies i tak jest nasz). Zwraca: pisać czy nie.
+ */
+function teamWritable_(sh, team) {
+  if (!team) return teamHead_(sh) === DOG_HEADERS[DOG.TEAM - 1];
+  if (dogColumns_(sh)) return true;
+  throw new Error('Kolumna ' + DOG.TEAM + ' (O) w zakładce Psy jest zajęta przez inne dane — grupy psa nie zapisano. ' +
+                  'Przesuń tamtą kolumnę w arkuszu w inne miejsce.');
+}
+
+/**
+ * Grupy psów z katalogu (pisownia, jaka jest w arkuszu) — do ujednolicenia nowo wpisanej (dogTeam_).
+ * Bez psa `exceptId`: poprawiany pies, jedyny w swojej grupie, może zmienić jej pisownię.
+ */
+function knownTeams_(exceptId) {
+  return readDogCatalog_().filter(d => d.team && d.id !== Number(exceptId)).map(d => d.team);
 }
 
 /** Jeden pies z katalogu albo null. */
@@ -83,8 +177,11 @@ function slotToRow_(s) {
  * co brak wiersza. Wolny spacer w grupie to już stan: zaplanowany spacer grupowy.
  */
 function hasSlotState_(s) {
-  return s.status === STATUS.RESERVED || s.status === STATUS.WALKED || s.group > 0;
+  return s.status === STATUS.RESERVED || s.status === STATUS.WALKED || s.status === STATUS.TEAM || s.group > 0;
 }
+
+/** Spacer załatwiony: odbyty przez nas albo wzięty przez grupę psa (STATUS.TEAM). Do grupy już nie dołącza. */
+function slotDone_(s) { return s.status === STATUS.WALKED || s.status === STATUS.TEAM; }
 
 /**
  * Ile spacerów ma pies danego dnia: tyle, ile wymaga katalog — albo więcej, gdy dalszy
@@ -296,7 +393,7 @@ function importDayState_(sh) {
   const last = dogs ? dogs.getLastRow() : 0;
   const rows = [];
   if (last >= 2) {
-    dogs.getRange(2, 1, last - 1, DOG_WIDTH).getValues().forEach(r => {
+    dogs.getRange(2, 1, last - 1, dogWidth_(dogs)).getValues().forEach(r => {
       if (r[DOG.ID - 1] === '' || r[DOG.ID - 1] === null) return;
       const w = {
         status: String(r[DOG.STATUS - 1] || '') || STATUS.FREE,
@@ -589,6 +686,31 @@ function markWalked(id, name, slot, date) {
     });
 }
 
+/**
+ * „Bierze G7" (1.3): spacer psa innej grupy bierze jego własna grupa — psa nie musimy wyprowadzać.
+ * Na liście innych grup schodzi na dół jak odbyty. Ten spacer nie jest nasz: nie trafia do Historii
+ * ani do maila dla schroniska (decyzja właściciela; closeWalks_), liczy się tylko jako spacer psa
+ * (ostatni_spacer — bez fałszywego „bez spaceru od…").
+ * Tylko wolny spacer bez grupy (zaplanowany spacer grupowy jest nasz) i tylko pies innej grupy.
+ * Dzień bieżący albo przyszły, jak rezerwacja — „bierze" to też zapowiedź. `kto` = grupa psa
+ * z katalogu, nie z przeglądarki. Powtórka na spacerze już wziętym niczego nie rusza, więc zapis
+ * jest w RETRIABLE. Cofnięcie to zwykłe setFree (z widzianym stanem).
+ */
+function markTeam(id, date, slot) {
+  const a = actionDate_(date);
+  return slotAction_(id, a.date,
+    (dog, slots) => pickSlot_(dog, slots, slot, count => firstSlot_(slots, count, s => s.status === STATUS.FREE && !s.group)),
+    s => {
+      if (s.status !== STATUS.FREE || s.group) return false;          // już wzięty, zajęty albo w naszej grupie
+      const dog = readDogCatalog_().filter(x => x.id === Number(id))[0];
+      if (!dog || !dog.team) throw new Error('To pies naszej grupy — jego spacer wyprowadzamy my');
+      s.status = STATUS.TEAM;
+      s.who = dog.team;
+      s.time = '';
+      return true;
+    });
+}
+
 /** Karty sprzed spacerów: cofnięcie odbytego PIERWSZEGO z dwóch spacerów (bieżący dzień). */
 function undoFirstWalk(id, date) {
   const a = actionDate_(date);
@@ -679,7 +801,7 @@ function setGroup(date, ids, gid, seen) {
     const d = walkDay_(walksSheetLocked_(), a.date);
     const count = id => slotCount_(dogs[id], d.slotsOf(id));
     const current = id => {
-      for (let n = 1; n <= count(id); n++) if (d.slot(id, n).status !== STATUS.WALKED) return n;
+      for (let n = 1; n <= count(id); n++) if (!slotDone_(d.slot(id, n))) return n;
       return 1;
     };
     const refs = list => {
@@ -702,7 +824,8 @@ function setGroup(date, ids, gid, seen) {
     // pod tym numerem stoi dziś już inna grupa (ktoś rozwiązał naszą i założył nową) — nie ruszamy jej
     if (g && saw && inG(g).length && !inG(g).some(r => saw.indexOf(r) >= 0)) g = 0;
 
-    const members = want.filter(r => at(r).status !== STATUS.WALKED || (g && at(r).group === g));
+    // spacer wzięty przez grupę psa (STATUS.TEAM) nie jest nasz — do spaceru grupowego nie dołącza nigdy
+    const members = want.filter(r => at(r).status !== STATUS.TEAM && (at(r).status !== STATUS.WALKED || (g && at(r).group === g)));
     let maxGroup = 0;
     d.all().forEach(s => { if (s.group > maxGroup) maxGroup = s.group; });
     const target = members.length >= 2 ? (g || maxGroup + 1) : 0;
@@ -805,7 +928,17 @@ function setTextFields_(sh, row, ident, box) {
 }
 
 /**
- * data = { name, ident, box, dif } — wszystko opcjonalne poza regułą wyżej.
+ * Grupa psa z panelu, pod blokadą: ujednolicona (dogTeam_), a inna niż nasza — w pisowni już
+ * używanej w katalogu. Katalog czytamy tylko wtedy, gdy jest z czym porównywać.
+ */
+function teamOfInput_(v, exceptId) {
+  const team = dogTeam_(v);
+  return team ? dogTeam_(team, knownTeams_(exceptId)) : '';
+}
+
+/**
+ * data = { name, ident, box, dif, team } — wszystko opcjonalne poza regułą wyżej. `team` — grupa
+ * psa (1.3); brak (karty sprzed 1.3) albo nasza = pies naszej grupy.
  * `token` — jedno stuknięcie „Dodaj" w panelu (1.2): ten sam token drugi raz niczego nie dodaje,
  * tylko oddaje stan (patrz dogAdds_). Brak tokenu (karty sprzed 1.2) = dodanie jak dawniej.
  */
@@ -817,27 +950,39 @@ function addDog(data, pin, token) {
     const adds = t ? dogAdds_() : null;
     if (adds && Object.prototype.hasOwnProperty.call(adds, t)) return getData();   // ten pies już jest
     const sh = ss_().getSheetByName(SHEETS.DOGS);
+    const team = teamOfInput_(data && data.team);
+    const writeTeam = teamWritable_(sh, team);      // przed dodaniem: zajęta kolumna nie zostawi psa bez grupy
     const id = nextId_(sh);
     sh.appendRow([id, d.name, '', '', d.dif, STATUS.FREE, '', '', '',
                   d.note, d.walks, '', '', d.noteUntil]);
-    setTextFields_(sh, sh.getLastRow(), d.ident, d.box);
+    const row = sh.getLastRow();
+    setTextFields_(sh, row, d.ident, d.box);
+    if (writeTeam && team) sh.getRange(row, DOG.TEAM).setValue(team);
     if (adds) noteDogAdd_(adds, t, id);
     return getData();
   });
 }
 
-/** Edycja psa: nadanie/zmiana imienia, identyfikatora, boksu, trudności, liczby spacerów. */
+/**
+ * Edycja psa: nadanie/zmiana imienia, identyfikatora, boksu, trudności, liczby spacerów, grupy.
+ * Bez `team` w danych (karta sprzed 1.3) grupa zostaje, jaka była — inaczej otwarta stara karta
+ * przy każdej poprawce imienia przenosiłaby psa innej grupy na naszą listę.
+ */
 function updateDog(id, data, pin) {
   requirePin_(pin);
   const d = dogFields_(data);
+  const setTeam = !!data && data.team != null;
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row > 0) {
+      const team = setTeam ? teamOfInput_(data.team, id) : '';
+      const writeTeam = setTeam && teamWritable_(sh, team);   // przed resztą: błąd nie zostawi psa zapisanego w połowie
       sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@');        // numer i boks jako tekst, przed wartością
       sh.getRange(row, DOG.NAME, 1, 4).setValues([[d.name, d.ident, d.box, d.dif]]);
       sh.getRange(row, DOG.NOTE, 1, 2).setValues([[d.note, d.walks]]);
       sh.getRange(row, DOG.NOTE_UNTIL).setValue(d.noteUntil);   // kolumna niesąsiadująca z notatką
+      if (writeTeam) sh.getRange(row, DOG.TEAM).setValue(team);
       trimSlots_(Number(id));
     }
     return getData();

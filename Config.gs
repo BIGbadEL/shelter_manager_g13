@@ -48,10 +48,21 @@ const DOG = {
   WHO1: 12,       // stary model — patrz wyżej
   TIME1: 13,      // stary model — patrz wyżej
   NOTE_UNTIL: 14, // do kiedy notatka ma przeżyć czyszczenie ('' = do najbliższego)
+  TEAM: 15,       // grupa wolontariuszy, do której należy pies ('' = nasza, HOME_TEAM) — patrz niżej
 };
 const DOG_HEADERS = ['id', 'imie', 'identyfikator', 'boks', 'trudnosc', 'status', 'kto', 'godzina',
-  'ostatni_spacer', 'notatka', 'spacery', 'kto1', 'godzina1', 'notatka_do'];
+  'ostatni_spacer', 'notatka', 'spacery', 'kto1', 'godzina1', 'notatka_do', 'grupa_psa'];
 const DOG_WIDTH = DOG_HEADERS.length;
+
+/**
+ * Psy innych grup (1.3). Pomagamy wyprowadzać psy innych grup wolontariuszy, a żeby zapisy szły
+ * przez aplikację, te psy stoją w naszym katalogu. Na liście dnia to osobna lista pod naszą,
+ * sortowana osobno (SORTING.md). Kolumna `grupa_psa`: pusta = nasza grupa (HOME_TEAM) — tak
+ * czytają się wszystkie psy sprzed tej kolumny; inna wartość = nazwa grupy, np. „G7". Doszła
+ * później, więc zakładka bywa od niej węższa: czytamy najwyżej tyle kolumn, ile ma (dogWidth_),
+ * a pierwszy zapis grupy dokłada kolumnę sam (dogColumns_). HOME_TEAM jest też w Script.html.
+ */
+const HOME_TEAM = 'G13';
 
 /**
  * Zakładka Spacery — co się dzieje z KONKRETNYM SPACEREM psa danego dnia.
@@ -127,8 +138,12 @@ const HIST = { DATE: 1, DOG: 2, WHO: 3, TIME: 4, GROUP: 5, IDENT: 6 };
 const HIST_HEADERS = ['data', 'pies', 'kto', 'godzina', 'grupa', 'identyfikator'];
 const HIST_WIDTH = HIST_HEADERS.length;
 
-/** Dozwolone statusy i trudności. */
-const STATUS = { FREE: 'free', RESERVED: 'reserved', WALKED: 'walked' };
+/**
+ * Dozwolone statusy i trudności. TEAM (1.3) — spacer psa innej grupy bierze jego własna grupa
+ * („Bierze G7"): psa nie musimy wyprowadzać, a spacer nie jest nasz — nie idzie do Historii
+ * (markTeam w Dogs.gs, closeWalks_ w History.gs). `kto` = nazwa tej grupy.
+ */
+const STATUS = { FREE: 'free', RESERVED: 'reserved', WALKED: 'walked', TEAM: 'team' };
 const DIFFICULTIES = ['easy', 'med', 'hard'];
 
 /**
@@ -142,7 +157,7 @@ const NOTE_FOREVER = 'nigdy';
  * Limity długości pól (obrona przed wklejeniem elaboratu). MAIL, MAIL_TO, MAIL_SUBJECT — treść,
  * odbiorcy i temat maila z listą (właściwości skryptu; te same liczby w Script.html).
  */
-const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150 };
+const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150, TEAM: 20 };
 
 /** Temat maila z listą spacerów — domyślny, dopóki prowadząca nie ustawi własnego (właściwość `mailSubject`). */
 const DEFAULT_MAIL_SUBJECT = 'Lista spacerowa G13 z [DATA]';

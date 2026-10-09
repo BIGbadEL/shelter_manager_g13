@@ -171,24 +171,29 @@ function readHistoryDays_(from, to) {
  * domykają się przy najbliższym uruchomieniu, w kolejności dat.
  */
 function endOfDay() {
+  const days = [];                                   // dni, których nasze spacery trafiły właśnie do Historii
   withLock_(() => {
     const current = businessDate_();
-    const lastWalk = closeWalks_(s => s.date < current);
+    const lastWalk = closeWalks_(s => s.date < current, days);
     closeDogs_(current, lastWalk);
     clearDoneTasks_();
     forgetVolunteers_(current);
   });
+  // lista dnia do prowadzącej (1.3) — już bez blokady (bramka potrafi odpowiadać do minuty) i nigdy
+  // nie zatrzyma czyszczenia: to jest zrobione, a błąd zostaje w panelu (sendClosedDayReports_)
+  sendClosedDayReports_(days);
 }
 
 /**
- * Zamyka spacery zakładki Spacery spełniające `match`: odbyte trafiają do Historii
+ * Zamyka spacery zakładki Spacery spełniające `match`: odbyte (nasze) trafiają do Historii
  * pod SWOJĄ datą — każdy wiersz ją nosi, więc koniec zgadywania, który dzień właśnie
  * się skończył. Pies na dwa spacery daje dwa wpisy. Wpis niesie numer grupy dnia
  * (podgląd minionego dnia pokazuje, kto szedł razem) i numer psa z katalogu w tej chwili.
  * Same wiersze znikają. Zwraca mapę pies -> data jego ostatniego zamkniętego spaceru.
+ * `days` (tablica, nieobowiązkowa) dostaje daty, których wpisy właśnie trafiły do Historii.
  * Tylko pod blokadą.
  */
-function closeWalks_(match) {
+function closeWalks_(match, days) {
   const sh = walksSheetLocked_();
   const last = sh.getLastRow();
   if (last < 2) return {};
@@ -201,10 +206,12 @@ function closeWalks_(match) {
     const s = mapSlotRow_(r);
     if (!isDate_(s.date) || !(s.dogId > 0)) return;   // pusty albo zepsuty wiersz wypada przy okazji
     if (!match(s)) { keep.push(r); return; }
-    if (s.status !== STATUS.WALKED) return;            // rezerwacja, z której nic nie wyszło — przepada
+    if (!slotDone_(s)) return;                         // rezerwacja, z której nic nie wyszło — przepada
+    if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
+    // spacer wzięty przez grupę psa (1.3) to spacer psa, ale nie nasz: do Historii i maila nie idzie
+    if (s.status === STATUS.TEAM) return;
     toHist.push({ row: [s.date, labels[s.dogId] || ('Pies ' + s.dogId), s.who, s.time, s.group || '', idents[s.dogId] || ''],
                   slot: s.slot });
-    if (!(lastWalk[s.dogId] >= s.date)) lastWalk[s.dogId] = s.date;
   });
   if (keep.length === rows.length) return lastWalk;
 
@@ -216,6 +223,7 @@ function closeWalks_(match) {
     histColumns_(hist);
     histRoom_(hist, toHist.length);
     hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist.map(t => t.row));
+    if (days) toHist.forEach(t => { if (days.indexOf(t.row[0]) < 0) days.push(t.row[0]); });
   }
   // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste
   const blanks = rows.slice(keep.length).map(() => Array(WALK_WIDTH).fill(''));
@@ -232,7 +240,11 @@ function closeDogs_(current, lastWalk) {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return;
-  const vals = sh.getRange(2, 1, last - 1, DOG_WIDTH).getValues();
+  // zmieniamy tylko ostatni spacer, notatkę i jej termin — czytamy i piszemy najwyżej do notatka_do.
+  // Kolumna O (grupa psa, albo czyjaś własna) zostaje nietknięta: zapis wartości zamieniłby formułę w stałą
+  // (review PR #6); do 1.2 czyszczenie i tak kończyło na kolumnie 14. Zakładka bywa też węższa (dogWidth_).
+  const width = Math.min(dogWidth_(sh), DOG.NOTE_UNTIL);
+  const vals = sh.getRange(2, 1, last - 1, width).getValues();
   vals.forEach(r => {
     const lw = lastWalk[Number(r[DOG.ID - 1])];
     if (lw && lw > cellDate_(r[DOG.LAST_WALK - 1])) r[DOG.LAST_WALK - 1] = lw;
@@ -242,7 +254,7 @@ function closeDogs_(current, lastWalk) {
       r[DOG.NOTE_UNTIL - 1] = '';
     }
   });
-  sh.getRange(2, 1, vals.length, DOG_WIDTH).setValues(vals);
+  sh.getRange(2, 1, vals.length, width).setValues(vals);
 }
 
 function clearDoneTasks_() {
