@@ -492,7 +492,8 @@ prywatnego numeru. Bramka ma dostęp do wszystkich czatów konta bota.
 Uruchomienie (raz, na teście i na produkcji osobno — to dwa projekty z własnymi właściwościami):
 1. Konto bota: osobny numer z WhatsApp (Business). **Dodaj go do społeczności i do samej grupy
    „Grafik"** — do grupy nadrzędnej społeczności i do „Ogłoszeń" bramka nie wyśle.
-2. W konsoli Green API załóż instancję (plan Developer wystarcza: 3 czaty, ankiety bez limitu)
+2. W konsoli Green API załóż instancję (plan Developer: 3 czaty w miesiącu — „Grafik", prowadząca
+   (lista dnia, 1.3) i grupa próbna to komplet; patrz „Limit darmowego planu bramki" niżej)
    i połącz ją z telefonem bota: WhatsApp → Połączone urządzenia → Połącz urządzenie → kod QR
    z konsoli. Telefon bota musi co jakiś czas być włączony z internetem.
 3. W Apps Script: *Ustawienia projektu → Właściwości skryptu* dodaj `greenApiUrl` (apiUrl z konsoli),
@@ -530,6 +531,14 @@ tylko osoby zapisane w kontaktach telefonu bota), wybierz prowadzącą, zaznacz 
 czyszczeniu", „Zapisz". Każdy dzień idzie najwyżej raz, dzień bez spacerów — nic. Czyszczenie nie czeka
 na bota: gdy bramka zawiedzie, Historia i tak się zapisuje, a wynik stoi w panelu; „Wyślij listę z …"
 wyśle ostatni dzień jeszcze raz (po potwierdzeniu). Wymaga tej samej bramki i zgody co ankieta.
+
+**Limit darmowego planu bramki.** Plan Developer Green API pozwala w miesiącu pisać do **3 czatów** (osób
+albo grup) na instancję — kolejny dostaje błąd 466 (panel mówi wtedy wprost o limicie), licznik odnawia się
+1. dnia miesiąca. Darmowa instancja może być tylko jedna, więc test i produkcja zwykle dzielą ten limit.
+Z listą dnia bot pisze już do: „Grafiku", prowadzącej i grupy próbnej — to komplet. Dlatego **na teście
+wysyłanie po czyszczeniu zostaw wyłączone** (inaczej prowadząca co noc dostawałaby listę z arkusza
+testowego), a do próby „Wyślij listę" wybierz **tę samą osobę co na produkcji** — nowy adresat, np. własny
+numer, to czwarty czat. Stan licznika: konsola Green API.
 
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
@@ -617,6 +626,9 @@ Duże zmiany (numer X). Temat: psy innych grup — pomagamy wyprowadzać psy inn
   „📋 Skopiuj treść" każdego zamkniętego dnia ze spacerami (raz na dzień). Kontakt z kontaktów telefonu bota,
   włącznik i „Wyślij listę" w panelu. Czyszczenie nigdy nie czeka na bota.
 - **Lista grup bota bez dwóch „G13"** — społeczność i jej ogłoszenia dostają dopisek albo numer.
+- **Numer wersji przy „Spacery"** w nagłówku (v1.3) — ten sam co w `package.json`, pilnuje test T5.
+- Nocne czyszczenie nie dotyka kolumny O w Psy (review PR #6 — wcześniej przepisywało ją co noc, formuły
+  stawały się stałymi).
 - Arkusz: nowa kolumna Psy `grupa_psa` (O) — dokłada się sama przy pierwszym psie innej grupy, `migrate()`
   niepotrzebne. Jeśli kolumna O jest zajęta przez coś innego, aplikacja jej nie nadpisze i powie o tym przy
   zapisie grupy.

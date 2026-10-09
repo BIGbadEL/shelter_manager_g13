@@ -180,6 +180,11 @@ function greenCall_(method, body, query) {
     throw err;
   }
   const code = res.getResponseCode(), text = String(res.getContentText() || '');
+  if (code === 466) {
+    // plan Developer: 3 czaty w miesiącu na instancję (test i produkcja na jednej) — po ludzku; nic nie wyszło
+    throw new Error('Bramka WhatsAppa: błąd 466 — wyczerpany limit planu: bot pisał już w tym miesiącu do 3 czatów (plan Developer), '
+      + 'ten byłby kolejny. Limit odnawia się 1. dnia miesiąca; inaczej plan płatny w konsoli Green API.');
+  }
   if (code !== 200) {
     const err = new Error('Bramka WhatsAppa: błąd ' + code + (text ? ' (' + hide(text).slice(0, 150) + ')' : ''));
     // 5xx (502, 504…) daje zwykle pośrednik, za którym bramka nie zdążyła odpowiedzieć — żądanie mogło

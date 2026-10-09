@@ -2205,6 +2205,22 @@ const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].t
   console.log = s => { said += s; };
   try { env.api.migrate(); } finally { console.log = log; }
   check('migrate() nie nadpisuje cudzego nagłówka i mówi o tym', P._data[0][14] === 'uwagi' && /grupa_psa/.test(said), said.slice(0, 120));
+
+  // nocne czyszczenie zmienia tylko ostatni spacer, notatkę i jej termin — kolumny O nie dotyka (review PR #6):
+  // zapis wartości w cudzą kolumnę zamienia formułę w stałą, a do 1.2 czyszczenie kończyło na kolumnie 14
+  const n = build([], { sheets: strictDogs([{id:1, name:'Borys', note:'Zdjęcia', extra:'=JEŻELI(A2>0;"tak";"")'}], { head:'uwagi' }) });
+  const NP = n.sheets['Psy'], touched = [];
+  const getRange = NP.getRange.bind(NP);
+  NP.getRange = (r, c, nr, nc) => {
+    const g = getRange(r, c, nr, nc), sv = g.setValues, s1 = g.setValue;
+    const hits = c + (nc || 1) - 1 >= 15;
+    g.setValues = v => { if(hits) touched.push(r + ':' + c + '-' + (c + (nc || 1) - 1)); return sv.call(g, v); };
+    g.setValue = v => { if(hits) touched.push(r + ':' + c); return s1.call(g, v); };
+    return g;
+  };
+  n.api.endOfDay();
+  check('nocne czyszczenie nie zapisuje kolumny O (cudza formuła zostaje formułą)', touched.length === 0 && NP._data[1][9] === '',
+    JSON.stringify(touched));
 })();
 
 (function(){
@@ -2397,6 +2413,15 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   reportGateway(e4);
   e4.api.sendDayReportNow(TEST_PIN, '2026-08-04');
   check('...ręcznie bez potwierdzenia — idzie od razu', msgs(e4).length === 2);
+
+  // limit planu Developer (3 czaty w miesiącu) — bramka odpowiada 466: po ludzku, pewne „nie wyszła"
+  const e6 = reportEnv({ send: () => ({ code: 466, body: JSON.stringify({ correspondentsStatus: { used: 3, total: 3 } }) }) });
+  walkAll(e6, '2026-08-04');
+  e6.setNow('2026-08-04T22:30:00+02:00');
+  e6.api.endOfDay();
+  const p6 = e6.api.dayReportPanel_();
+  check('bramka 466 (limit planu): komunikat o limicie, „nie wyszła", można ponowić', /limit planu/.test(p6.last.msg) && !p6.last.unknown
+    && p6.day.status === '', JSON.stringify(p6.last));
 
   // dwa zaległe dni, pierwszy nie wychodzi — drugi i tak idzie
   const e2 = reportEnv({ send: (url, opts) => /04\.08\.2026/.test(JSON.parse(opts.payload).message)

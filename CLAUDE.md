@@ -248,6 +248,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   lista miałaby każdego członka społeczności). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
   ostatniego dnia z Historii (`lastHistDay_`); już wysłaną albo „nie wiadomo" — po potwierdzeniu (`force`;
   prywatna wiadomość drugi raz nikomu nie szkodzi). Nie w RETRIABLE. Panel: `getDiagnostics().dayReport`.
+  **Limit planu Developer bramki: 3 czaty w miesiącu na instancję** (test i produkcja dzielą jedną darmową
+  instancję) — „Grafik", prowadząca i grupa próbna to komplet; czwarty czat dostaje 466 (`greenCall_` mówi
+  wprost o limicie; pewne „nie wyszło"). **Na teście wysyłanie po czyszczeniu wyłączone**, próba „Wyślij listę"
+  do tej samej osoby co na produkcji (review PR #6).
 - **Dziennik spowolnień** (1.2, `Diag.gs`, B62–B64, S122–S128) — po zgłoszeniu 7–8.10.2026 „strona
   długo się ładowała, a potem wisiała": dziennik wykonań Google zna tylko łączny czas na serwerze
   (bez kroków, bez filtra po funkcji), a telefonu nie widzi wcale. **Serwer** (`diagServer_`, właściwość
@@ -522,7 +526,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1630 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1633 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -668,7 +672,8 @@ na wąskiej zakładce), B66 cudza kolumna O, B67 `markTeam` („Bierze G7": tylk
 z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
 dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
 dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
-T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
+T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
+= `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -912,7 +917,14 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   **Do sprawdzenia na teście:** „Pobierz grupy" (jakie dopiski dostają oba „G13" — bramka podaje szczegóły
   społeczności tylko administratorom), „Pobierz kontakty" (czy prowadząca jest na liście), „Wyślij listę",
   potem wiadomość po czyszczeniu o 19:00. Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
+  **Przed `deploy:prod`: kolumna O w Psy na produkcji ma być pusta** (review PR #6 — czyjaś kolumna tam nie
+  przeniesie psów i nie zostanie nadpisana, ale grupa psa nie będzie się wtedy zapisywać). Nocne czyszczenie
+  kolumny O nie dotyka (`closeDogs_` kończy na `notatka_do`; do review pisało do 15 i zamieniało formuły w stałe).
   Cofnięcie: `deploy:prod` z `release/1.2`; wiersze `team` w Spacery 1.2 pokaże jako odbyte „✓ G7".
+- **Decyzje właściciela z review PR #6 — nie zmieniać bez pytania:** „Bierze G7" zostaje jednym stuknięciem,
+  tej samej wielkości co „Zarezerwuj", bez pytania (pomyłkę naprawia „Cofnij"). Przegląd zauważył też: nazwa
+  grupy przy limicie 20 znaków łamie przyciski na 360 px na dwie linijki (nic nie wystaje); `lastHistDay_`
+  czyta całą kolumnę dat Historii przy każdym otwarciu Panelu — do zmierzenia, gdy Historia urośnie.
 - **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
   (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
   `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —

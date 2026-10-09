@@ -240,7 +240,10 @@ function closeDogs_(current, lastWalk) {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return;
-  const width = dogWidth_(sh);   // zakładka sprzed kolumny grupy psa bywa węższa niż DOG_WIDTH
+  // zmieniamy tylko ostatni spacer, notatkę i jej termin — czytamy i piszemy najwyżej do notatka_do.
+  // Kolumna O (grupa psa, albo czyjaś własna) zostaje nietknięta: zapis wartości zamieniłby formułę w stałą
+  // (review PR #6); do 1.2 czyszczenie i tak kończyło na kolumnie 14. Zakładka bywa też węższa (dogWidth_).
+  const width = Math.min(dogWidth_(sh), DOG.NOTE_UNTIL);
   const vals = sh.getRange(2, 1, last - 1, width).getValues();
   vals.forEach(r => {
     const lw = lastWalk[Number(r[DOG.ID - 1])];

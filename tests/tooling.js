@@ -59,5 +59,11 @@ check('skrypt otwierający istnieje', fs.existsSync(path.join(ROOT, 'scripts', '
 check('...i nie jedzie do Apps Script', !/scripts/.test(fs.readFileSync(path.join(ROOT, '.claspignore'), 'utf8')
   .split('\n').filter(l => l.startsWith('!')).join('\n')));
 
+/* ---------- T5: numer wersji przy nazwie aplikacji ---------- */
+console.log('T5: numer wersji przy „Spacery" (Index.html) = version w package.json (1.3.0 → v1.3, 1.2.1 → v1.2.1)');
+const ver = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+const shown = (fs.readFileSync(path.join(ROOT, 'Index.html'), 'utf8').match(/<span class="ver">v([^<]*)<\/span>/) || [])[1];
+check('wersja na stronie = package.json', !!shown && shown === String(ver).replace(/\.0$/, ''), shown + ' / ' + ver);
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
