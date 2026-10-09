@@ -1276,6 +1276,8 @@ const walkIn = (env, id, date, n) => slotAt(env, id, date, n);
   const ok = !throws(() => { r = env.api.reserve(1, 'Ala', D, 1); });
   check('limit właściwości: rezerwacja zapisana, bez błędu dla wolontariusza',
     ok && slotAt(env, 1, D).who==='Ala' && r && r.slot.status==='reserved', JSON.stringify(r));
+  check('...a odpowiedź nie niesie koloru, którego nie zapisano (1.3.1: kolory dnia raz na blokadę)',
+    !(r && r.volunteers && r.volunteers[D] && 'ala' in r.volunteers[D]), JSON.stringify(r && r.volunteers));
   env.failProps(k => isVol(k));                           // odczyt też pada
   const ok2 = !throws(() => { r = env.api.markWalked(1, '', 1, D); });
   check('awaria odczytu: spacer zapisany, odpowiedź bez kolorów (telefon zostaje przy swoich)',
@@ -1959,6 +1961,11 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
     && l[0].parts.spacery >= 4000 && l[0].parts.psy === 0 && 'zadania' in l[0].parts && 'ustawienia' in l[0].parts, JSON.stringify(l));
   check('...z godziną z zegara serwera, bez imion i treści', l[0].at === env.now() && !/Borys|Luna|Ania/.test(env.props.diagServer));
 
+  // 1.3.1: stan startowy z pamięci podręcznej — wolny arkusz nie zatrzymuje otwarcia strony (B71)
+  env.api.doGet();
+  check('otwarcie strony ze stanem z pamięci: arkusz wolny, a strona bez wpisu w dzienniku', diagOf(env).length === 1
+    && JSON.parse(env.html.evaluated[env.html.evaluated.length - 1].boot).cached === true, JSON.stringify(diagOf(env)));
+  env.cache.store = {};      // Google wyczyścił pamięć: otwarcie strony czyta arkusz, jak przed 1.3.1
   env.api.doGet();
   l = diagOf(env);
   check('wolne otwarcie strony: JEDEN wpis doGet (odczyt w środku nie liczy się drugi raz)', l.length === 2 && l[1].fn === 'doGet'
@@ -1967,7 +1974,9 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
   env.cost.evaluate = 3500;
   env.api.doGet();
   l = diagOf(env);
-  check('...wolne składanie strony: strona ≥ 3,5 s', l.length === 3 && l[2].parts.strona >= 3500 && l[2].parts.spacery === 0, JSON.stringify(l[2]));
+  // poprzednie otwarcie włożyło stan do pamięci (1.3.1) — to idzie już bez odczytu arkusza
+  check('...wolne składanie strony: strona ≥ 3,5 s (stan z pamięci, bez kroków arkusza)', l.length === 3 && l[2].parts.strona >= 3500
+    && !('spacery' in l[2].parts) && 'pamięć' in l[2].parts, JSON.stringify(l[2]));
   env.cost.evaluate = 0;
   env.cost.template = 3200;
   env.api.doGet();
@@ -1977,6 +1986,7 @@ const diagOf = (env, k) => JSON.parse(env.props[k || 'diagServer'] || '[]');
   // stan startowy nie dał się odczytać: strona idzie bez niego, błąd w dzienniku (wcześniej znikał po cichu)
   const psy = env.sheets['Psy'];
   delete env.sheets['Psy'];
+  env.cache.store = {};      // stan z pamięci przykryłby awarię arkusza — tu chodzi o odczyt z arkusza
   env.api.doGet();
   env.sheets['Psy'] = psy;
   l = diagOf(env);
@@ -2467,6 +2477,181 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   try { noGw.api.endOfDay(); } catch(e){ t2 = e.message; }
   check('bez bramki: czyszczenie bez błędu, w panelu — co ustawić', !t2 && hist(noGw).length === 1
     && /greenApiInstance/.test(noGw.api.dayReportPanel_().last.msg), t2);
+})();
+
+/* ---------- B71–B72: pamięć podręczna (1.3.1) ----------
+   Pomiar 9.10.2026: każde wywołanie arkusza ~0,1 s, czasem przestój (do 351 s); zapis trzymał blokadę ~2 s.
+   Katalog psów dla akcji pod blokadą i stan startowy strony idą z CacheService, a znaczniki pokolenia —
+   wymieniane przez każdy zapis po flush — pilnują, żeby nic sprzed zapisu nie zostało użyte. */
+const cacheKey = (env, k) => env.conf.CACHE_PREFIX + env.conf.CACHE_KEY[k];
+const lastLock = env => env.calls.locks[env.calls.locks.length - 1];
+const underLock = env => lastLock(env).end - lastLock(env).at;
+const psyCalls = env => env.calls.bySheet['Psy'] || 0;
+
+(function(){
+  console.log('B71: zapis krócej pod blokadą — pies z katalogu w pamięci podręcznej, kolory raz; każda zmiana psów go unieważnia');
+  const D = '2026-08-04';
+  const env = build([{id:1, name:'Borys'}, {id:2, name:'Luna', walks:2}, {id:3, name:'Max'}, {id:4, name:'Fado'}], { walks: [] });
+  env.api.getData();                                 // układ zakładki sprawdzony
+  env.cache.store = {};                              // pamięć pusta: pierwsza rezerwacja bierze psa z arkusza
+  env.api.reserve(1, 'Ola', D, 1);
+  const cold = underLock(env);
+  const p0 = psyCalls(env);
+  env.api.reserve(3, 'Ola', D, 1);
+  const warm = underLock(env);
+  check('druga rezerwacja: pies z pamięci — zakładka Psy ani razu', psyCalls(env) === p0, psyCalls(env) - p0);
+  // przed 1.3.1: 11 — pies z arkusza (zakładka, ostatni wiersz, kolumna numerów, szerokość, wiersz psa) + 6 jak niżej
+  check('wywołań arkusza pod blokadą: ' + warm + ' (zakładka Spacery, jej układ, ostatni wiersz, odczyt, zapis, flush) — było 11',
+    warm <= 6 && warm < cold, warm + ' / pies z arkusza: ' + cold);
+  check('...a rezerwacja zapisana', slotAt(env, 3, D, 1).status === 'reserved' && slotAt(env, 3, D, 1).who === 'Ola');
+  let volGets = 0;
+  env.failProps((k, op) => { if (op === 'get' && k.indexOf('vol:') === 0) volGets++; return false; });
+  const res = env.api.reserve(4, 'Ola', D, 1);
+  env.failProps(null);
+  check('kolory dnia czytane raz (było dwa: przed przydziałem i do odpowiedzi), odpowiedź z kolorami', volGets === 1
+    && res.volunteers && res.volunteers[D] && 'ola' in res.volunteers[D], volGets + ' ' + JSON.stringify(res.volunteers));
+
+  // każda zmiana psów w panelu unieważnia katalog w pamięci — kolejna akcja widzi nowy stan
+  env.api.updateDog(2, {name:'Luna', walks:1, team:''}, TEST_PIN);
+  check('po zmianie psa (2 → 1 spacer): spacer 2/2 już nie do zarezerwowania', throws(() => env.api.reserve(2, 'Ola', D, 2)));
+  env.api.setAllWalks(2, TEST_PIN);
+  env.api.reserve(1, 'Ala', D, 2);
+  check('„Wszystkie po 2 spacery": 2/2 od razu do zarezerwowania', slotAt(env, 1, D, 2).status === 'reserved');
+  const rex = env.api.addDog({name:'Rex'}, TEST_PIN, 'dcache00001').dogs.filter(d => d.name === 'Rex')[0].id;
+  env.api.reserve(rex, 'Ola', D, 1);
+  check('nowy pies od razu do zarezerwowania', slotAt(env, rex, D, 1).status === 'reserved');
+  env.api.removeDog(4, TEST_PIN);
+  const gone = env.api.reserve(4, 'Ola', D, 1);
+  check('usunięty pies: rezerwacja nic nie zapisuje', gone.slot === null && !openRows(env).some(r => Number(r[1]) === 4),
+    JSON.stringify(gone.slot));
+  check('„Bierze G7" na naszym psie dalej odrzucone (grupa psa z katalogu w pamięci)', throws(() => env.api.markTeam(3, D, 2))
+    && slotAt(env, 3, D, 2).status === 'free');
+
+  // ręczna zmiana w arkuszu (prowadząca w Arkuszach Google) znacznika nie zmienia: akcje widzą ją
+  // od najbliższego odczytu listy, który wkłada świeży katalog
+  const psy = env.sheets['Psy']._data;
+  const row = psy.findIndex(r => Number(r[0]) === rex);
+  psy[row][10] = 2;
+  check('ręczna zmiana w arkuszu: do odczytu listy akcja widzi katalog z pamięci', throws(() => env.api.reserve(rex, 'Ola', D, 2)));
+  env.api.getData();
+  env.api.reserve(rex, 'Ola', D, 2);
+  check('...po odczycie listy już nowy', slotAt(env, rex, D, 2).status === 'reserved');
+
+  // pamięć zawodzi — zapis i tak przechodzi, pies z arkusza
+  const f = build([{id:1, name:'Borys'}, {id:2, name:'Luna'}], { walks: [] });
+  f.api.getData();
+  f.api.reserve(1, 'Ola', D, 1);
+  f.failCache(op => op === 'get');
+  const pf = psyCalls(f);
+  f.api.reserve(2, 'Ola', D, 1);
+  check('pamięć nie odpowiada: rezerwacja zapisana, pies z arkusza', slotAt(f, 2, D, 1).status === 'reserved' && psyCalls(f) > pf);
+  f.failCache(null);
+  f.api.getData();
+  f.api.doGet();
+  f.failCache(op => op === 'put');
+  let err = '';
+  try { f.api.setFree(2, D, {status:'reserved', who:'Ola'}, 1); } catch(e){ err = e.message; }
+  f.failCache(null);
+  const bootLeft = !!f.cache.store[cacheKey(f, 'BOOT')];   // przed slotAt — jego getData włoży świeży
+  check('pamięć nie przyjmuje zapisu: zwolnienie zapisane, bez błędu', !err && slotAt(f, 2, D, 1).status === 'free', err);
+  check('...nieudana wymiana znacznika: stan startowy usunięty — żaden stary nie zostaje ważny', !bootLeft);
+})();
+
+(function(){
+  console.log('B72: otwarcie strony bez arkusza — stan startowy z pamięci, dopóki nikt nic nie zapisał i dzień ten sam');
+  const D = '2026-08-04';
+  const env = build([{id:1, name:'Borys'}, {id:2, name:'Luna'}], { walks: [] });
+  const bootOf = e => JSON.parse((e || env).html.evaluated[(e || env).html.evaluated.length - 1].boot);
+  env.api.doGet();
+  check('pierwsze otwarcie (pamięć pusta): z arkusza, bez „cached"', !bootOf().cached && bootOf().dogs.length === 2);
+  env.api.reserve(1, 'Ola', D, 1);
+  const fresh = env.api.getData();
+  const c0 = env.calls.sheets;
+  env.api.doGet();
+  check('po odczycie listy: otwarcie strony bez ani jednego wywołania arkusza', env.calls.sheets === c0, env.calls.sheets - c0);
+  check('...ten sam stan co z getData, z „cached" (telefon od razu dociąga świeży)', bootOf().cached === true
+    && JSON.stringify(Object.assign({}, bootOf(), { cached: undefined })) === JSON.stringify(fresh));
+
+  env.api.reserve(2, 'Ala', D, 1);
+  const c1 = env.calls.sheets;
+  env.api.doGet();
+  check('po zapisie: stan w pamięci nieważny — otwarcie czyta arkusz i widzi nową rezerwację', env.calls.sheets > c1 && !bootOf().cached
+    && bootOf().slots.some(s => s.dogId === 2 && s.status === 'reserved' && s.who === 'Ala'));
+  const c2 = env.calls.sheets;
+  env.api.doGet();
+  check('...a samo otwarcie włożyło stan do pamięci: następne już bez arkusza', env.calls.sheets === c2 && bootOf().cached === true);
+
+  // wyścig: odczyt listy, w którego trakcie przeszedł zapis — włożony stan jest podpisany znacznikiem sprzed zapisu
+  const sp = env.sheets['Spacery'], orig = sp._onRead;
+  let once = true;
+  sp._onRead = name => { orig(name); if (once) { once = false; env.ctx.__api.cacheBump_(false); } };
+  env.api.getData();
+  sp._onRead = orig;
+  env.api.doGet();
+  check('zapis w trakcie odczytu listy: włożony stan nieużyty', !bootOf().cached);
+  once = true;
+  delete env.cache.store[cacheKey(env, 'BOOT')];    // otwarcie musi czytać arkusz
+  sp._onRead = name => { orig(name); if (once) { once = false; env.ctx.__api.cacheBump_(false); } };
+  env.api.doGet();
+  sp._onRead = orig;
+  env.api.doGet();
+  check('zapis w trakcie otwarcia strony: to, co otwarcie włożyło, też nieużyte', !bootOf().cached);
+  // stan sprzed zapisu włożony już po nim (spóźniony odczyt) — podpis stary, nieużyty
+  const genBefore = env.cache.store[cacheKey(env, 'GEN')].v;
+  const before = env.api.getData();
+  env.api.setFree(2, D, {status:'reserved', who:'Ala'}, 1);
+  env.cache.store[cacheKey(env, 'BOOT')] = { v: JSON.stringify({ gen: genBefore, state: before }), exp: env.now() + 3600000 };
+  env.api.doGet();
+  check('spóźniony odczyt sprzed zapisu: nieużyty, strona widzi zwolnienie', !bootOf().cached
+    && !bootOf().slots.some(s => s.dogId === 2 && s.status === 'reserved'));
+
+  // nowy dzień rezerwacyjny: stan z pamięci sprzed godziny czyszczenia jest nieważny (wpis świeży — nie wygasł)
+  env.setNow('2026-08-04T21:50:00+02:00');
+  env.api.getData();
+  env.setNow('2026-08-04T22:30:00+02:00');
+  env.api.doGet();
+  check('po godzinie czyszczenia: stan z pamięci (stary dzień) nieużyty — strona na nowym dniu', !bootOf().cached
+    && bootOf().businessDate === '2026-08-05');
+
+  // ręczna zmiana w arkuszu: otwarcie jeszcze ze stanu w pamięci (telefon i tak od razu go odświeża),
+  // a najbliższy odczyt listy wkłada świeży
+  env.api.doGet();
+  env.sheets['Psy']._data[1][1] = 'Borys II';
+  env.api.doGet();
+  check('ręczna zmiana w arkuszu: otwarcie jeszcze ze stanu w pamięci (cached — telefon zaraz odświeży)', bootOf().cached === true
+    && bootOf().dogs[0].name === 'Borys');
+  env.api.getData();
+  env.api.doGet();
+  check('...po odczycie listy już nowy', bootOf().cached === true && bootOf().dogs[0].name === 'Borys II');
+
+  // znaczniki wygasły (ponad 6 h bez zapisu — rano po nocy): pierwsze otwarcie zakłada je pod blokadą
+  env.setNow('2026-08-05T09:00:00+02:00');
+  env.cost.lockBusy = true;
+  env.api.doGet();
+  env.api.doGet();
+  check('znaczniki wygasły, a trwa zapis: strona z arkusza, bez błędu (znacznik założy ten zapis)', !bootOf().cached
+    && bootOf().dogs.length === 2);
+  env.cost.lockBusy = false;
+  env.api.doGet();
+  env.api.doGet();
+  check('...blokada wolna: pierwsze otwarcie zakłada znacznik, następne już z pamięci', bootOf().cached === true);
+  env.api.migrate();         // z edytora, bez blokady aplikacji
+  env.api.doGet();
+  check('migrate()/setup() z edytora: stan w pamięci nieważny', !bootOf().cached);
+
+  // pamięć nie działa wcale — strona, odczyt i zapis jak przed 1.3.1
+  env.failCache(() => true);
+  let err = '';
+  try { env.api.doGet(); env.api.getData(); env.api.reserve(1, 'Ola', '2026-08-05', 1); } catch(e){ err = e.message; }
+  env.failCache(null);
+  check('pamięć nie działa wcale: otwarcie, odczyt i zapis bez błędu', !err && !bootOf().cached && bootOf().dogs.length === 2, err);
+
+  // stan ponad 100 KB (limit wpisu w pamięci Google) — po prostu bez pamięci
+  const big = build(Array.from({length: 120}, (_, i) => ({ id: i + 1, name: 'Pies ' + (i + 1), note: 'x'.repeat(800), noteUntil: 'nigdy' })), { walks: [] });
+  big.api.reserve(1, 'Ola', D, 1);
+  let e2 = '';
+  try { big.api.getData(); big.api.doGet(); big.api.reserve(2, 'Ola', D, 1); } catch(e){ e2 = e.message; }
+  check('stan ponad 100 KB: bez pamięci, bez błędu', !e2 && !bootOf(big).cached && slotAt(big, 2, D, 1).status === 'reserved', e2);
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

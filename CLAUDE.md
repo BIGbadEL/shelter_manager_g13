@@ -107,7 +107,24 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 - **Sufiks `_` = funkcja prywatna**, niewywoływalna z przeglądarki przez `google.script.run`.
   Wszystko bez sufiksu jest publicznym API — traktuj to jako powierzchnię ataku.
 - Każda mutacja danych przechodzi przez `withLock_` (blokada + `SpreadsheetApp.flush()`
-  przed zwolnieniem).
+  przed zwolnieniem, a po flush — nowy znacznik pamięci podręcznej, `cacheBump_`, niżej).
+- **Pamięć podręczna (1.3.1, `CacheService`, „PAMIĘĆ PODRĘCZNA" w `Utils.gs`; B71–B72, S143)** — po pomiarze
+  9.10.2026 („Stan"): katalog psów dla akcji na spacerach pod blokadą (`catalogLocked_`) i stan startowy strony
+  (`bootState_`). Odświeżanie listy (`getData`) dalej czyta arkusz i przy okazji wkłada świeży stan i katalog.
+  **Poprawności pilnują znaczniki pokolenia** (`gen` — stan, `genDogs` — katalog): `withLock_` po flush,
+  przed zwolnieniem wymienia `gen`, a `genDogs` też — chyba że praca pod blokadą zadeklarowała, że psów nie
+  ruszała (`lockKeepsDogs_ = true` — tylko `slotAction_` i `setGroup`; **nowy zapis bez tej flagi unieważnia
+  wszystko, czyli jest bezpieczny z urzędu**). Wpis jest ważny tylko z podpisem = bieżący znacznik. **Kto czyta
+  arkusz poza blokadą, bierze znacznik PRZED odczytem** i nim podpisuje (getData, bootState_) — zapis
+  w międzyczasie unieważnia ten wpis (B72 odgrywa zapis w środku odczytu). Brakujący znacznik (6 h bez zapisu,
+  Google wyczyścił) zakłada się tylko pod blokadą: `catalogLocked_` (już pod nią) albo `cacheGens_` z `tryLock(0)` —
+  zajęta = bez pamięci tym razem. Stan startowy ważny też tylko przy tym samym `businessDate` i `today`. Ręczna
+  edycja arkusza znacznika nie zmienia: stan startowy ma wtedy `cached: true` i telefon od razu robi `refresh()`,
+  a najbliższe `getData` wkłada świeży stan (akcje widzą ręczną zmianę psa od tego odczytu). Każdy błąd pamięci
+  (awaria, wpis ponad 100 KB) = arkusz, jak przed 1.3.1; nieudana wymiana znacznika usuwa wpisy. Przy zmianie
+  kształtu wpisów — nowy `CACHE_PREFIX`. `setup()`/`migrate()` (z edytora, bez blokady) też wymieniają znaczniki.
+  Bez nowych uprawnień. Pod blokadą rezerwacja robi teraz 6 wywołań arkusza zamiast 11 (B71), a kolory
+  wolontariuszy czyta raz (`volLock_` — pamięć tej blokady; nieudany zapis koloru ją kasuje, B46).
 - Akcje wolontariuszy zwracają **tylko zmieniony spacer** (`{slot, dog, volunteers}` — `dog`
   to stary kształt dla kart sprzed spacerów), nie pełny stan trzech zakładek. Akcje edycyjne
   mogą zwracać pełny stan.
@@ -287,7 +304,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
   id="boot">`), więc lista rysuje się bez drugiego przelotu do serwera. To stan początkowy,
-  nie wartość w szablonie kafelka (bug nr 7). Błąd odczytu = `null` = zwykłe `getData`.
+  nie wartość w szablonie kafelka (bug nr 7). Błąd odczytu = `null` = zwykłe `getData`. Od 1.3.1
+  zwykle z pamięci podręcznej (`bootState_`, wyżej) — wtedy z `cached: true` i od razu `refresh()`.
 - **Dzień rezerwacyjny (`businessDate_()`) zaczyna się o godzinie resetu, nie o północy.**
   Reset ≥ 12:00: przed nim dziś, od niego jutro. Reset < 12:00: przed nim wczoraj, od niego
   dziś. Reguła „po resecie jutro" wzięta wprost ze zgłoszenia jest błędna dla resetu
@@ -539,7 +557,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1665 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1702 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -561,7 +579,8 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
 `scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
 spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
-(„Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`.
+(„Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
+serwera) też.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -602,7 +621,12 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   **`env.cost`** — koszt usług w ms przy zamrożonym zegarze: `read[zakładka]` (każde `getValues`),
   `waitLock` (`lockFail` — blokada rzuca), `flush`, `template`, `evaluate`; `env.now()`, `env.html.evaluated`
   (szablony z `doGet`: `boot`, `served`). Uwaga: pusta zakładka nie woła `getValues` — koszt jej odczytu
-  się nie liczy (B62–B64).
+  się nie liczy (B62–B64). **`env.calls`** (1.3.1) — każde wywołanie usługi arkusza (`sheets`, `bySheet[zakładka]`;
+  `getSheetByName` i `flush` bez zakładki) i `locks` — licznik przy wzięciu i zwolnieniu każdej blokady (ile poszło
+  pod nią). **`env.cache`** — `CacheService` na niby (`store`: klucz → `{v, exp}`, wygasa z zegarem testu;
+  wpis ponad 100 KB rzuca; `ops`), `env.failCache(f)` — `f(op, klucze)` → usługa rzuca; `cost.lockBusy` —
+  `tryLock` nie dostaje blokady. Pamięć przeżywa wykonania (jak w Apps Script) — test, który sprawdza odczyt
+  arkusza, a nie pamięć, czyści ją (`env.cache.store = {}`) albo robi zapis.
 - Testy node wymagają `process.exit()` — `setInterval` w aplikacji trzyma proces.
 
 Zakres: S1–S8 podstawy, S9–S14 odporność + fuzz, S15–S18 notatki i dwa spacery (pola 1/2, 2/2),
@@ -653,7 +677,8 @@ grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „
 dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
 (serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.3.1), S142 pasek
-„Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska),
+„Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska), S143 stan startowy z pamięci
+serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -689,6 +714,10 @@ jej nie zapisuje), B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempot
 z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
 dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
 dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
+B71 krótsza praca pod blokadą (pies z pamięci — 6 wywołań arkusza zamiast 11, kolory raz; zmiana psa, dodanie, usunięcie,
+„Wszystkie po 2" unieważniają; ręczna zmiana arkusza — od najbliższego odczytu listy; awarie pamięci), B72 otwarcie strony
+bez arkusza (stan z pamięci bez ani jednego wywołania arkusza; zapis, zapis w środku odczytu i otwarcia, spóźniony odczyt,
+nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, awarie, wpis ponad 100 KB),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.3.1).
@@ -781,6 +810,9 @@ z nich osobno by go nie złapał. Przy zmianie kontraktu klient↔serwer dopisuj
   właściwości czytamy RAZ na wykonanie (`props_()` w `Settings.gs`), bo każde `getProperty` to
   osobne wywołanie usługi z dziennym limitem, a `getData` leci co 15 s z każdego telefonu.
   Wyjątek: przydział koloru wolontariusza czyta świeżo pod blokadą (`volunteersOf_`).
+- **`CacheService` (pamięć podręczna, 1.3.1)** — wpis żyje najwyżej 6 h (`CACHE_TTL_S`), ma najwyżej 100 KB,
+  a Google może go wyrzucić w każdej chwili; wspólny dla wszystkich wykonań skryptu. Nie wymaga zgody.
+  Nie ma „dopisz, jeśli nie ma" ani transakcji — dlatego znaczniki zakłada się tylko pod blokadą (wyżej).
 - Ustawienie z Panelu godziny resetu, która **dziś już minęła**, od razu przełącza listę
   na kolejny dzień (to spójne z modelem, ale warto o tym wiedzieć — Panel to mówi).
 - `getRange()` poza `getMaxColumns()` rzuca błędem — `migrate()` najpierw dokłada kolumny.
@@ -954,9 +986,13 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   (5 zakładek, 505 wpisów Historii), równoległe odczyty, sieć i waga strony. Możliwe kierunki (do decyzji właściciela):
   krótsza praca pod blokadą, stan strony i odczyty z `CacheService` zamiast arkusza, odczyt trzech zakładek jednym
   wywołaniem (Sheets API — nowa zgoda).
-- **Wersja 1.3.1 w przygotowaniu** (gałąź `release/1.3.1`): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
-  wersja". Bez zmian w arkuszu i na serwerze (tylko `Index`/`Styles`/`Script`). **Przed `deploy:prod`: data
-  wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka schodzi pod „Spacery" (nic nie wystaje).
+- **Wersja 1.3.1 w przygotowaniu** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
+  wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
+  krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
+  bez nowych uprawnień. **Przed `deploy:prod`: data wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka
+  schodzi pod „Spacery" (nic nie wystaje). **Do zmierzenia po wdrożeniu na test** (sonda z 9.10 + Wykonania, jak
+  w „Pomiar opóźnień"): `doGet` z pamięci (mediana była 1,7 s wykonania), rezerwacje po kilka naraz (były 1,9 / 3,7 /
+  5,7 s), czy zapis z pamięcią podręczną pod blokadą trwa ~1 s.
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,

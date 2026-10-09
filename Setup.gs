@@ -44,6 +44,8 @@ function setup() {
   walksSheet_();   // dzień psa — patrz Dogs.gs
 
   applyTextFormats_();
+  SpreadsheetApp.flush();
+  cacheBump_(true);   // z edytora, bez blokady aplikacji: pamięć podręczna (Utils.gs) z czasu sprzed tych zmian — nieważna
   warnIfNoPin_();
 }
 

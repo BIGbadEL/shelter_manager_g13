@@ -103,7 +103,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
-| 1.3.1 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon | `release/1.3.1` | w przygotowaniu |
+| 1.3.1 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą | `release/1.3.1` | w przygotowaniu |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -616,6 +616,18 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 - **Pasek „✨ Nowa wersja … — zobacz, co się zmieniło"** pod nagłówkiem, raz na telefon: znika po „Zobacz"
   albo ✕ i wraca przy następnej wersji. Telefon bez pamięci przeglądarki (tryb prywatny) go nie pokazuje —
   wisiałby przy każdym otwarciu; przycisk działa i tam.
+- **Opóźnienia — pomiar 9.10.2026** (CLAUDE.md, „Pomiar opóźnień"): całe opóźnienie siedzi w wykonaniu na serwerze,
+  a pojedyncze wywołanie arkusza potrafi stanąć (raz 351 s); każdy zapis trzymał blokadę ~2 s. Dwie zmiany
+  (właściciel wybrał je z czterech):
+  - **Otwarcie strony bez arkusza.** Stan startowy idzie z pamięci podręcznej Google (`CacheService`), dopóki od
+    jego zapisania nikt nic nie zapisał i dzień się nie zmienił — wtedy strona nie czeka na arkusz ani na jego
+    przestoje. Taki stan jest oznaczony, a telefon od razu dociąga świeży. Pamięć odświeża każdy odczyt listy.
+  - **Krótsza praca zapisu pod blokadą.** Rezerwacja, „Wrócił ✓", „Zwolnij", „Bierze G7" i spacer grupowy biorą psa
+    z katalogu w tej samej pamięci (zmiana psa w panelu ją unieważnia), a kolory wolontariuszy czytają raz: pod
+    blokadą 6 wywołań arkusza zamiast 11. Kolejne zapisy czekają krócej, a przestój Google rzadziej trafia pod blokadę.
+  - Poprawności pilnują znaczniki pokolenia wymieniane przez każdy zapis — nic sprzed zapisu nie zostanie użyte;
+    każdy błąd pamięci = arkusz, jak dotąd. Arkusz bez zmian, nowych uprawnień brak. Ręczna zmiana w arkuszu
+    (np. liczba spacerów psa wpisana w Arkuszach Google) dociera do akcji od najbliższego odczytu listy.
 
 ### 1.3 — wdrożone 2026-10-09 (@21)
 
