@@ -98,8 +98,8 @@ numeru. Wersja jest też w `package.json`.
 | 1.1 | daty i rezerwacje z wyprzedzeniem, spacery 1/2 i 2/2, spacery grupowe, kolory wolontariuszy, osłona stuknięć, dymek zapisu | `release/1.1` (`ee58018`) | @17, 2026-09-28 |
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
-| 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) = `main` | @20, 2026-10-08 |
-| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (PR #6) | w przygotowaniu (test) |
+| 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
+| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -603,7 +603,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
-### 1.3 — w przygotowaniu
+### 1.3 — wdrożone 2026-10-09 (@21)
 
 Duże zmiany (numer X). Temat: psy innych grup — pomagamy wyprowadzać psy innych grup wolontariuszy.
 

@@ -801,7 +801,8 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 - Wersja jest w `package.json` (`version`, zapis semver: 1.1 = `1.1.0`) i w tabeli „Wersje"
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
-  (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08).
+  (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08),
+  **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09).
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -916,21 +917,26 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   co przełączało widoczność karty, nie wiadomo. W 1.3: `T.readStale` 20 s, powrót do karty z bramką (S138).
   Otwarcie strony bez listy w środku (żeby utknięcie `doGet` nie trzymało strony) — rozważone, odrzucone przez
   właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
-- **Wersja 1.3 w przygotowaniu** (gałąź `release/1.3`, PR #6): psy innych grup — dwie listy, grupa psa w panelu,
-  „Bierze G7"; `T.readStale` 20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup
-  bota bez dwóch „G13". Test: @29 (2026-10-09, 15:01) — do `e544f87` (poprawki po review, „v1.3"); bez kolumny O
-  bez nagłówka z final review. **Do sprawdzenia na teście:** „v1.3" w nagłówku, „Bierze G7" → „✓ G7" → „Cofnij",
-  „Pobierz grupy" (jakie dopiski dostają oba „G13" — bramka podaje szczegóły społeczności tylko administratorom),
-  „Pobierz kontakty" (czy prowadząca jest na liście), „Wyślij listę z …". **Wiadomość po nocnym czyszczeniu —
-  dopiero na produkcji** (na teście wysyłanie po czyszczeniu wyłączone, wyżej): po pierwszym czyszczeniu (18:xx)
-  Wykonania — czy `endOfDay` przeszedł — i czy lista doszła. **Limit bramki w październiku 2026 wyczerpany**
-  (9.10: grupa próbna, „Grafik", właściciel) — prowadząca do 1.11 dostałaby 466, próby tylko do właściciela.
-  Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
-  **Przed `deploy:prod`: kolumna O w Psy na produkcji ma być cała pusta** — nagłówek i komórki pod nim (review
-  PR #6). Czyjaś kolumna tam — z nagłówkiem albo z samymi wpisami — nie przeniesie psów i nie zostanie nadpisana
-  (wpisy bez nagłówka przejmowała do final review), ale grupa psa nie będzie się wtedy zapisywać. Nocne czyszczenie
-  kolumny O nie dotyka (`closeDogs_` kończy na `notatka_do`; do review pisało do 15 i zamieniało formuły w stałe).
-  Cofnięcie: `deploy:prod` z `release/1.2`; wiersze `team` w Spacery 1.2 pokaże jako odbyte „✓ G7".
+- **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
+  (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
+  20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,
+  changelog 1.3). Na polecenie właściciela test i produkcja jednym ciągiem z `main`, bez sprawdzenia @30 na
+  telefonie (poprzednie @29 = wszystko poza poprawką kolumny O bez nagłówka). Arkusz: kolumna `grupa_psa` dokłada
+  się sama przy pierwszym psie innej grupy, `migrate()` niepotrzebne; nowych uprawnień i wyzwalaczy brak.
+  **Kolumna O w Psy produkcji miała być przed wdrożeniem cała pusta** (nagłówek i komórki — sprawdza właściciel;
+  Claude jej nie oglądał). Czyjaś kolumna tam — z nagłówkiem albo z samymi wpisami — nie przeniesie psów i nie
+  zostanie nadpisana, ale grupa psa się nie zapisze (panel: „Kolumna 15 (O) … zajęta"). Nocne czyszczenie kolumny O
+  nie dotyka (`closeDogs_` kończy na `notatka_do`; do review pisało do 15 i zamieniało formuły w stałe).
+  **Po wdrożeniu do sprawdzenia:** na telefonie „v1.3", „Bierze G7" → „✓ G7" → „Cofnij", „Pobierz grupy" (jakie
+  dopiski dostają oba „G13" — bramka podaje szczegóły społeczności tylko administratorom), „Pobierz kontakty",
+  „Wyślij listę z …"; po pierwszym czyszczeniu (18:xx) Wykonania — czy `endOfDay` przeszedł — i, gdy lista dnia
+  włączona, czy doszła (na teście wysyłanie po czyszczeniu wyłączone, wyżej). Lista dnia na produkcji potrzebuje
+  tego samego co ankieta: właściwości `greenApi*` i `authorizeWhatsApp()` w edytorze produkcji. **Limit bramki
+  w październiku 2026 wyczerpany** (9.10: grupa próbna, „Grafik", właściciel) — prowadząca do 1.11 dostałaby 466;
+  do tego czasu kontakt listy dnia = właściciel albo lista wyłączona. Wiadomość do wolontariuszy (wydanie X):
+  lista „Psy innych grup", „Bierze G7" / „Cofnij".
+  Poprzednia to 1.2 = @20 = `0ae939a` (gałąź `release/1.2`) — do niej się cofa zwykłym `deploy:prod` z tej gałęzi;
+  kolumny `grupa_psa` 1.2 nie czyta, wiersze `team` w Spacery pokaże jako odbyte „✓ G7", listy dnia przestaną iść.
 - **Decyzje właściciela z review PR #6 — nie zmieniać bez pytania:** „Bierze G7" zostaje jednym stuknięciem,
   tej samej wielkości co „Zarezerwuj", bez pytania (pomyłkę naprawia „Cofnij"). Przegląd zauważył też: nazwa
   grupy przy limicie 20 znaków łamie przyciski na 360 px na dwie linijki (nic nie wystaje); `lastHistDay_`
@@ -944,7 +950,7 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   otworzy wtedy klawiatury sam. Tekst zostaje, wystarczy stuknąć w pole. W jsdom tego nie widać.
 - Linijka `1. spacer: Ania · 10:15` zniknęła razem ze starym modelem — pies dwuspacerowy ma
   pola 1/2 i 2/2, a odbyte pole pokazuje „✓ Ania" bez godziny (jak kafelek „wyprowadzony").
-- **Produkcja: wersja 1.2 (PR #5, `0ae939a`, merge `7cbd870`) od 2026-10-08, 17:12 — wdrożenie @20.**
+- Wersja 1.2 (PR #5, `0ae939a`, merge `7cbd870`) od 2026-10-08, 17:12 — wdrożenie @20.
   Zarządzanie aplikacją: ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik
   spowolnień, przegląd kodu (README, changelog 1.2). Arkusz bez nowych kolumn; nowe właściwości powstają
   przy pierwszym zapisie. PR #5 na GitHubie ma stan „Closed", nie „Merged" — GitHub długo pokazywał w nim
