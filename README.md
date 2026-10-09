@@ -92,7 +92,7 @@ Numer `1.X.Y`: **X** rośnie przy dużych zmianach; **Y** — przy drobnych popr
 w tym, czego dotyczyło ostatnie X. Wolontariuszy informujemy wtedy, gdy trzeba — niezależnie od
 numeru. Wersja jest też w `package.json`, przy nazwie „Spacery" w aplikacji i — od 1.3.1 — na liście
 „Co nowego" (`WHATS_NEW` w `Script.html`): **każde wydanie dopisuje tam wpis na górze, z datą wdrożenia,
-przed `deploy:prod`** — po ludzku i krótko, co widać na ekranie, osobno „W panelu prowadzącej". Test T6
+przed `deploy:prod`** — po ludzku i krótko, co widać na ekranie, osobno „W panelu admina". Test T6
 pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę.
 
 | wersja | co | gałąź | wdrożenie |
@@ -611,7 +611,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 - **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.3.1 · Co nowego?"). Otwiera
   na cały ekran listę zmian wszystkich wersji, od najnowszej: krótko i po ludzku, co widać na ekranie,
-  a pod „W panelu prowadzącej" zmiany w trybie edycji. Wersja A z czterech makiet — na górze strony nic
+  a pod „W panelu admina" zmiany w trybie edycji. Wersja A z czterech makiet — na górze strony nic
   nie dochodzi.
 - **Pasek „✨ Nowa wersja … — zobacz, co się zmieniło"** pod nagłówkiem, raz na telefon: znika po „Zobacz"
   albo ✕ i wraca przy następnej wersji. Telefon bez pamięci przeglądarki (tryb prywatny) go nie pokazuje —

@@ -1,5 +1,5 @@
 // S141-S142: „Co nowego" (1.3.1). Numer wersji przy „Spacery" to przycisk do listy zmian (najnowsza na górze,
-// po ludzku, także zmiany w panelu prowadzącej); po aktualizacji raz na telefon pasek „Nowa wersja".
+// po ludzku, także zmiany w panelu admina); po aktualizacji raz na telefon pasek „Nowa wersja".
 // Kolejność wpisów i wersję z package.json sprawdza też tooling.js (T5, T6) — bez przeglądarki.
 const { buildApp, dogFree, ROOT } = require('./harness');
 const fs = require('fs'), path = require('path');
@@ -40,7 +40,7 @@ function S141(){
     JSON.stringify(vers));
   check('tylko najnowsza ma „nowa"', doc(app).querySelectorAll('#wnList .wn-new').length === 1);
   const sec = v => [...doc(app).querySelectorAll('#wnList .wn-ver')].filter(s => head(s.querySelector('h3')).startsWith('Wersja ' + v + ' '))[0];
-  check('zmiany w panelu prowadzącej osobno, pod „W panelu prowadzącej" (1.3)', txt(sec('1.3').querySelector('.wn-admin')) === 'W panelu prowadzącej'
+  check('zmiany w panelu admina osobno, pod „W panelu admina" (1.3)', txt(sec('1.3').querySelector('.wn-admin')) === 'W panelu admina'
     && sec('1.3').querySelectorAll('ul').length === 2 && /grupę/.test(txt(sec('1.3').querySelectorAll('ul')[1])));
   check('wersja bez zmian w panelu — bez tej linijki (1.1.1)', !sec('1.1.1').querySelector('.wn-admin') && sec('1.1.1').querySelectorAll('li').length === 3);
   check('otwarcie nie pyta serwera i nie rusza listy dnia', app.shipped.length === calls && JSON.stringify(app.window.__order()) === order);

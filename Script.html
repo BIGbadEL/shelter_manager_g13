@@ -3185,7 +3185,7 @@
   /**
    * Lista zmian dla wolontariuszy i prowadzącej, najnowsza wersja na górze. Pisana po ludzku i krótko —
    * co widać na ekranie, nie jak to działa: kto wejdzie, ma przeczytać, a nie przestraszyć się regułami
-   * sortowania (decyzja właściciela, 1.3.1). `admin` — „W panelu prowadzącej". **Każde wydanie dopisuje
+   * sortowania (decyzja właściciela, 1.3.1). `admin` — „W panelu admina" (nazwa od właściciela). **Każde wydanie dopisuje
    * wpis na górze** (z datą wdrożenia); pierwszy wpis = `version` z package.json = numer przy „Spacery"
    * w Index.html (T5, T6). Pusta data = wersja jeszcze niewydana.
    */
@@ -3257,7 +3257,7 @@
     return WHATS_NEW.map((n, i) => `<section class="wn-ver"><h3>Wersja ${esc(n.v)}`
       + (n.date ? `<span class="wn-date">${esc(n.date)}</span>` : '')
       + (i === 0 ? '<span class="wn-new">nowa</span>' : '') + `</h3>${list(n.items)}`
-      + (n.admin ? `<div class="wn-admin">W panelu prowadzącej</div>${list(n.admin)}` : '')
+      + (n.admin ? `<div class="wn-admin">W panelu admina</div>${list(n.admin)}` : '')
       + '</section>').join('');
   }
   /** Pasek „Nowa wersja" znika po „Zobacz" albo ✕ — i wraca dopiero przy następnej wersji. */

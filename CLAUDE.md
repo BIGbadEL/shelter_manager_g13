@@ -652,7 +652,7 @@ S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z 
 grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
 dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
 (serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
-S141 „Co nowego?" (lista zmian od najnowszej, „W panelu prowadzącej", odświeżenie jej nie zamyka — 1.3.1), S142 pasek
+S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.3.1), S142 pasek
 „Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
@@ -819,7 +819,7 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
 - **„Co nowego" (od 1.3.1) — każda wersja dopisuje wpis na górze `WHATS_NEW` w `Script.html`**, w gałęzi
   wydania, z datą wdrożenia przed `deploy:prod` (pusta data = niewydana, T6). Pisane dla wolontariuszy
   (decyzja właściciela): krótko, po ludzku, co widać na ekranie — „poprawa sortowania", nie jego reguły;
-  zmiany w trybie edycji osobno w `admin` („W panelu prowadzącej"); poprawki techniczne zbiorczo albo wcale.
+  zmiany w trybie edycji osobno w `admin` („W panelu admina" — nazwa od właściciela, było „prowadzącej"); poprawki techniczne zbiorczo albo wcale.
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
