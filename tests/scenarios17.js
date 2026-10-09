@@ -316,8 +316,32 @@ async function S129(){
   check('bez błędów', app.errors.length === 0, app.errors.join('; '));
 }
 
+async function S138(){
+  console.log('S138: powrót do karty nie dokłada odczytu tuż po poprzednim ani przy wiszącym (8.10.2026: 100 odczytów co 6 s) — 1.3');
+  // odświeżanie z zegara wyłączone (10 min), powrót do karty: odczyt najwyżej co 300 ms, zgubiony po 600 ms
+  const app = buildApp({ timing: Object.assign({}, FAST, { refresh: 600000, wake: 300, readStale: 600, diagNoReply: 5000 }) });
+  const reads = () => app.shipped.filter(f => f === 'getData').length;
+  const show = () => app.window.document.dispatchEvent(new app.window.Event('visibilitychange'));
+  app.seed(base());                                     // startowy odczyt wrócił
+  show(); show();
+  check('powrót tuż po starcie (odczyt sprzed chwili) — bez nowego', reads() === 1, app.shipped.join(','));
+  await sleep(350);
+  show(); show(); show();
+  check('po T.wake: jeden odczyt, nie trzy', reads() === 2, app.shipped.join(','));
+  await sleep(350);
+  show();
+  check('poprzedni odczyt wisi (krócej niż T.readStale) — nie dokładamy', reads() === 2, app.shipped.join(','));
+  await sleep(300);
+  show();
+  check('wiszący dłużej niż T.readStale to zgubiony (bug nr 8) — powrót znów odświeża', reads() === 3, app.shipped.join(','));
+  while(calls(app, 'getData').length) respondTo(app, 'getData', base());
+  check('domyślnie: zgubiony po 20 s, powrót najwyżej co 15 s',
+    /readStale:20000, wake:15000/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'Script.html'), 'utf8')));
+  check('bez błędów', app.errors.length === 0, app.errors.join('; '));
+}
+
 (async ()=>{
-  for(const s of [S122, S123, S124, S125, S126, S127, S128, S129]){
+  for(const s of [S122, S123, S124, S125, S126, S127, S128, S129, S138]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

@@ -25,11 +25,14 @@
    *              stała, od diagFreeze; wysyłka do serwera najczęściej co diagSend; diagBeat — co ile
    *              zegar sprawdza, czy strona żyje,
    *   refresh  — odświeżanie listy z serwera (getData) co tyle,
-   *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać.
+   *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać
+   *              (20 s, nie 60 — 1.3: zastój Google dotyka pojedynczego wykonania, równoległe idą po 1,5 s,
+   *              więc drugi odczyt prawie zawsze przechodzi; dziennik wykonań produkcji 2–9.10.2026),
+   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle.
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
     diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
-    refresh:15000, readStale:60000 }, window.__G13_TIMING || {});
+    refresh:15000, readStale:20000, wake:15000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -396,6 +399,8 @@
     for(const r of readsInFlight) if(now - r.at < T.readStale) return true;
     return false;
   }
+  /** Kiedy poszedł ostatni odczyt (refresh) — powrót do karty nie dokłada odczytu tuż po poprzednim (T.wake). */
+  let lastReadAt = 0;
   let beatAt = Date.now(), diagSendAt = Date.now();
   /**
    * Co sekundę: czy zegar się nie spóźnił (spóźnia się, gdy przeglądarka nie wykonuje skryptu —
@@ -683,6 +688,7 @@
   function refresh(){
     if(isSending() || queue.length) return;   // trwają zapisy — odczyt byłby nieaktualny
     const seq = writeSeq;
+    lastReadAt = Date.now();
     // dziennik spowolnień: odczyt wolny, nieudany albo bez odpowiedzi (diagTick)
     const read = { at: Date.now(), noted: false };
     readsInFlight.add(read);
@@ -1455,7 +1461,7 @@
     }
     if(s.status==='team'){
       // wzięty przez grupę psa: nie nasz spacer, bez koloru wolontariusza — „Cofnij" go zwalnia
-      return {line: `<span class="who"><span class="teamdone">✓ bierze ${esc(s.who)}</span></span>
+      return {line: `<span class="who"><span class="teamdone">✓ ${esc(s.who)}</span></span>
         <button class="btn ghost spacer" data-act="free" ${at}>Cofnij</button>`, after: ''};
     }
     return {line: `<span class="who">${volChip(s.who, '✓ ') || '✓'}</span>
@@ -3086,10 +3092,13 @@
   function onTouch(){ checkStuck(); markTap(); }
   document.addEventListener('pointerdown', onTouch, true);
   document.addEventListener('touchstart', onTouch, true);
-  // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież
+  // powrót do karty (np. odblokowanie telefonu): najpierw ratuj zawieszony zapis, potem odśwież —
+  // ale nie, gdy poprzedni odczyt wciąż w drodze albo poszedł przed chwilą (T.wake). 8.10.2026 karta na
+  // komputerze dostawała „widoczna" co 6 s i przez 10 minut wysłała 100 odczytów, także w czasie, gdy
+  // jeden wisiał 36 s (dziennik wykonań produkcji) — ta droga jako jedyna omijała readWaiting.
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden) return;
     checkStuck();
-    if(!isSending() && !queue.length && !busyEditing()) refresh();
+    if(!isSending() && !queue.length && !busyEditing() && !readWaiting() && Date.now() - lastReadAt >= T.wake) refresh();
   });
 </script>

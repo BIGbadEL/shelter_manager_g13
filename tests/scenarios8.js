@@ -49,7 +49,8 @@ const tap = app => app.window.document.dispatchEvent(new app.window.Event('point
 
   // najgorszy możliwy moment: odświeżenie w tle wchodzi tuż po tapnięciu
   // i przynosi PEŁNY stan, czyli przerysowuje całą listę
-  app.window.document.dispatchEvent(new app.window.Event('visibilitychange'));
+  // (wprost refresh(): powrót do karty od 1.3 nie odświeża tuż po poprzednim odczycie — S138)
+  app.window.eval('refresh()');
   check('odświeżenie w tle wystartowało',
     app.pending[app.pending.length-1].fn==='getData', app.pending.map(p=>p.fn).join(','));
   app.respondNext({dogs:[

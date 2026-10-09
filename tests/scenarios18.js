@@ -274,8 +274,8 @@ function S137(){
   btn(2).dispatchEvent(new app.window.MouseEvent('click', {bubbles:true}));
   const job = lastCall(app, 'markTeam');
   check('markTeam z dniem i numerem spaceru', !!job && JSON.stringify(job.args)===JSON.stringify([2, D, 1]), job && JSON.stringify(job.args));
-  check('od razu: „✓ bierze G7" i „Cofnij", kafelek wyblakły jak odbyty, bez odznaki „bez spaceru"',
-    /✓ bierze G7/.test(txt(tile(app, 'm2'))) && !!tile(app, 'm2').querySelector('[data-act="free"]')
+  check('od razu: sam ptaszek z grupą („✓ G7", bez „bierze") i „Cofnij", kafelek wyblakły jak odbyty, bez odznaki „bez spaceru"',
+    txt(tile(app, 'm2').querySelector('.teamdone'))==='✓ G7' && !/bierze/.test(txt(tile(app, 'm2'))) && !!tile(app, 'm2').querySelector('[data-act="free"]')
     && tile(app, 'm2').classList.contains('walked') && !/bez spaceru/.test(txt(tile(app, 'm2'))), txt(tile(app, 'm2')));
   check('w zamrożonej liście stoi w miejscu', listOf(app, true)==='[3,2,4,5,6]', listOf(app, true));
   check('podsumowanie listy innych grup: „1 u swojej grupy"', /1 u swojej grupy/.test(countOf(app, 'other')) && !/swojej/.test(countOf(app, 'home')),

@@ -42,7 +42,14 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 
 ## Arkusz
 
-- **Psy** — KATALOG, kim jest pies: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
+- **Psy** — KATALOG, kim jest pies: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do | grupa_psa`.
+  **`grupa_psa`** (1.3, kolumna O) — grupa wolontariuszy, do której należy pies; pusta = nasza (`HOME_TEAM`
+  = „G13", ta sama stała w `Script.html`). Doszła później: zakładka bywa węższa — **czytaj najwyżej
+  `dogWidth_(sh)` kolumn**; kolumnę dokłada pierwszy zapis psa innej grupy (`dogColumns_`, z nagłówkiem
+  i formatem `@`), `migrate()` też. **Liczy się tylko pod nagłówkiem `grupa_psa`** (`hasTeamColumn_`):
+  czyjaś własna kolumna O nie przenosi psów na listę innych grup i nie jest nadpisywana — zapis grupy
+  daje wtedy wyraźny błąd PRZED innymi zapisami psa (`teamWritable_`, B66). Pisownia ujednolicana
+  (`dogTeam_` = `teamClean` w przeglądarce: „g13" = nasza, „g 7" przy istniejącej „G7" = „G7").
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
   Zostają, bo cofnięcie wdrożenia do starej wersji znów by ich użyło.
@@ -83,7 +90,9 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   Wersja sprzed tych kolumn czyta i pisze cztery — cofnięcie wdrożenia jej nie przeszkadza.
 - **Zadania** — `id | tresc | data | status`
 
-Statusy psa: `free` / `reserved` / `walked`. Trudności: `easy` / `med` / `hard`
+Statusy spaceru: `free` / `reserved` / `walked` / `team` (1.3 — spacer psa innej grupy bierze jego
+własna grupa, `kto` = nazwa grupy; dla listy „załatwiony" jak odbyty — `slotDone_` / `isDone`, ale
+**nie idzie do Historii ani maila**, tylko do `ostatni_spacer`). Trudności: `easy` / `med` / `hard`
 (zielony / żółty / czerwony). Kolumny dat i godzin mają **format tekstowy `@`** —
 bez tego arkusz parsuje `"17:21"` na `Date` z epoką 1899.
 
@@ -237,6 +246,18 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
   Panel: `getDiagnostics().diag`. Bez imion i treści.
+- **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
+  katalogu z grupą (`team` w `getData`, kolumna `grupa_psa`). `addDog(data…)` i `updateDog(id, data…)`
+  przyjmują `data.team`; **brak pola (karta sprzed 1.3) = grupa zostaje, jaka była** — inaczej stara karta
+  przy poprawce imienia przenosiłaby psa na naszą listę. Ujednolicenie pisowni pod blokadą z katalogiem
+  (`teamOfInput_`, bez poprawianego psa — jedyny pies grupy może zmienić jej pisownię). Listę grup do
+  wyboru przeglądarka liczy z katalogu (`knownTeams`): grupa jest do wyboru, dopóki ma choć jednego psa
+  (literówka znika razem z poprawką psa — bez osobnej listy do sprzątania).
+  **`markTeam(id, date, slot)`** — „Bierze G7": tylko wolny spacer BEZ grupy (zaplanowany spacer grupowy
+  jest nasz) i tylko pies innej grupy (inaczej błąd); dzień bieżący albo przyszły, jak rezerwacja;
+  `kto` = grupa z katalogu, nie z przeglądarki. Powtórka niczego nie zmienia — w `RETRIABLE`. Cofnięcie —
+  zwykłe `setFree` z widzianym stanem. Spacer `team` nigdy nie dołącza do spaceru grupowego (`setGroup`).
+  `closeWalks_`: `team` → `ostatni_spacer` tak, Historia nie (decyzja właściciela: to nie nasz spacer).
 - **Godzina czyszczenia nie może cofnąć dnia rezerwacyjnego** — `setResetHour` odrzuca zmianę,
   po której `businessDate_()` byłby wcześniejszy (otwierałby dzień już zamknięty, B38).
 - **Stan startowy jest wpisany w stronę** (`bootJson_()` → `<script type="application/json"
@@ -278,6 +299,18 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   przyciski razem (`.acts`), a napis przycisku spaceru to `WALK_LABEL` = „Wrócił ✓" — krótki,
   bo z „Wyprowadzony ✓" (129 px) pola 1/2, 2/2 zajmowały po dwie linijki na telefonach
   360–393 px. **Dokładając cokolwiek do wiersza spaceru, sprawdź w przeglądarce 360 px.**
+- **Dwie listy dnia** (1.3, decyzja właściciela): nasza u góry bez zmian, pod nią „Psy innych grup"
+  (`.others`, `ul.others-list`), **każda sortowana osobno, jakby drugiej nie było** (`sortedRefs` →
+  `sortedSide` na każdą; także opiekun, kryterium 5). Nasze psy — nawet wszystkie odbyte — zawsze nad
+  ich psami. Granica obowiązuje też w zamrożonej kolejności (`effectiveOrder` dzieli `order` na dwie):
+  pies przeniesiony do innej grupy przechodzi od razu, nowy pies staje na końcu SWOJEJ listy (S132).
+  Spacer grupowy z psami z obu list to dwa bloki tego samego koloru (`blockOf` z dopiskiem listy) —
+  „Wrócił ✓" dalej odhacza całą grupę (S131). Podsumowanie (`countLine(other)`) liczy każdą listę osobno.
+  Na liście innych grup pełny kafelek ma **plakietkę „grupa G7" w linijce z numerem** (`teamPill`,
+  wersja D z czterech makiet — linijka imienia zostaje jak na naszej, długie imię z „zarezerwowany"
+  i trudnością się nie rozjeżdża); kafelek odłączony jej nie ma. Wolny spacer bez grupy ma obok
+  „Zarezerwuj" przycisk **„Bierze G7"** (`doTeam`, w `GUARDED`), po nim „✓ G7" + „Cofnij"; kafelek
+  schodzi na dół jak odbyty (`isDone` w `tileKey`, `ownerOf`, odznace „bez spaceru").
 - **Tryb edycji to katalog, nie dzień** (`renderCatalog`): bez paska dat, bez rezerwacji
   i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
   zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderTile`) nie ma przycisków
@@ -382,7 +415,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   **tylko gdy nie leci żaden zapis**, jeden naraz, po 10. **Odświeżanie co `T.refresh` nie wysyła odczytu,
   gdy poprzedni jest w drodze krócej niż `T.readStale`** (`readWaiting`, runda 3, S129) — przy zastoju Google
   każdy telefon dokładał odczyt co 15 s, a wykonania wszystkich liczą się do jednego konta z limitem
-  równoczesnych; starszy odczyt to zgubiony (bug nr 8), na niego nie czekamy. **Każde `confirm` idzie przez `ask()`** —
+  równoczesnych; starszy odczyt to zgubiony (bug nr 8), na niego nie czekamy. **`T.readStale` = 20 s** (1.3,
+  było 60): dziennik wykonań produkcji 2–9.10 — zastój Google dotyka pojedynczego wykonania (67 s, a równoległe
+  po 1,5 s), więc drugi odczyt prawie zawsze przechodzi. **Powrót do karty** (`visibilitychange`) odświeża
+  tylko wtedy, gdy nic nie wisi (`readWaiting`) i ostatni odczyt poszedł dawniej niż `T.wake` (S138) — 8.10
+  karta na komputerze dostawała „widoczna" co 6 s i wysłała 100 odczytów w 10 minut, także przy wiszącym
+  36 s; to była jedyna droga omijająca `readWaiting`. **Każde `confirm` idzie przez `ask()`** —
   okienko zatrzymuje skrypt, a bez `diagAwake()` każde dłuższe zastanowienie byłoby „zamrożeniem";
   karta w tle tak samo (`visibilitychange`, `pageshow`).
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
@@ -467,7 +505,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1469 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1583 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -487,7 +525,8 @@ Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymani
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
 ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
 `scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
-spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę.
+spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
+grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136).
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -574,6 +613,9 @@ review PR #5, runda 2, S122–S128 dziennik spowolnień — telefon (wolne i nie
 odpowiedzi, strona stała — ale nie karta w tle ani okienko pytania, dojście strony, błędy skryptu, pamięć
 między otwarciami, wysyłka tylko w ciszy, Panel, opis telefonu z userAgent, kontrakt telefon → serwer),
 S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`) — runda 3,
+S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z obu list, zamrożona lista a zmiana
+grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
+dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -603,6 +645,9 @@ B61 nieznany wynik wysyłki (bramka przyjęła, odpowiedź zginęła: „nie wia
 pewne „nie wyszło" przy braku zgody),
 B62 dziennik spowolnień — serwer (kroki `doGet`/`getData`/`withLock_`, błąd blokady, nieudany stan startowy,
 nazwa akcji, awaria właściwości nic nie psuje), B63 sufity dziennika i `reportDiag`, B64 dziennik w Panelu,
+B65 grupa psa (zakładka bez kolumny, dokładanie kolumny, pisownia, karta sprzed 1.3, nocne czyszczenie i `migrate()`
+na wąskiej zakładce), B66 cudza kolumna O, B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
+z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -831,6 +876,20 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   stąd dziennik spowolnień (1.2). Kodem tego nie usuniemy; po następnym zgłoszeniu: Panel → „Dziennik
   spowolnień". **Do sprawdzenia po wdrożeniu na test:** czy wpis serwera ma nazwę akcji (`diagCaller_`
   czyta stos Apps Script — format ramek zgadnięty z V8; „?" = nie dało się odczytać, wpis i tak jest).
+- **Dziennik spowolnień, pierwsze prawdziwe wpisy (produkcja, 8.10.2026 wieczorem; dziennik wykonań 2–9.10,
+  1798 wywołań, przeczytany przez Claude in Chrome):** `getData` 67,5 s (18:35) i 36,5 s (18:47), w obu cały
+  czas w kroku „psy" — pierwszy dostęp do arkusza. **W tych samych sekundach inne `getData` szły po 1,5 s**
+  (to zastój pojedynczego wykonania po stronie Google, nie przeciążenie arkusza). Tydzień: 1253 `getData`,
+  połowa do 1,7 s, 99% do 4,4 s, 5 ponad 8 s; `doGet` 251, 4 ponad 8 s. Wpis telefonu „155 s" (18:17–18:19)
+  nie ma odpowiednika na serwerze — odczyt doszedł do Google dopiero po ~150 s (sieć/przeglądarka, komputer
+  właściciela). Seria 100 `getData` co 6 s (18:45–18:55, ten sam komputer) — powrót do karty bez `readWaiting`,
+  co przełączało widoczność karty, nie wiadomo. W 1.3: `T.readStale` 20 s, powrót do karty z bramką (S138).
+  Otwarcie strony bez listy w środku (żeby utknięcie `doGet` nie trzymało strony) — rozważone, odrzucone przez
+  właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
+- **Wersja 1.3 w przygotowaniu** (gałąź `release/1.3`, PR #6): psy innych grup — dwie listy, grupa psa w panelu,
+  „Bierze G7"; do tego `T.readStale` 20 s i bramka powrotu do karty. Test: @26 (2026-10-08, 18:41) — przed
+  napisem „✓ G7" i zmianami odświeżania. Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
+  Cofnięcie: `deploy:prod` z `release/1.2`; wiersze `team` w Spacery 1.2 pokaże jako odbyte „✓ G7".
 - **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
   (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości
   `pin`); numer psa (`id`) może wrócić do obiegu po usunięciu psa o najwyższym numerze (`nextId_`) —
