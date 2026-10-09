@@ -17,6 +17,8 @@ function makeSheet(name, rows, onRename){
 
   function cell(r,c){ pad(data[r-1]||(data[r-1]=[]), c); return data[r-1]; }
 
+  // każde wywołanie usługi arkusza (1.4: ile ich idzie pod blokadą — `calls` w makeContext)
+  const call = () => { if(sheet._onCall) sheet._onCall(sheet._name); };
   const sheet = {
     _name: name, _data: data,
     _formats: {},          // kolumna -> format ('@' = tekst) — bug z datą 1899 jest do sprawdzenia
@@ -26,25 +28,27 @@ function makeSheet(name, rows, onRename){
     _id: ++sheetSeq,       // jak getSheetId(): kopia ma inne id niż oryginał
 
     getName(){ return sheet._name; },
-    getSheetId(){ return sheet._id; },
+    getSheetId(){ call(); return sheet._id; },
     setName(n){ const old = sheet._name; sheet._name = n; if(onRename) onRename(old, n, sheet); return sheet; },
     getLastRow(){
+      call();
       for(let i=data.length; i>0; i--){
         if(data[i-1].some(v=>v!=='' && v!=null)) return i;
       }
       return 0;
     },
-    getMaxColumns(){ return widthOf(); },
+    getMaxColumns(){ call(); return widthOf(); },
     // używane przez applyTextFormats_() — bez tego setup()/migrate() nie dawały się przetestować
-    getMaxRows(){ return sheet._maxRows != null ? sheet._maxRows : Math.max(data.length, 1); },
-    insertColumnsAfter(after, n){ data.forEach(r=>{ pad(r, after); for(let i=0;i<n;i++) r.splice(after,0,''); }); },
+    getMaxRows(){ call(); return sheet._maxRows != null ? sheet._maxRows : Math.max(data.length, 1); },
+    insertColumnsAfter(after, n){ call(); data.forEach(r=>{ pad(r, after); for(let i=0;i<n;i++) r.splice(after,0,''); }); },
     insertRowsAfter(after, n){
+      call();
       if(sheet._maxRows != null) sheet._maxRows += n;
       if(after < data.length) for(let i=0;i<n;i++) data.splice(after, 0, []);
     },
     setFrozenRows(){},
-    appendRow(row){ data.push(row.slice()); },
-    deleteRow(r){ data.splice(r-1,1); },
+    appendRow(row){ call(); data.push(row.slice()); },
+    deleteRow(r){ call(); data.splice(r-1,1); },
     getRange(row, col, nr, nc){
       const rows = nr === undefined ? 1 : nr;
       const cols = nc === undefined ? 1 : nc;
@@ -55,6 +59,7 @@ function makeSheet(name, rows, onRename){
       if(sheet._maxRows != null && row + rows - 1 > sheet._maxRows) throw new Error('Zakres poza arkuszem: wiersz ' + (row + rows - 1) + ' > ' + sheet._maxRows);
       return {
         getValues(){
+          call();
           sheet._reads++;
           if(sheet._onRead) sheet._onRead(sheet._name);
           const out = [];
@@ -65,14 +70,16 @@ function makeSheet(name, rows, onRename){
           return out;
         },
         setValues(v){
+          call();
           for(let i=0;i<rows;i++){
             const line = cell(row+i, col+cols-1);
             for(let j=0;j<cols;j++) line[col-1+j] = v[i][j];
           }
         },
-        getValue(){ return cell(row, col)[col-1]; },
-        setValue(v){ cell(row, col)[col-1] = v; },
+        getValue(){ call(); return cell(row, col)[col-1]; },
+        setValue(v){ call(); cell(row, col)[col-1] = v; },
         setNumberFormat(f){
+          call();
           for(let j=0;j<cols;j++) sheet._formats[col+j] = f;
           sheet._formatRanges.push({ row, col, rows, cols, f });
           return this;
@@ -96,14 +103,31 @@ function makeContext(opts){
   // odgrywamy, przesuwając go: `read[zakładka]` przy każdym odczycie wartości, `waitLock` przy braniu
   // blokady (`lockFail` — komunikat: blokada rzuca, jak po 20 s w Apps Script), `flush`, `template`
   // i `evaluate` (HtmlService). Domyślnie wszystko 0 — reszta testów tego nie widzi.
-  const cost = { read: {}, waitLock: 0, lockFail: null, flush: 0, template: 0, evaluate: 0 };
+  const cost = { read: {}, waitLock: 0, lockFail: null, lockBusy: false, flush: 0, template: 0, evaluate: 0 };
   const spend = ms => { nowMs += ms || 0; };
   const html = { evaluated: [] };   // szablony złożone przez doGet (z polami: boot, served)
+  // Wywołania usługi arkusza (1.4): `calls.sheets` — wszystkie (każda metoda zakładki, getSheetByName,
+  // flush), `calls.bySheet[nazwa]`; `calls.locks` — dla każdej blokady licznik przy wzięciu i zwolnieniu,
+  // czyli ile wywołań arkusza poszło pod nią (pomiar 9.10.2026: każde ~0,1 s, czasem przestój).
+  const calls = { sheets: 0, bySheet: {}, locks: [] };
+  const sheetCall = name => { calls.sheets++; if(name) calls.bySheet[name] = (calls.bySheet[name] || 0) + 1; };
+  // CacheService (1.4): `cache.store` klucz -> {v, exp}; wygasa z zegarem testu; wartość ponad 100 KB
+  // rzuca jak w Apps Script; `failCache(f)` — f(op, klucze) === true: usługa rzuca ('get' | 'put' | 'remove')
+  const cache = { store: {}, ops: [], fail: null };
+  const cacheOp = (op, keys) => {
+    cache.ops.push({ op, keys: keys.slice() });
+    if(cache.fail && cache.fail(op, keys)) throw new Error('Usługa pamięci podręcznej: awaria');
+  };
+  const cachePutOne = (k, v, ttl) => {
+    if(String(v).length > 100 * 1024) throw new Error('Argument too large: value');
+    cache.store[k] = { v: String(v), exp: nowMs + (ttl || 600) * 1000 };
+  };
   // zmiana nazwy zakładki (przywrócenie kopii po cofnięciu wdrożenia) — pod nową nazwą w arkuszu
   const rename = (old, n, sh) => { if(sheets[old] === sh) delete sheets[old]; sheets[n] = sh; };
   const addSheet = (n, rows) => {
     const sh = (sheets[n] = makeSheet(n, rows, rename));
     sh._onRead = name => spend(cost.read[name]);
+    sh._onCall = sheetCall;
     return sh;
   };
   (opts.sheets||[]).forEach(s=>{
@@ -138,7 +162,7 @@ function makeContext(opts){
     Date: FrozenDate,
     SpreadsheetApp: {
       getActiveSpreadsheet: ()=>({
-        getSheetByName: n => sheets[n] || null,
+        getSheetByName: n => { sheetCall(null); return sheets[n] || null; },
         insertSheet: (n, o) => {
           if(sheets[n]) throw new Error('Arkusz o nazwie „' + n + '" już istnieje');
           const sh = addSheet(n, o && o.template ? o.template._data : []);
@@ -146,8 +170,25 @@ function makeContext(opts){
           return sh;
         },
       }),
-      flush(){ spend(cost.flush); },
+      flush(){ sheetCall(null); spend(cost.flush); },
     },
+    CacheService: { getScriptCache: ()=>({
+      getAll(keys){
+        cacheOp('get', keys);
+        const out = {};
+        keys.forEach(k => { const e = cache.store[k]; if(e && e.exp > nowMs) out[k] = e.v; });
+        return out;
+      },
+      get(k){ cacheOp('get', [k]); const e = cache.store[k]; return e && e.exp > nowMs ? e.v : null; },
+      put(k, v, ttl){ cacheOp('put', [k]); cachePutOne(k, v, ttl); },
+      putAll(vals, ttl){
+        cacheOp('put', Object.keys(vals));
+        Object.keys(vals).forEach(k => { if(String(vals[k]).length > 100 * 1024) throw new Error('Argument too large: value'); });
+        Object.keys(vals).forEach(k => cachePutOne(k, vals[k], ttl));
+      },
+      remove(k){ cacheOp('remove', [k]); delete cache.store[k]; },
+      removeAll(keys){ cacheOp('remove', keys); keys.forEach(k => { delete cache.store[k]; }); },
+    }) },
     HtmlService: {
       createTemplateFromFile(name){
         spend(cost.template);
@@ -164,8 +205,18 @@ function makeContext(opts){
     Utilities: { formatDate },
     Session: { getScriptTimeZone: ()=>'Europe/Warsaw' },
     LockService: { getScriptLock: ()=>({
-      waitLock(){ spend(cost.waitLock); if(cost.lockFail) throw new Error(cost.lockFail); },
-      releaseLock(){},
+      waitLock(){
+        spend(cost.waitLock);
+        if(cost.lockFail) throw new Error(cost.lockFail);
+        calls.locks.push({ at: calls.sheets, end: null, cacheAt: cache.ops.length, cacheEnd: null });
+      },
+      // bez czekania (1.4, cacheGens_): `cost.lockBusy` — blokadę trzyma właśnie inny zapis
+      tryLock(){
+        if(cost.lockBusy || cost.lockFail) return false;
+        calls.locks.push({ at: calls.sheets, end: null, cacheAt: cache.ops.length, cacheEnd: null, try: true });
+        return true;
+      },
+      releaseLock(){ const l = calls.locks[calls.locks.length - 1]; if(l){ l.end = calls.sheets; l.cacheEnd = cache.ops.length; } },
     }) },
     PropertiesService: { getScriptProperties: ()=>({
       getProperty: k => { if(propFail && propFail(k, 'get')) throw new Error('Usługa właściwości: awaria'); return k in props ? props[k] : null; },
@@ -231,12 +282,15 @@ function makeContext(opts){
                           pollMonday_, pollWeekLabel_, pollSettings_, setPollSettings, getPollChats, sendPollNow,
                           sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState,
                           doGet, reportDiag, diagServer_, diagBytes_, diagCaller_, dogTeam_, markTeam,
-                          setDayReportSettings, getDayReportContacts, sendDayReportNow, dayReportText_, dayReportPanel_ };
+                          setDayReportSettings, getDayReportContacts, sendDayReportNow, dayReportText_, dayReportPanel_,
+                          catalogLocked_, bootState_, cacheBump_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
-                           DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES };
+                           DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,
+                           CACHE_PREFIX, CACHE_KEY };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
-    ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0; };
+    ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0;
+                                         lockKeepsDogs_ = false; volLock_ = null; };
   `;
   vm.runInContext(src + expose, ctx, { filename: 'g13-backend.js' });
   const setNow = iso => { nowMs = Date.parse(iso); };
@@ -246,8 +300,9 @@ function makeContext(opts){
   const api = {};
   Object.keys(ctx.__api).forEach(k => { api[k] = (...a) => { ctx.__newExecution(); return ctx.__api[k](...a); }; });
   return { ctx, api, conf: ctx.__conf, sheets, props, triggers, http, consent, cost, html, setNow, newExecution: ctx.__newExecution,
-           now: () => nowMs,
-           propReads: () => propReads, failProps: f => { propFail = f || null; } };
+           now: () => nowMs, calls, cache,
+           propReads: () => propReads, failProps: f => { propFail = f || null; },
+           failCache: f => { cache.fail = f || null; } };
 }
 
 module.exports = { makeContext, makeSheet };

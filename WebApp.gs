@@ -42,11 +42,33 @@ function doGet() {
  */
 function bootJson_(d) {
   try {
-    return JSON.stringify(readState_(d ? d.parts : {})).replace(/</g, '\\u003c');
+    return JSON.stringify(bootState_(d ? d.parts : {})).replace(/</g, '\\u003c');
   } catch (e) {
     if (d) d.err = 'stan startowy: ' + (e && e.message || e);
     return 'null';
   }
+}
+
+/**
+ * Stan startowy (1.4): z pamięci podręcznej, gdy od jego zapisania nie było żadnego zapisu (znacznik
+ * stanu — Utils.gs, „PAMIĘĆ PODRĘCZNA") i dzień się nie zmienił — wtedy otwarcie strony w ogóle nie
+ * dotyka arkusza, więc nie wisi, gdy Google na nim stoi (pomiar 9.10.2026: do 351 s). Taki stan ma
+ * `cached: true` — telefon od razu dociąga świeży (getData): ręczna edycja arkusza znacznika nie zmienia.
+ * Inaczej z arkusza, jak dawniej, i wkłada go do pamięci (podpisany znacznikiem sprzed odczytu).
+ */
+function bootState_(parts) {
+  const t = Date.now();
+  const c = cacheGet_([CACHE_KEY.GEN, CACHE_KEY.BOOT]);
+  const hit = cacheSigned_(c[CACHE_KEY.BOOT], c[CACHE_KEY.GEN]);
+  if (hit && hit.state && hit.state.businessDate === businessDate_() && hit.state.today === today_()) {
+    parts.pamięć = Date.now() - t;
+    return Object.assign(hit.state, { cached: true });
+  }
+  const gen = lockDepth_ ? null : cacheGens_(c, [CACHE_KEY.GEN])[CACHE_KEY.GEN];   // przed odczytem arkusza
+  parts.pamięć = Date.now() - t;
+  const out = readState_(parts);
+  if (gen) cachePut_({ [CACHE_KEY.BOOT]: JSON.stringify({ gen: gen, state: out }) });
+  return out;
 }
 
 /** Wkleja plik HTML do szablonu — używane w Index.html: <?!= include('Styles'); ?> */
@@ -75,23 +97,41 @@ function include(filename) {
  *
  * Wolny odczyt trafia do dziennika spowolnień (Diag.gs) z czasem każdego kroku. Pod blokadą
  * (akcje edycyjne oddają pełny stan) nie — tam cały zapis mierzy withLock_.
+ *
+ * Odczyt zawsze z arkusza, ale przy okazji wkłada świeży stan i katalog do pamięci podręcznej
+ * (1.4, Utils.gs): stamtąd otwiera się strona (bootState_) i biorą psa akcje (catalogLocked_).
+ * Znaczniki biorą się PRZED odczytem arkusza — zapis w międzyczasie unieważni ten wpis. Pod blokadą
+ * nie: jej koniec i tak wymieni znacznik.
  */
 function getData() {
   const t0 = Date.now();
   const parts = {};
-  const out = readState_(parts);
+  const gens = lockDepth_ ? {} : cacheGens_(cacheGet_([CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN]), [CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN]);
+  const tGet = Date.now() - t0;
+  const keep = {};
+  const out = readState_(parts, keep);
+  const t1 = Date.now();
+  const put = {};
+  if (gens[CACHE_KEY.GEN]) put[CACHE_KEY.BOOT] = JSON.stringify({ gen: gens[CACHE_KEY.GEN], state: out });
+  if (gens[CACHE_KEY.DOGS_GEN]) put[CACHE_KEY.DOGS] = JSON.stringify({ gen: gens[CACHE_KEY.DOGS_GEN], list: keep.catalog });
+  cachePut_(put);
+  if (!lockDepth_) parts.pamięć = tGet + Date.now() - t1;
   const ms = Date.now() - t0;
   if (ms >= DIAG_SLOW_MS && !lockDepth_) diagServer_('getData', ms, parts);
   return out;
 }
 
-/** Stan z getData; `parts` dostaje czas każdego odczytu w ms (ustawienia, psy, spacery, zadania, reszta). */
-function readState_(parts) {
+/**
+ * Stan z getData; `parts` dostaje czas każdego odczytu w ms (ustawienia, psy, spacery, zadania, reszta),
+ * `keep.catalog` — katalog psów, jak go przeczytano (do pamięci podręcznej).
+ */
+function readState_(parts, keep) {
   let t = Date.now();
   const lap = k => { const n = Date.now(); parts[k] = (parts[k] || 0) + (n - t); t = n; };
   const date = businessDate_();
   lap('ustawienia');
   const catalog = readDogCatalog_();
+  if (keep) keep.catalog = catalog;
   lap('psy');
   const known = {};
   catalog.forEach(d => { known[d.id] = true; });

@@ -62,8 +62,19 @@ check('...i nie jedzie do Apps Script', !/scripts/.test(fs.readFileSync(path.joi
 /* ---------- T5: numer wersji przy nazwie aplikacji ---------- */
 console.log('T5: numer wersji przy „Spacery" (Index.html) = version w package.json (1.3.0 → v1.3, 1.2.1 → v1.2.1)');
 const ver = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-const shown = (fs.readFileSync(path.join(ROOT, 'Index.html'), 'utf8').match(/<span class="ver">v([^<]*)<\/span>/) || [])[1];
-check('wersja na stronie = package.json', !!shown && shown === String(ver).replace(/\.0$/, ''), shown + ' / ' + ver);
+const verShown = String(ver).replace(/\.0$/, '');
+const shown = (fs.readFileSync(path.join(ROOT, 'Index.html'), 'utf8').match(/<span class="vernum">v([^<]*)<\/span>/) || [])[1];
+check('wersja na stronie = package.json', !!shown && shown === verShown, shown + ' / ' + ver);
+
+/* ---------- T6: „Co nowego" (1.4) ---------- */
+console.log('T6: „Co nowego" (WHATS_NEW w Script.html) — najnowsza na górze, pierwsza = package.json, każda wydana z datą');
+const wnBlock = (fs.readFileSync(path.join(ROOT, 'Script.html'), 'utf8').match(/const WHATS_NEW = \[([\s\S]*?)\r?\n  \];/) || [])[1] || '';
+const wn = [...wnBlock.matchAll(/\{ v: '([^']*)', date: '([^']*)', items: \[/g)].map(m => ({ v: m[1], date: m[2] }));
+const verKey = v => v.split('.').concat(['0', '0']).slice(0, 3).map(n => String(Number(n)).padStart(4, '0')).join('.');
+check('wpisy są (każdy: v, date, items)', wn.length >= 7, wn.length);
+check('pierwszy wpis = wersja z package.json', !!wn[0] && wn[0].v === verShown, (wn[0] || {}).v + ' / ' + verShown);
+check('najnowsza na górze, bez powtórek', wn.every((n, i) => i === 0 || verKey(wn[i - 1].v) > verKey(n.v)), wn.map(n => n.v).join(' '));
+check('każda wersja poza najnowszą ma datę', wn.slice(1).every(n => n.date), wn.filter(n => !n.date).map(n => n.v).join(' '));
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);
