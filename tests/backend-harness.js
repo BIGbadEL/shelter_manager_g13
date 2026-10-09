@@ -17,7 +17,7 @@ function makeSheet(name, rows, onRename){
 
   function cell(r,c){ pad(data[r-1]||(data[r-1]=[]), c); return data[r-1]; }
 
-  // każde wywołanie usługi arkusza (1.3.1: ile ich idzie pod blokadą — `calls` w makeContext)
+  // każde wywołanie usługi arkusza (1.4: ile ich idzie pod blokadą — `calls` w makeContext)
   const call = () => { if(sheet._onCall) sheet._onCall(sheet._name); };
   const sheet = {
     _name: name, _data: data,
@@ -106,12 +106,12 @@ function makeContext(opts){
   const cost = { read: {}, waitLock: 0, lockFail: null, lockBusy: false, flush: 0, template: 0, evaluate: 0 };
   const spend = ms => { nowMs += ms || 0; };
   const html = { evaluated: [] };   // szablony złożone przez doGet (z polami: boot, served)
-  // Wywołania usługi arkusza (1.3.1): `calls.sheets` — wszystkie (każda metoda zakładki, getSheetByName,
+  // Wywołania usługi arkusza (1.4): `calls.sheets` — wszystkie (każda metoda zakładki, getSheetByName,
   // flush), `calls.bySheet[nazwa]`; `calls.locks` — dla każdej blokady licznik przy wzięciu i zwolnieniu,
   // czyli ile wywołań arkusza poszło pod nią (pomiar 9.10.2026: każde ~0,1 s, czasem przestój).
   const calls = { sheets: 0, bySheet: {}, locks: [] };
   const sheetCall = name => { calls.sheets++; if(name) calls.bySheet[name] = (calls.bySheet[name] || 0) + 1; };
-  // CacheService (1.3.1): `cache.store` klucz -> {v, exp}; wygasa z zegarem testu; wartość ponad 100 KB
+  // CacheService (1.4): `cache.store` klucz -> {v, exp}; wygasa z zegarem testu; wartość ponad 100 KB
   // rzuca jak w Apps Script; `failCache(f)` — f(op, klucze) === true: usługa rzuca ('get' | 'put' | 'remove')
   const cache = { store: {}, ops: [], fail: null };
   const cacheOp = (op, keys) => {
@@ -210,7 +210,7 @@ function makeContext(opts){
         if(cost.lockFail) throw new Error(cost.lockFail);
         calls.locks.push({ at: calls.sheets, end: null, cacheAt: cache.ops.length, cacheEnd: null });
       },
-      // bez czekania (1.3.1, cacheGens_): `cost.lockBusy` — blokadę trzyma właśnie inny zapis
+      // bez czekania (1.4, cacheGens_): `cost.lockBusy` — blokadę trzyma właśnie inny zapis
       tryLock(){
         if(cost.lockBusy || cost.lockFail) return false;
         calls.locks.push({ at: calls.sheets, end: null, cacheAt: cache.ops.length, cacheEnd: null, try: true });

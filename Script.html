@@ -3180,17 +3180,17 @@
   });
 
   /* =========================================================
-     CO NOWEGO (1.3.1)
+     CO NOWEGO (1.4)
      ========================================================= */
   /**
    * Lista zmian dla wolontariuszy i prowadzącej, najnowsza wersja na górze. Pisana po ludzku i krótko —
    * co widać na ekranie, nie jak to działa: kto wejdzie, ma przeczytać, a nie przestraszyć się regułami
-   * sortowania (decyzja właściciela, 1.3.1). `admin` — „W panelu admina" (nazwa od właściciela). **Każde wydanie dopisuje
+   * sortowania (decyzja właściciela, 1.4). `admin` — „W panelu admina" (nazwa od właściciela). **Każde wydanie dopisuje
    * wpis na górze** (z datą wdrożenia); pierwszy wpis = `version` z package.json = numer przy „Spacery"
    * w Index.html (T5, T6). Pusta data = wersja jeszcze niewydana.
    */
   const WHATS_NEW = [
-    { v: '1.3.1', date: '', items: [
+    { v: '1.4', date: '', items: [
         'Przycisk „Co nowego” — ta lista: wszystkie zmiany w aplikacji w jednym miejscu, najnowsze na górze.',
         'Strona otwiera się szybciej i nie czeka, gdy Google zwalnia przy arkuszu — lista jest od razu i zaraz się odświeża.',
         'Rezerwacje i „Wrócił ✓” zapisują się szybciej, gdy kilka osób klika naraz.',
@@ -3309,7 +3309,7 @@
 
   document.getElementById('today').textContent=todayStr();
   const boot = bootData();
-  // `cached` (1.3.1) — stan startowy z pamięci podręcznej serwera (bootState_): lista od razu, a świeży
+  // `cached` (1.4) — stan startowy z pamięci podręcznej serwera (bootState_): lista od razu, a świeży
   // stan z arkusza zaraz za nim — ręczna edycja arkusza mogła go jeszcze nie dogonić
   if(boot){ applyData(boot); render('self'); if(boot.cached) refresh(); }
   else refresh();

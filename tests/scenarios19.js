@@ -1,4 +1,4 @@
-// S141-S142: „Co nowego" (1.3.1). Numer wersji przy „Spacery" to przycisk do listy zmian (najnowsza na górze,
+// S141-S142: „Co nowego" (1.4). Numer wersji przy „Spacery" to przycisk do listy zmian (najnowsza na górze,
 // po ludzku, także zmiany w panelu admina); po aktualizacji raz na telefon pasek „Nowa wersja".
 // Kolejność wpisów i wersję z package.json sprawdza też tooling.js (T5, T6) — bez przeglądarki.
 const { buildApp, dogFree, ROOT } = require('./harness');

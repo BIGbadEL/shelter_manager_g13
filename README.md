@@ -90,7 +90,7 @@ na produkcję.
 
 Numer `1.X.Y`: **X** rośnie przy dużych zmianach; **Y** — przy drobnych poprawkach i błędach
 w tym, czego dotyczyło ostatnie X. Wolontariuszy informujemy wtedy, gdy trzeba — niezależnie od
-numeru. Wersja jest też w `package.json`, przy nazwie „Spacery" w aplikacji i — od 1.3.1 — na liście
+numeru. Wersja jest też w `package.json`, przy nazwie „Spacery" w aplikacji i — od 1.4 — na liście
 „Co nowego" (`WHATS_NEW` w `Script.html`): **każde wydanie dopisuje tam wpis na górze, z datą wdrożenia,
 przed `deploy:prod`** — po ludzku i krótko, co widać na ekranie, osobno „W panelu admina". Test T6
 pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę.
@@ -103,7 +103,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
-| 1.3.1 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą | `release/1.3.1` | w przygotowaniu |
+| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą | `release/1.3.1` | w przygotowaniu |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -376,6 +376,13 @@ układ)` — w razie potrzeby trzeba to przepisać ręcznie. Ponowne wdrożenie 
 przywróconą zakładkę od nowa, znów z kopią: znacznik `walksLayout` pamięta id zakładki (`2:<id>`),
 więc podmiana zakładki nie przejdzie niezauważona i nowa wersja nie przeczyta starego układu jak nowego.
 
+**Pamięć podręczna (od 1.4) przy cofnięciu i ponownym wdrożeniu.** Wersja sprzed 1.4 pamięci nie czyta,
+więc samo cofnięcie niczego nie wymaga. Ale jej zapisy nie wymieniają znaczników, a wpisy żyją do 6 h — gdy
+1.4 wróci w ciągu 6 h od cofnięcia, wpisy sprzed cofnięcia byłyby dla niej znów ważne, choć arkusz się zmienił
+(stan startowy telefon i tak od razu odświeża, ale katalog dla akcji byłby stary do najbliższego odczytu listy:
+pies dodany w czasie cofnięcia przez kilka sekund nie dałby się zarezerwować). **Przed ponownym wdrożeniem 1.4
+w ciągu 6 h od cofnięcia uruchom z edytora `migrate()`** (wymienia znaczniki) albo odczekaj 6 h (review PR #7).
+
 **Projekt bez wersji z datami** (produkcja przed pierwszym wdrożeniem dat — nie ma zakładki Spacery):
 nowa wersja zakłada zakładkę od razu w nowym układzie, kopii nie ma czego robić. Poprzednia wersja
 czyta stan dnia ze starych kolumn Psy (`status`, `kto`, `godzina`, `kto1`, `godzina1`), których nowa
@@ -607,9 +614,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
-### 1.3.1 — w przygotowaniu
+### 1.4 — w przygotowaniu
 
-- **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.3.1 · Co nowego?"). Otwiera
+- **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.4 · Co nowego?"). Otwiera
   na cały ekran listę zmian wszystkich wersji, od najnowszej: krótko i po ludzku, co widać na ekranie,
   a pod „W panelu admina" zmiany w trybie edycji. Wersja A z czterech makiet — na górze strony nic
   nie dochodzi.
@@ -628,6 +635,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   - Poprawności pilnują znaczniki pokolenia wymieniane przez każdy zapis — nic sprzed zapisu nie zostanie użyte;
     każdy błąd pamięci = arkusz, jak dotąd. Arkusz bez zmian, nowych uprawnień brak. Ręczna zmiana w arkuszu
     (np. liczba spacerów psa wpisana w Arkuszach Google) dociera do akcji od najbliższego odczytu listy.
+  - Cofnięcie do 1.3 i ponowne wdrożenie 1.4 w ciągu 6 h: najpierw `migrate()` z edytora (*Cofnięcie wdrożenia*).
+- Numer: 1.4, nie 1.3.1 — nowa funkcja i przebudowa odczytów to nie poprawki 1.3 (review PR #7, decyzja
+  właściciela). Gałąź została pod nazwą `release/1.3.1` (z niej PR #7).
 
 ### 1.3 — wdrożone 2026-10-09 (@21)
 

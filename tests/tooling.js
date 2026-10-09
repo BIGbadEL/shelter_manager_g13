@@ -66,7 +66,7 @@ const verShown = String(ver).replace(/\.0$/, '');
 const shown = (fs.readFileSync(path.join(ROOT, 'Index.html'), 'utf8').match(/<span class="vernum">v([^<]*)<\/span>/) || [])[1];
 check('wersja na stronie = package.json', !!shown && shown === verShown, shown + ' / ' + ver);
 
-/* ---------- T6: „Co nowego" (1.3.1) ---------- */
+/* ---------- T6: „Co nowego" (1.4) ---------- */
 console.log('T6: „Co nowego" (WHATS_NEW w Script.html) — najnowsza na górze, pierwsza = package.json, każda wydana z datą');
 const wnBlock = (fs.readFileSync(path.join(ROOT, 'Script.html'), 'utf8').match(/const WHATS_NEW = \[([\s\S]*?)\r?\n  \];/) || [])[1] || '';
 const wn = [...wnBlock.matchAll(/\{ v: '([^']*)', date: '([^']*)', items: \[/g)].map(m => ({ v: m[1], date: m[2] }));

@@ -50,7 +50,7 @@ function bootJson_(d) {
 }
 
 /**
- * Stan startowy (1.3.1): z pamięci podręcznej, gdy od jego zapisania nie było żadnego zapisu (znacznik
+ * Stan startowy (1.4): z pamięci podręcznej, gdy od jego zapisania nie było żadnego zapisu (znacznik
  * stanu — Utils.gs, „PAMIĘĆ PODRĘCZNA") i dzień się nie zmienił — wtedy otwarcie strony w ogóle nie
  * dotyka arkusza, więc nie wisi, gdy Google na nim stoi (pomiar 9.10.2026: do 351 s). Taki stan ma
  * `cached: true` — telefon od razu dociąga świeży (getData): ręczna edycja arkusza znacznika nie zmienia.
@@ -99,7 +99,7 @@ function include(filename) {
  * (akcje edycyjne oddają pełny stan) nie — tam cały zapis mierzy withLock_.
  *
  * Odczyt zawsze z arkusza, ale przy okazji wkłada świeży stan i katalog do pamięci podręcznej
- * (1.3.1, Utils.gs): stamtąd otwiera się strona (bootState_) i biorą psa akcje (catalogLocked_).
+ * (1.4, Utils.gs): stamtąd otwiera się strona (bootState_) i biorą psa akcje (catalogLocked_).
  * Znaczniki biorą się PRZED odczytem arkusza — zapis w międzyczasie unieważni ten wpis. Pod blokadą
  * nie: jej koniec i tak wymieni znacznik.
  */

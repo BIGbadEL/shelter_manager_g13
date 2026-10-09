@@ -63,7 +63,7 @@ let lockKeepsDogs_ = false;
  */
 let volLock_ = null;
 
-/* ---------- PAMIĘĆ PODRĘCZNA (CacheService, 1.3.1) ----------
+/* ---------- PAMIĘĆ PODRĘCZNA (CacheService, 1.4) ----------
  * Pomiar 9.10.2026 (CLAUDE.md, „Pomiar opóźnień"): całe opóźnienie siedzi w wykonaniu — każde wywołanie
  * arkusza to ~0,1 s, a pojedyncze potrafi stanąć na sekundy, raz na 351 s; zapis trzymał blokadę ~2 s
  * (~10 wywołań pod nią). Pamięć Google odpowiada w kilkadziesiąt ms i nie zależy od arkusza. Trzyma
@@ -77,7 +77,7 @@ let volLock_ = null;
  * za nowy. Brakujący znacznik zakłada się tylko pod blokadą (zapis, catalogLocked_, cacheGens_) —
  * bez niej zakładanie ścigałoby się z zapisem. Ręczna edycja arkusza znacznika nie zmienia: najbliższe
  * getData (z arkusza) wkłada świeży stan pod tym samym znacznikiem.
- * Google czyści pamięć, kiedy chce, a każdy jej błąd znaczy „czytaj arkusz", jak przed 1.3.1 —
+ * Google czyści pamięć, kiedy chce, a każdy jej błąd znaczy „czytaj arkusz", jak przed 1.4 —
  * pamięć nigdy nie zatrzymuje odczytu ani zapisu.
  */
 function cacheGet_(keys) {
@@ -171,9 +171,21 @@ function cacheBump_(dogs) {
  * (Diag.gs) z rozbiciem: `blokada` — czekanie na inne zapisy, `praca` — nasz kod pod blokadą,
  * `zapis` — flush do arkusza, nowy znacznik pamięci podręcznej (cacheBump_) i zwolnienie.
  * Mierzymy zawsze (to tylko zegar), piszemy rzadko.
+ *
+ * Zagnieżdżona praca deklaruje „psy bez zmian" (lockKeepsDogs_) za siebie, a blokada je zachowuje
+ * tylko wtedy, gdy zadeklarowała to także praca zewnętrzna — akcja na spacerze wołana spod zapisu,
+ * który zmienił psy, nie może uchronić starego katalogu w pamięci (review PR #7).
  */
 function withLock_(fn) {
-  if (lockDepth_ > 0) return fn();
+  if (lockDepth_ > 0) {
+    const outer = lockKeepsDogs_;
+    lockKeepsDogs_ = false;
+    try {
+      return fn();
+    } finally {
+      lockKeepsDogs_ = outer && lockKeepsDogs_;
+    }
+  }
   const t0 = Date.now();
   const lock = LockService.getScriptLock();
   try {

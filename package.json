@@ -1,6 +1,6 @@
 {
   "name": "g13-spacery",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "private": true,
   "description": "Testy i wdrażanie aplikacji G13 Spacery. Sam kod aplikacji mieszka w Apps Script — npm służy tu wyłącznie do uruchamiania harnessów i wysyłki przez clasp.",
   "scripts": {

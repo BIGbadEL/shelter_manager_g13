@@ -1,4 +1,4 @@
-// S143: stan startowy z pamięci podręcznej serwera (1.3.1, `cached` — bootState_ w WebApp.gs). Lista rysuje się
+// S143: stan startowy z pamięci podręcznej serwera (1.4, `cached` — bootState_ w WebApp.gs). Lista rysuje się
 // od razu, a świeży stan z arkusza idzie zaraz za nią: ręczna edycja arkusza mogła pamięci jeszcze nie dogonić.
 // Serwer (znaczniki pokolenia, wyścigi, awarie pamięci) sprawdza backend.js — B71, B72.
 const { buildApp, dogFree } = require('./harness');
@@ -26,7 +26,7 @@ function S143(){
     && s.slots[D + '|1|1'] && s.slots[D + '|1|1'].status === 'reserved', JSON.stringify(s.slots));
 
   const b = buildApp({ boot: DATA });
-  check('stan z arkusza (bez „cached"): bez dodatkowego odczytu na starcie — jak przed 1.3.1', reads(b) === 0, reads(b));
+  check('stan z arkusza (bez „cached"): bez dodatkowego odczytu na starcie — jak przed 1.4', reads(b) === 0, reads(b));
   check('bez błędów skryptu', a.errors.length === 0 && b.errors.length === 0, a.errors.concat(b.errors).join(' | '));
 }
 

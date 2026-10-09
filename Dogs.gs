@@ -50,7 +50,7 @@ function readDogCatalog_() {
 }
 
 /**
- * Katalog dla akcji na spacerach pod blokadą (1.3.1) — z pamięci podręcznej, dopóki nikt nie zmienił
+ * Katalog dla akcji na spacerach pod blokadą (1.4) — z pamięci podręcznej, dopóki nikt nie zmienił
  * psów (znacznik katalogu, cacheBump_ w Utils.gs). Dawniej każda rezerwacja czytała tu arkusz
  * (~5 wywołań) i przez ten czas trzymała blokadę wszystkim. Pod blokadą nikt nie zapisze między
  * odczytem a włożeniem, więc brakujący znacznik zakładamy na miejscu. Tylko tam, gdzie praca pod
@@ -535,7 +535,7 @@ function volAssign_(map, norm, n, max) {
 
 /**
  * Kolory wolontariuszy dnia — świeży odczyt (pod blokadą, przed przydziałem); w tej samej blokadzie
- * drugi raz z pamięci wykonania (volLock_ w Utils.gs, 1.3.1 — rezerwacja czytała dwa razy).
+ * drugi raz z pamięci wykonania (volLock_ w Utils.gs, 1.4 — rezerwacja czytała dwa razy).
  * null = nie udało się odczytać: bez kolorów, ale akcja, która o nie pyta, przechodzi.
  */
 function volunteersOf_(date) {
@@ -629,7 +629,7 @@ function pickSlot_(dog, slots, slot, fallback) {
  * Wspólny szkielet akcji na spacerze: pod blokadą czyta psa i jego dzień,
  * `choose(dog, slots)` wybiera numer spaceru (0 = nic do zrobienia), `change(s, dog, d)`
  * zmienia spacer (i przez `d` ewentualnie grupę) i mówi, czy jest co zapisać.
- * Psa bierze z katalogu w pamięci podręcznej (catalogLocked_, 1.3.1) — katalogu nie rusza.
+ * Psa bierze z katalogu w pamięci podręcznej (catalogLocked_, 1.4) — katalogu nie rusza.
  */
 function slotAction_(id, date, choose, change) {
   return withLock_(() => {
