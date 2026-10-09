@@ -72,15 +72,16 @@ function hasTeamColumn_(header) {
 
 /**
  * Kolumna grupy psa — dokłada brakującą (kolumna, nagłówek, format tekstowy, zanim coś do niej
- * trafi). Zwraca false, gdy w jej miejscu stoi już inna, czyjaś kolumna z innym nagłówkiem —
- * tej nie nadpisujemy. Tylko pod blokadą albo z edytora.
+ * trafi). Zwraca false, gdy w jej miejscu stoi już czyjaś kolumna — z innym nagłówkiem albo bez
+ * nagłówka, ale z wpisami pod nim (review PR #6: „kaganiec" przy Lunie robił z niej psa grupy
+ * „kaganiec") — tej nie nadpisujemy. Tylko pod blokadą albo z edytora.
  */
 function dogColumns_(sh) {
   const missing = DOG_WIDTH - sh.getMaxColumns();
   if (missing > 0) sh.insertColumnsAfter(sh.getMaxColumns(), missing);
   const head = teamHead_(sh);
   if (head === DOG_HEADERS[DOG.TEAM - 1]) return true;
-  if (head) return false;
+  if (head || teamCellsUsed_(sh)) return false;
   sh.getRange(1, DOG.TEAM).setValue(DOG_HEADERS[DOG.TEAM - 1]);
   sh.getRange(1, DOG.TEAM, sh.getMaxRows(), 1).setNumberFormat('@');
   return true;
@@ -91,6 +92,14 @@ function teamHead_(sh) {
   if (sh.getMaxColumns() < DOG.TEAM) return '';
   const v = sh.getRange(1, DOG.TEAM).getValue();
   return String(v == null ? '' : v).trim();
+}
+
+/** Czy pod nagłówkiem kolumny grupy psa coś stoi (same spacje się nie liczą). */
+function teamCellsUsed_(sh) {
+  const last = sh.getLastRow();
+  if (last < 2) return false;
+  return sh.getRange(2, DOG.TEAM, last - 1, 1).getValues()
+    .some(r => String(r[0] == null ? '' : r[0]).trim() !== '');
 }
 
 /** Grupa psa do porównań: „G7", „g 7" i „ g7 " to ta sama grupa. */
@@ -120,8 +129,8 @@ function dogTeam_(v, known) {
 function teamWritable_(sh, team) {
   if (!team) return teamHead_(sh) === DOG_HEADERS[DOG.TEAM - 1];
   if (dogColumns_(sh)) return true;
-  throw new Error('Kolumna ' + DOG.TEAM + ' w zakładce Psy jest zajęta przez inną — grupy psa nie zapisano. ' +
-                  'Przesuń tamtą kolumnę albo nazwij tę „' + DOG_HEADERS[DOG.TEAM - 1] + '".');
+  throw new Error('Kolumna ' + DOG.TEAM + ' (O) w zakładce Psy jest zajęta przez inne dane — grupy psa nie zapisano. ' +
+                  'Przesuń tamtą kolumnę w arkuszu w inne miejsce.');
 }
 
 /**

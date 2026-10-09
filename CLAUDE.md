@@ -48,7 +48,10 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
   `dogWidth_(sh)` kolumn**; kolumnę dokłada pierwszy zapis psa innej grupy (`dogColumns_`, z nagłówkiem
   i formatem `@`), `migrate()` też. **Liczy się tylko pod nagłówkiem `grupa_psa`** (`hasTeamColumn_`):
   czyjaś własna kolumna O nie przenosi psów na listę innych grup i nie jest nadpisywana — zapis grupy
-  daje wtedy wyraźny błąd PRZED innymi zapisami psa (`teamWritable_`, B66). Pisownia ujednolicana
+  daje wtedy wyraźny błąd PRZED innymi zapisami psa (`teamWritable_`, B66). Czyja jest kolumna, rozstrzyga
+  `dogColumns_`: z innym nagłówkiem — czyjaś; **bez nagłówka, ale z wpisami pod nim — też czyjaś**
+  (`teamCellsUsed_`, final review PR #6: przejęcie robiło z „kaganiec" w notatkach grupę psa); bez nagłówka
+  i pusta (same spacje to pusto) — przejmujemy. Pisownia ujednolicana
   (`dogTeam_` = `teamClean` w przeglądarce: „g13" = nasza, „g 7" przy istniejącej „G7" = „G7").
   **`status`, `kto`, `godzina`, `kto1`, `godzina1` są martwe** od wprowadzenia dat — czyta je
   tylko jednorazowy `importDayState_()`. Nie pisz do nich i nie czytaj z nich stanu dnia.
@@ -251,7 +254,8 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   **Limit planu Developer bramki: 3 czaty w miesiącu na instancję** (test i produkcja dzielą jedną darmową
   instancję) — „Grafik", prowadząca i grupa próbna to komplet; czwarty czat dostaje 466 (`greenCall_` mówi
   wprost o limicie; pewne „nie wyszło"). **Na teście wysyłanie po czyszczeniu wyłączone**, próba „Wyślij listę"
-  do tej samej osoby co na produkcji (review PR #6).
+  do tej samej osoby co na produkcji (review PR #6). Wiadomość po nocnym czyszczeniu sprawdza się więc dopiero
+  na produkcji, po pierwszym czyszczeniu na 1.3.
 - **Dziennik spowolnień** (1.2, `Diag.gs`, B62–B64, S122–S128) — po zgłoszeniu 7–8.10.2026 „strona
   długo się ładowała, a potem wisiała": dziennik wykonań Google zna tylko łączny czas na serwerze
   (bez kroków, bez filtra po funkcji), a telefonu nie widzi wcale. **Serwer** (`diagServer_`, właściwość
@@ -526,7 +530,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1633 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1638 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -668,7 +672,8 @@ pewne „nie wyszło" przy braku zgody),
 B62 dziennik spowolnień — serwer (kroki `doGet`/`getData`/`withLock_`, błąd blokady, nieudany stan startowy,
 nazwa akcji, awaria właściwości nic nie psuje), B63 sufity dziennika i `reportDiag`, B64 dziennik w Panelu,
 B65 grupa psa (zakładka bez kolumny, dokładanie kolumny, pisownia, karta sprzed 1.3, nocne czyszczenie i `migrate()`
-na wąskiej zakładce), B66 cudza kolumna O, B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
+na wąskiej zakładce), B66 cudza kolumna O (z innym nagłówkiem albo z wpisami bez nagłówka; nocne czyszczenie
+jej nie zapisuje), B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
 z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
 dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
 dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
@@ -913,12 +918,17 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
 - **Wersja 1.3 w przygotowaniu** (gałąź `release/1.3`, PR #6): psy innych grup — dwie listy, grupa psa w panelu,
   „Bierze G7"; `T.readStale` 20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup
-  bota bez dwóch „G13". Test: @27 (2026-10-09, 13:39) — z „✓ G7" i odświeżaniem, jeszcze bez listy dnia.
-  **Do sprawdzenia na teście:** „Pobierz grupy" (jakie dopiski dostają oba „G13" — bramka podaje szczegóły
-  społeczności tylko administratorom), „Pobierz kontakty" (czy prowadząca jest na liście), „Wyślij listę",
-  potem wiadomość po czyszczeniu o 19:00. Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
-  **Przed `deploy:prod`: kolumna O w Psy na produkcji ma być pusta** (review PR #6 — czyjaś kolumna tam nie
-  przeniesie psów i nie zostanie nadpisana, ale grupa psa nie będzie się wtedy zapisywać). Nocne czyszczenie
+  bota bez dwóch „G13". Test: @29 (2026-10-09, 15:01) — do `e544f87` (poprawki po review, „v1.3"); bez kolumny O
+  bez nagłówka z final review. **Do sprawdzenia na teście:** „v1.3" w nagłówku, „Bierze G7" → „✓ G7" → „Cofnij",
+  „Pobierz grupy" (jakie dopiski dostają oba „G13" — bramka podaje szczegóły społeczności tylko administratorom),
+  „Pobierz kontakty" (czy prowadząca jest na liście), „Wyślij listę z …". **Wiadomość po nocnym czyszczeniu —
+  dopiero na produkcji** (na teście wysyłanie po czyszczeniu wyłączone, wyżej): po pierwszym czyszczeniu (18:xx)
+  Wykonania — czy `endOfDay` przeszedł — i czy lista doszła. **Limit bramki w październiku 2026 wyczerpany**
+  (9.10: grupa próbna, „Grafik", właściciel) — prowadząca do 1.11 dostałaby 466, próby tylko do właściciela.
+  Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
+  **Przed `deploy:prod`: kolumna O w Psy na produkcji ma być cała pusta** — nagłówek i komórki pod nim (review
+  PR #6). Czyjaś kolumna tam — z nagłówkiem albo z samymi wpisami — nie przeniesie psów i nie zostanie nadpisana
+  (wpisy bez nagłówka przejmowała do final review), ale grupa psa nie będzie się wtedy zapisywać. Nocne czyszczenie
   kolumny O nie dotyka (`closeDogs_` kończy na `notatka_do`; do review pisało do 15 i zamieniało formuły w stałe).
   Cofnięcie: `deploy:prod` z `release/1.2`; wiersze `team` w Spacery 1.2 pokaże jako odbyte „✓ G7".
 - **Decyzje właściciela z review PR #6 — nie zmieniać bez pytania:** „Bierze G7" zostaje jednym stuknięciem,

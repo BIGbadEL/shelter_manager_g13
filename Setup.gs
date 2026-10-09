@@ -88,8 +88,8 @@ function migrate() {
   }
   if (dogs && !dogColumns_(dogs)) {
     // grupa psa (1.3): kolumna, nagłówek i format; czyjejś innej kolumny w tym miejscu nie nadpisujemy
-    console.log('UWAGA: kolumna ' + DOG.TEAM + ' w zakładce Psy ma inny nagłówek niż „' + DOG_HEADERS[DOG.TEAM - 1] +
-                '" — grupa psa nie będzie się zapisywać. Przesuń tamtą kolumnę i uruchom migrate() jeszcze raz.');
+    console.log('UWAGA: kolumna ' + DOG.TEAM + ' (O) w zakładce Psy jest zajęta — inny nagłówek niż „' + DOG_HEADERS[DOG.TEAM - 1] +
+                '" albo wpisy bez nagłówka; grupa psa nie będzie się zapisywać. Przesuń tamtą kolumnę i uruchom migrate() jeszcze raz.');
   }
   setup();   // dołoży brakujące zakładki i formaty
 }

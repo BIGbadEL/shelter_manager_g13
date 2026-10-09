@@ -2206,6 +2206,30 @@ const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].t
   try { env.api.migrate(); } finally { console.log = log; }
   check('migrate() nie nadpisuje cudzego nagłówka i mówi o tym', P._data[0][14] === 'uwagi' && /grupa_psa/.test(said), said.slice(0, 120));
 
+  // kolumna O bez nagłówka, ale z wpisami (final review PR #6): to też czyjaś kolumna — przejęcie robiło z Luny
+  // psa grupy „kaganiec" z przyciskiem „Bierze kaganiec", przy pierwszym psie innej grupy albo przy migrate()
+  const h = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', extra:'kaganiec'}], { head:'' }) });
+  const HP = h.sheets['Psy'];
+  err = '';
+  try { h.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbare0000001'); } catch(e) { err = e.message; }
+  check('kolumna O bez nagłówka z wpisami: dodanie psa innej grupy — błąd, psa nie ma', /zajęta/.test(err)
+    && h.api.getData().dogs.length === 2, err);
+  err = '';
+  try { h.api.updateDog(1, {name:'Borys', team:'G7'}, TEST_PIN); } catch(e) { err = e.message; }
+  check('...edycja na inną grupę — błąd', /zajęta/.test(err), err);
+  said = '';
+  console.log = s => { said += s; };
+  try { h.api.migrate(); } finally { console.log = log; }
+  check('...migrate() kolumny nie przejmuje i mówi o tym', HP._data[0][14] === '' && HP._formats[15] !== '@' && /zajęta/.test(said),
+    said.slice(0, 120));
+  check('...wpisy zostają, a każdy pies jest nasz', HP._data[2][14] === 'kaganiec' && h.api.getData().dogs.every(x => x.team === ''),
+    JSON.stringify(h.api.getData().dogs.map(x => x.team)));
+  // pusta kolumna O bez nagłówka (zwykły arkusz Google ma 26 kolumn) — przejmujemy; same spacje to też pusto
+  const em = build([], { sheets: strictDogs([{id:1, name:'Borys'}, {id:2, name:'Luna', extra:'  '}], { head:'' }) });
+  em.api.addDog({name:'Tosia', team:'G7'}, TEST_PIN, 'dbare0000002');
+  check('pusta kolumna O bez nagłówka: przejęta przy pierwszym psie innej grupy', em.sheets['Psy']._data[0][14] === 'grupa_psa'
+    && teamOf(em, 3) === 'G7' && teamOf(em, 2) === '', JSON.stringify(em.sheets['Psy']._data[0]));
+
   // nocne czyszczenie zmienia tylko ostatni spacer, notatkę i jej termin — kolumny O nie dotyka (review PR #6):
   // zapis wartości w cudzą kolumnę zamienia formułę w stałą, a do 1.2 czyszczenie kończyło na kolumnie 14
   const n = build([], { sheets: strictDogs([{id:1, name:'Borys', note:'Zdjęcia', extra:'=JEŻELI(A2>0;"tak";"")'}], { head:'uwagi' }) });

@@ -630,8 +630,9 @@ Duże zmiany (numer X). Temat: psy innych grup — pomagamy wyprowadzać psy inn
 - Nocne czyszczenie nie dotyka kolumny O w Psy (review PR #6 — wcześniej przepisywało ją co noc, formuły
   stawały się stałymi).
 - Arkusz: nowa kolumna Psy `grupa_psa` (O) — dokłada się sama przy pierwszym psie innej grupy, `migrate()`
-  niepotrzebne. Jeśli kolumna O jest zajęta przez coś innego, aplikacja jej nie nadpisze i powie o tym przy
-  zapisie grupy.
+  niepotrzebne. Jeśli kolumna O jest zajęta przez coś innego (inny nagłówek albo same wpisy bez nagłówka),
+  aplikacja jej nie nadpisze i powie o tym przy zapisie grupy. Przed wdrożeniem na produkcję cała kolumna O
+  w Psy ma być pusta.
 
 ### 1.2 — wdrożone 2026-10-08 (@20)
 
