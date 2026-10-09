@@ -448,6 +448,15 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   36 s; to była jedyna droga omijająca `readWaiting`. **Każde `confirm` idzie przez `ask()`** —
   okienko zatrzymuje skrypt, a bez `diagAwake()` każde dłuższe zastanowienie byłoby „zamrożeniem";
   karta w tle tak samo (`visibilitychange`, `pageshow`).
+- **„Co nowego"** (1.3.1, S141–S142, T6; decyzje właściciela: wersja A z czterech makiet + jednorazowy pasek).
+  Numer wersji przy „Spacery" to przycisk (`#verBtn`, „v1.3.1 · Co nowego?") — na górze strony nic nie
+  dochodzi. Otwiera listę zmian na cały ekran (`#whatsNew`, `openWhatsNew` rysuje ją z `WHATS_NEW`; nad
+  paskiem zaznaczania, pod dymkiem i komunikatem; `body.wn-open` — strona pod spodem się nie przewija).
+  Leży poza `#view`, więc odświeżanie i przerysowanie listy jej nie dotykają. Pasek „✨ Nowa wersja…"
+  (`#wnBanner`) pod nagłówkiem, raz na telefon: `g13seen` w localStorage = najnowsza widziana wersja,
+  zapisywana przy „Zobacz", ✕ i otwarciu listy przyciskiem. **Bez pamięci przeglądarki paska nie ma**
+  (`storageOk`) — nie zapamiętałby schowania i wisiałby przy każdym otwarciu. Całość w `try/catch`: dodatek
+  nie może zatrzymać startu listy.
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -530,7 +539,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1638 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1665 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -551,7 +560,8 @@ prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` cz
 ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
 `scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
 spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
-grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136).
+grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
+(„Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -642,6 +652,8 @@ S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z 
 grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
 dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
 (serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
+S141 „Co nowego?" (lista zmian od najnowszej, „W panelu prowadzącej", odświeżenie jej nie zamyka — 1.3.1), S142 pasek
+„Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -678,7 +690,8 @@ z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`)
 dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
 dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
-= `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`).
+= `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
+pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.3.1).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -803,6 +816,10 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
   (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08),
   **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09).
+- **„Co nowego" (od 1.3.1) — każda wersja dopisuje wpis na górze `WHATS_NEW` w `Script.html`**, w gałęzi
+  wydania, z datą wdrożenia przed `deploy:prod` (pusta data = niewydana, T6). Pisane dla wolontariuszy
+  (decyzja właściciela): krótko, po ludzku, co widać na ekranie — „poprawa sortowania", nie jego reguły;
+  zmiany w trybie edycji osobno w `admin` („W panelu prowadzącej"); poprawki techniczne zbiorczo albo wcale.
 
 **Gałęzie i wydania — `main` = produkcja** (decyzja właściciela, od 2026-09-28):
 - `main` zawsze odpowiada temu, co stoi na produkcji. Nic nie trafia na produkcję spoza `main`
@@ -917,6 +934,9 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   co przełączało widoczność karty, nie wiadomo. W 1.3: `T.readStale` 20 s, powrót do karty z bramką (S138).
   Otwarcie strony bez listy w środku (żeby utknięcie `doGet` nie trzymało strony) — rozważone, odrzucone przez
   właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
+- **Wersja 1.3.1 w przygotowaniu** (gałąź `release/1.3.1`): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
+  wersja". Bez zmian w arkuszu i na serwerze (tylko `Index`/`Styles`/`Script`). **Przed `deploy:prod`: data
+  wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka schodzi pod „Spacery" (nic nie wystaje).
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,

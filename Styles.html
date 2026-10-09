@@ -25,14 +25,39 @@
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--forest);font-weight:700;}
   .titlerow{display:flex;align-items:center;gap:10px;}
   h1{font-size:26px;letter-spacing:-.02em;margin:3px 0 6px;font-weight:800;flex:1;}
-  /* numer wersji przy nazwie (1.3) — ten sam co w package.json, pilnuje T5 */
-  h1 .ver{font-size:13px;font-weight:700;letter-spacing:0;color:var(--muted);vertical-align:3px;margin-left:2px;}
+  /* numer wersji przy nazwie (1.3) — ten sam co w package.json, pilnuje T5; od 1.3.1 to zarazem przycisk
+     „Co nowego?" (decyzja właściciela, wersja A z czterech makiet: na górze nic nie dochodzi) */
+  h1 .ver{font-family:inherit;font-size:12.5px;font-weight:700;letter-spacing:0;color:var(--forest);background:var(--card);
+    border:1px solid var(--line);border-radius:20px;padding:4px 10px;margin-left:6px;vertical-align:4px;cursor:pointer;
+    white-space:nowrap;touch-action:manipulation;}
   .gear{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);
     font-size:17px;cursor:pointer;flex:none;}
   .gear.on{background:var(--forest);color:#fff;border-color:var(--forest);}
   .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;}
   .reset-note{display:inline-flex;align-items:center;gap:5px;background:#e2ebe3;color:var(--forest);
     font-weight:600;padding:3px 9px;border-radius:20px;font-size:12px;}
+
+  /* ---------- „Co nowego" (1.3.1) ----------
+     Pasek „Nowa wersja" raz na telefon i lista zmian na cały ekran, nad paskiem zaznaczania (60),
+     pod dymkiem „Zapisuję…" (70) i komunikatem. */
+  .wnbanner{display:flex;align-items:center;gap:8px;margin:12px 0 0;padding:8px 6px 8px 12px;background:var(--honey-soft);
+    border:1px solid #ecd3ad;border-radius:12px;font-size:13px;color:var(--ink);line-height:1.35;}
+  .wnbanner > span{flex:1;}
+  .wnbanner .btn{padding:6px 11px;font-size:13px;}
+  .wnx{border:0;background:none;font-family:inherit;font-size:16px;color:var(--muted);padding:4px 6px;cursor:pointer;}
+  .wn{position:fixed;inset:0;z-index:65;background:var(--paper);overflow-y:auto;overscroll-behavior:contain;}
+  body.wn-open{overflow:hidden;}
+  .wn-in{max-width:520px;margin:0 auto;padding:0 16px 40px;}
+  .wn-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;padding:14px 2px 10px;background:var(--paper);
+    border-bottom:1px solid var(--line);}
+  .wn-head h2{flex:1;font-size:21px;font-weight:800;letter-spacing:-.01em;}
+  .wn-ver{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px 13px;margin-top:12px;}
+  .wn-ver h3{font-size:15.5px;font-weight:800;color:var(--forest);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+  .wn-date{font-size:12.5px;font-weight:600;color:var(--muted);}
+  .wn-new{font-size:11px;font-weight:800;color:#fff;background:var(--honey);padding:2px 7px;border-radius:6px;align-self:center;}
+  .wn-ver ul{display:block;margin:7px 0 0;padding-left:18px;list-style:disc;}
+  .wn-ver li{font-size:14px;line-height:1.45;margin-top:5px;color:var(--ink);}
+  .wn-admin{margin-top:11px;font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
 
   .pinrow{display:flex;gap:7px;margin:12px 0 0;}
   .pinrow input{flex:1;font-family:inherit;font-size:15px;padding:9px 12px;border:1.5px solid var(--forest);
@@ -304,7 +329,7 @@
 
   .empty{color:var(--muted);font-size:13.5px;padding:24px 4px;text-align:center;}
   .empty.small{padding:10px 2px;text-align:left;}
-  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
+  .toast{position:fixed;z-index:75;left:50%;bottom:22px;transform:translateX(-50%);background:var(--hard);color:#fff;
     font-size:13px;font-weight:600;padding:9px 15px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none;}
   .toast.show{opacity:1;}
   .toast.ok{background:var(--forest);}          /* udało się (np. „Skopiowano") — nie czerwień błędu */

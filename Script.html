@@ -3180,6 +3180,116 @@
   });
 
   /* =========================================================
+     CO NOWEGO (1.3.1)
+     ========================================================= */
+  /**
+   * Lista zmian dla wolontariuszy i prowadzącej, najnowsza wersja na górze. Pisana po ludzku i krótko —
+   * co widać na ekranie, nie jak to działa: kto wejdzie, ma przeczytać, a nie przestraszyć się regułami
+   * sortowania (decyzja właściciela, 1.3.1). `admin` — „W panelu prowadzącej". **Każde wydanie dopisuje
+   * wpis na górze** (z datą wdrożenia); pierwszy wpis = `version` z package.json = numer przy „Spacery"
+   * w Index.html (T5, T6). Pusta data = wersja jeszcze niewydana.
+   */
+  const WHATS_NEW = [
+    { v: '1.3.1', date: '', items: [
+        'Przycisk „Co nowego” — ta lista: wszystkie zmiany w aplikacji w jednym miejscu, najnowsze na górze.',
+      ] },
+    { v: '1.3', date: '9 października 2026', items: [
+        'Psy innych grup, którym pomagamy, mają osobną listę pod naszą. Nasze psy są zawsze wyżej.',
+        '„Bierze G7” przy psie innej grupy — gdy wyprowadza go jego własna grupa. Pies schodzi na dół, „Cofnij” to odwraca. Taki spacer nie trafia do naszej historii.',
+        'Gdy Google się zatnie, lista szybciej odświeża się sama.',
+        'Obok nazwy „Spacery” widać numer wersji.',
+      ], admin: [
+        'Przy psie ustawia się jego grupę (domyślnie G13). Nową grupę wpisuje się raz, potem jest do wyboru.',
+        'Bot na WhatsAppie może po nocnym czyszczeniu wysłać prowadzącej listę psów z minionego dnia.',
+      ] },
+    { v: '1.2', date: '8 października 2026', items: [
+        'W minionym dniu „✉️ Wyślij e-mail z listą psów” otwiera gotowego maila do schroniska. Gdy poczta się nie otworzy — „📋 Skopiuj treść”.',
+        'Rezerwacja nie „odskakuje” już na chwilę do wolnej.',
+        'Gdy Google zwalnia, telefon czeka na odpowiedź, zamiast pytać w kółko.',
+      ], admin: [
+        'Adres, temat i treść maila do schroniska ustawia się w panelu.',
+        'Ankieta „Grafik” może iść na WhatsAppie sama, raz w tygodniu.',
+        'Kilka stuknięć w „Dodaj” nie dodaje już kilku takich samych psów.',
+        'Dziennik spowolnień: gdy coś długo się ładuje, widać, gdzie zeszło.',
+      ] },
+    { v: '1.1.2', date: '3 października 2026', items: [
+        'W minionym dniu można skopiować gotowego maila z listą psów dla schroniska (data, imię, numer).',
+        'Historia spacerów może rosnąć bez końca — nic z niej nie znika.',
+      ], admin: [
+        'Treść tego maila zmienia się w panelu.',
+      ] },
+    { v: '1.1.1', date: '1 października 2026', items: [
+        'Psy jednej osoby stoją na liście obok siebie.',
+        'Spacer grupowy lepiej widać: z prawej strony kafelka kolorowy pasek „GRUPA”.',
+        'Miniony dzień: przy każdym psie jego numer, spacery ułożone po osobach, a pod spodem — kto szedł z kim w grupie.',
+      ] },
+    { v: '1.1', date: '28 września 2026', items: [
+        'Strzałkami ‹ › przechodzisz na inne dni: psa można zarezerwować z wyprzedzeniem, a miniony dzień obejrzeć.',
+        'Spacery grupowe: przytrzymaj kafelek, zaznacz psy i stuknij „Grupa”. Jedno „Wrócił ✓” odhacza całą grupę.',
+        'Pies na dwa spacery ma pola 1/2 i 2/2 — każde rezerwuje się osobno.',
+        'Każda osoba ma swój kolor przy imieniu — widać, kto ile ma psów.',
+        'Lepsze układanie listy: psy na dwa spacery wyżej, a lista nie przeskakuje pod palcem — zanim się przestawi, mignie „Aktualizuję…”.',
+      ], admin: [
+        'Zadania na konkretny dzień.',
+        'Notatka przy psie, która nigdy nie znika (np. „tylko w kagańcu”).',
+        'Tryb edycji to katalog psów — bez dat i rezerwacji.',
+      ] },
+    { v: '1.0', date: 'wrzesień 2026', items: [
+        'Lista psów zamiast kartki: rezerwacja, odhaczenie spaceru, historia spacerów.',
+        'Lista układa się sama: na górze psy czekające na spacer, na dole wyprowadzone.',
+        'Aplikacja pamięta Twoje imię — kolejny pies to jedno stuknięcie.',
+        'Kilka rezerwacji pod rząd bez zawieszania się.',
+      ], admin: [
+        'Notatka przy psie, także z terminem („do niedzieli”).',
+        'Dwa spacery dla wszystkich psów jednym przyciskiem.',
+        'Tryb edycji chroniony PIN-em.',
+      ] },
+  ];
+  const WN_SEEN = 'g13seen';      // localStorage: najnowsza wersja, którą ten telefon już widział
+
+  /** Czy działa pamięć przeglądarki. Bez niej pasek „Nowa wersja" nie zapamiętałby schowania i wisiałby zawsze. */
+  function storageOk(){
+    try{ window.localStorage.setItem('g13probe', '1'); window.localStorage.removeItem('g13probe'); return true; }
+    catch(e){ return false; }
+  }
+  function whatsNewHtml(){
+    const list = a => `<ul>${a.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+    return WHATS_NEW.map((n, i) => `<section class="wn-ver"><h3>Wersja ${esc(n.v)}`
+      + (n.date ? `<span class="wn-date">${esc(n.date)}</span>` : '')
+      + (i === 0 ? '<span class="wn-new">nowa</span>' : '') + `</h3>${list(n.items)}`
+      + (n.admin ? `<div class="wn-admin">W panelu prowadzącej</div>${list(n.admin)}` : '')
+      + '</section>').join('');
+  }
+  /** Pasek „Nowa wersja" znika po „Zobacz" albo ✕ — i wraca dopiero przy następnej wersji. */
+  function seenWhatsNew(){
+    diagSet(WN_SEEN, WHATS_NEW[0].v);
+    document.getElementById('wnBanner').classList.add('hidden');
+  }
+  function openWhatsNew(){
+    seenWhatsNew();
+    document.getElementById('wnList').innerHTML = whatsNewHtml();
+    const wn = document.getElementById('whatsNew');
+    wn.classList.remove('hidden');
+    wn.scrollTop = 0;
+    document.body.classList.add('wn-open');
+  }
+  function closeWhatsNew(){
+    document.getElementById('whatsNew').classList.add('hidden');
+    document.body.classList.remove('wn-open');
+  }
+  // dodatek: żaden jego błąd nie może zatrzymać startu listy
+  try{
+    document.getElementById('verBtn').addEventListener('click', openWhatsNew);
+    document.getElementById('wnSee').addEventListener('click', openWhatsNew);
+    document.getElementById('wnDismiss').addEventListener('click', seenWhatsNew);
+    document.getElementById('wnClose').addEventListener('click', closeWhatsNew);
+    if(storageOk() && diagGet(WN_SEEN) !== WHATS_NEW[0].v){
+      document.getElementById('wnBannerVer').textContent = WHATS_NEW[0].v;
+      document.getElementById('wnBanner').classList.remove('hidden');
+    }
+  }catch(e){}
+
+  /* =========================================================
      START + AUTO-ODŚWIEŻANIE + SAMOLECZENIE
      ========================================================= */
   /**

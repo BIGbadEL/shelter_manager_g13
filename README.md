@@ -90,7 +90,10 @@ na produkcję.
 
 Numer `1.X.Y`: **X** rośnie przy dużych zmianach; **Y** — przy drobnych poprawkach i błędach
 w tym, czego dotyczyło ostatnie X. Wolontariuszy informujemy wtedy, gdy trzeba — niezależnie od
-numeru. Wersja jest też w `package.json`.
+numeru. Wersja jest też w `package.json`, przy nazwie „Spacery" w aplikacji i — od 1.3.1 — na liście
+„Co nowego" (`WHATS_NEW` w `Script.html`): **każde wydanie dopisuje tam wpis na górze, z datą wdrożenia,
+przed `deploy:prod`** — po ludzku i krótko, co widać na ekranie, osobno „W panelu prowadzącej". Test T6
+pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę.
 
 | wersja | co | gałąź | wdrożenie |
 |---|---|---|---|
@@ -100,6 +103,7 @@ numeru. Wersja jest też w `package.json`.
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
+| 1.3.1 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon | `release/1.3.1` | w przygotowaniu |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -602,6 +606,16 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.3.1 — w przygotowaniu
+
+- **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.3.1 · Co nowego?"). Otwiera
+  na cały ekran listę zmian wszystkich wersji, od najnowszej: krótko i po ludzku, co widać na ekranie,
+  a pod „W panelu prowadzącej" zmiany w trybie edycji. Wersja A z czterech makiet — na górze strony nic
+  nie dochodzi.
+- **Pasek „✨ Nowa wersja … — zobacz, co się zmieniło"** pod nagłówkiem, raz na telefon: znika po „Zobacz"
+  albo ✕ i wraca przy następnej wersji. Telefon bez pamięci przeglądarki (tryb prywatny) go nie pokazuje —
+  wisiałby przy każdym otwarciu; przycisk działa i tam.
 
 ### 1.3 — wdrożone 2026-10-09 (@21)
 
