@@ -934,6 +934,26 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   co przełączało widoczność karty, nie wiadomo. W 1.3: `T.readStale` 20 s, powrót do karty z bramką (S138).
   Otwarcie strony bez listy w środku (żeby utknięcie `doGet` nie trzymało strony) — rozważone, odrzucone przez
   właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
+- **Pomiar opóźnień 9.10.2026** (test z obciążeniem + tydzień Wykonań produkcji; tymczasowy PIN testu, PIN-u Claude
+  nie wpisywał). Sonda z komputera: 240 otwarć strony testu, każde dopasowane do swojego wykonania w Wykonaniach.
+  **Czas poza wykonaniem (sieć, Google przed startem) — mediana 0,36 s, najwyżej 1,25 s; całe opóźnienie siedzi
+  w wykonaniu.** Strona waży 236 KB, przez sieć 55 KB (gzip). Trzy źródła długich wywołań:
+  (1) **kolejka zapisów** — każdy zapis trzyma blokadę ~2 s (`praca` 2,3 s: ~10–12 wywołań usług pod blokadą —
+  psy z katalogu, układ i całe Spacery, dwa odczyty kolorów, zapis — plus flush); trzy rezerwacje w tej samej
+  sekundzie: 1,9 / 3,7 / 5,7 s. Odczyty nie czekają na siebie (6 otwarć strony naraz: 1,9–2,7 s, jak jedno).
+  (2) **przestoje Google przy wywołaniu arkusza (`SpreadsheetApp`)** — krótkie (~4–5 s) potrafią dotknąć kilku
+  wykonań naraz i dowolnego kroku (16:35: dwa wykonania po 4,5 s, „psy" i „spacery"; pusta zakładka Zadania 4,4 s);
+  długie prawie zawsze na PIERWSZYM wywołaniu arkusza w wykonaniu i tylko jednego wykonania (równoległe idą
+  1–2 s): 7,4 s, 13 s, 36 s, 67 s, a 9.10 16:19 odczyt testu **351 s** w kroku „psy", zakończony poprawnie (bez
+  limitu czasu). Produkcja 5–9.10: 1198 wykonań, ≥3 s 8,2%, ≥5 s 1,5%, ≥8 s 1,2% (4 ponad 30 s); test 15:19–16:41:
+  450 wykonań, ≥4 s 2,4%. Przestój pod blokadą wstrzymuje wszystkie zapisy (13:50 test: `setFree` 13 s) — zapis,
+  który zawiśnie jak tamten odczyt, trzymałby blokadę do końca wykonania (do 6 min). (3) **stały koszt** — samo
+  wykonanie bez arkusza ~0,5 s (`checkPin`, `reportDiag`), odczyt listy ~1,7 s (≈10 wywołań arkusza po ~0,1 s).
+  **Sprawdzone i odrzucone:** przestoje po wdrożeniu (seria 0–15 min po @32: mediana 2,3 s, ≥5 s 3/120 — jak
+  30 min po wdrożeniu: 2,2 s, 2/120; skupienie po wdrożeniach to zbieg — wtedy najwięcej klikamy), rozmiar arkusza
+  (5 zakładek, 505 wpisów Historii), równoległe odczyty, sieć i waga strony. Możliwe kierunki (do decyzji właściciela):
+  krótsza praca pod blokadą, stan strony i odczyty z `CacheService` zamiast arkusza, odczyt trzech zakładek jednym
+  wywołaniem (Sheets API — nowa zgoda).
 - **Wersja 1.3.1 w przygotowaniu** (gałąź `release/1.3.1`): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja". Bez zmian w arkuszu i na serwerze (tylko `Index`/`Styles`/`Script`). **Przed `deploy:prod`: data
   wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka schodzi pod „Spacery" (nic nie wystaje).
