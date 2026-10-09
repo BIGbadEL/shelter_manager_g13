@@ -990,9 +990,11 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
   bez nowych uprawnień. **Przed `deploy:prod`: data wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka
-  schodzi pod „Spacery" (nic nie wystaje). **Do zmierzenia po wdrożeniu na test** (sonda z 9.10 + Wykonania, jak
-  w „Pomiar opóźnień"): `doGet` z pamięci (mediana była 1,7 s wykonania), rezerwacje po kilka naraz (były 1,9 / 3,7 /
-  5,7 s), czy zapis z pamięcią podręczną pod blokadą trwa ~1 s.
+  schodzi pod „Spacery" (nic nie wystaje). **Zmierzone na teście po wdrożeniu @33 (9.10, 17:32)**, tą samą metodą co
+  „Pomiar opóźnień": sonda 120 otwarć strony — mediana 2,20 → **1,23 s**, 90% 3,14 → 1,70 s, najdłużej 7,3 → 4,3 s,
+  ≥3 s 13 → 3; `doGet` w Wykonaniach — mediana 1,75 → **0,79 s** (207 i 127 wywołań); trzy rezerwacje naraz
+  1,9 / 3,7 / 5,7 → 1,8 / 2,8 / 2,8 s (jedna próba — kolejny zapis czeka ~1 s zamiast ~1,9 s); `getData` bez zmiany
+  (mediana 1,69 → 1,73 s, 148 i 22 wywołania). Przestoje Google przy arkuszu zostają dla zapisów i odświeżania listy.
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,
