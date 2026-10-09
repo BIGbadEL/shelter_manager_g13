@@ -99,7 +99,7 @@ numeru. Wersja jest też w `package.json`.
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) = `main` | @20, 2026-10-08 |
-| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (PR #6) | w przygotowaniu (test) |
+| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (PR #6) | w przygotowaniu (test) |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -516,6 +516,21 @@ sprawdź w grupie": ankieta mogła dojść, więc wyzwalacz jej nie ponawia, a �
 pyta, czy w grupie jej nie ma (druga ankieta rozbiłaby głosy). Każda ankieta (grupa + tydzień) idzie najwyżej raz: wyzwalacz
 i „Wyślij teraz" się nie dublują. Przypięcie ankiety w grupie zostaje ręczne.
 
+Na liście grup społeczność i jej ogłoszenia mają w WhatsAppie tę samą nazwę co społeczność (np. dwa
+razy „G13"). Od 1.3 takie pozycje dostają dopisek z bramki („cała społeczność — tu bot nie wyśle",
+„piszą tylko administratorzy", liczba osób), a gdy bramka nic nie powie — numer („G13 #1", „G13 #2").
+Ankieta idzie do zwykłej grupy, np. „Grafik".
+
+### Lista dnia do prowadzącej (od 1.3)
+
+Po nocnym czyszczeniu bot wysyła prowadzącej prywatną wiadomość z listą każdego zamkniętego dnia ze
+spacerami — dokładnie tę treść, którą w minionym dniu kopiuje „📋 Skopiuj treść" (szablon maila z panelu
+z datą i listą psów). Panel → „Lista dnia do prowadzącej na WhatsAppie": „Pobierz kontakty" (na liście są
+tylko osoby zapisane w kontaktach telefonu bota), wybierz prowadzącą, zaznacz „wysyłaj po nocnym
+czyszczeniu", „Zapisz". Każdy dzień idzie najwyżej raz, dzień bez spacerów — nic. Czyszczenie nie czeka
+na bota: gdy bramka zawiedzie, Historia i tak się zapisuje, a wynik stoi w panelu; „Wyślij listę z …"
+wyśle ostatni dzień jeszcze raz (po potwierdzeniu). Wymaga tej samej bramki i zgody co ankieta.
+
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
 ## Kolejność psów na liście
@@ -598,6 +613,10 @@ Duże zmiany (numer X). Temat: psy innych grup — pomagamy wyprowadzać psy inn
   wpisy dziennika spowolnień, 8.10: jedno wykonanie wisiało 67 s, a równoległe szły po 1,5 s). Powrót do karty
   nie wysyła odczytu, gdy poprzedni wisi albo poszedł przed chwilą (8.10 jedna karta wysłała 100 odczytów
   w 10 minut).
+- **Lista dnia do prowadzącej na WhatsAppie** — po nocnym czyszczeniu bot wysyła prowadzącej treść
+  „📋 Skopiuj treść" każdego zamkniętego dnia ze spacerami (raz na dzień). Kontakt z kontaktów telefonu bota,
+  włącznik i „Wyślij listę" w panelu. Czyszczenie nigdy nie czeka na bota.
+- **Lista grup bota bez dwóch „G13"** — społeczność i jej ogłoszenia dostają dopisek albo numer.
 - Arkusz: nowa kolumna Psy `grupa_psa` (O) — dokłada się sama przy pierwszym psie innej grupy, `migrate()`
   niepotrzebne. Jeśli kolumna O jest zajęta przez coś innego, aplikacja jej nie nadpisze i powie o tym przy
   zapisie grupy.

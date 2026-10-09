@@ -126,10 +126,12 @@ function readState_(parts) {
 function getDiagnostics(pin) {
   requirePin_(pin);
   const t = triggerInfo_();
-  let poll = null;
+  let poll = null, dayReport = null;
   try { poll = pollPanel_(); } catch (e) { poll = null; }
+  try { dayReport = dayReportPanel_(); } catch (e) { dayReport = null; }
   return {
     poll: poll,
+    dayReport: dayReport,
     diag: diagLog_(),
     resetHour: resetHour_(),
     triggerInstalled: t.installed,

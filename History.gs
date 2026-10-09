@@ -171,13 +171,17 @@ function readHistoryDays_(from, to) {
  * domykają się przy najbliższym uruchomieniu, w kolejności dat.
  */
 function endOfDay() {
+  const days = [];                                   // dni, których nasze spacery trafiły właśnie do Historii
   withLock_(() => {
     const current = businessDate_();
-    const lastWalk = closeWalks_(s => s.date < current);
+    const lastWalk = closeWalks_(s => s.date < current, days);
     closeDogs_(current, lastWalk);
     clearDoneTasks_();
     forgetVolunteers_(current);
   });
+  // lista dnia do prowadzącej (1.3) — już bez blokady (bramka potrafi odpowiadać do minuty) i nigdy
+  // nie zatrzyma czyszczenia: to jest zrobione, a błąd zostaje w panelu (sendClosedDayReports_)
+  sendClosedDayReports_(days);
 }
 
 /**
@@ -186,9 +190,10 @@ function endOfDay() {
  * się skończył. Pies na dwa spacery daje dwa wpisy. Wpis niesie numer grupy dnia
  * (podgląd minionego dnia pokazuje, kto szedł razem) i numer psa z katalogu w tej chwili.
  * Same wiersze znikają. Zwraca mapę pies -> data jego ostatniego zamkniętego spaceru.
+ * `days` (tablica, nieobowiązkowa) dostaje daty, których wpisy właśnie trafiły do Historii.
  * Tylko pod blokadą.
  */
-function closeWalks_(match) {
+function closeWalks_(match, days) {
   const sh = walksSheetLocked_();
   const last = sh.getLastRow();
   if (last < 2) return {};
@@ -218,6 +223,7 @@ function closeWalks_(match) {
     histColumns_(hist);
     histRoom_(hist, toHist.length);
     hist.getRange(hist.getLastRow() + 1, 1, toHist.length, HIST_WIDTH).setValues(toHist.map(t => t.row));
+    if (days) toHist.forEach(t => { if (days.indexOf(t.row[0]) < 0) days.push(t.row[0]); });
   }
   // przepisujemy zakładkę w miejscu: dni otwarte na górę, zwolnione wiersze puste
   const blanks = rows.slice(keep.length).map(() => Array(WALK_WIDTH).fill(''));

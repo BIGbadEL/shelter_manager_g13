@@ -2254,5 +2254,171 @@ const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].t
     openRows(env).every(x => x[0] !== D) && slotAt(env, 2, '2026-08-06', 1).status === 'team');
 })();
 
+/* ---------- B68: lista grup bota bez dwóch takich samych pozycji ---------- */
+(function(){
+  console.log('B68: „Pobierz grupy" — społeczność i jej ogłoszenia o tej samej nazwie dostają dopisek albo numer (zgłoszenie z 1.3)');
+  const COMM = '120363000000000010@g.us', ANN = '120363000000000011@g.us';
+  const contacts = [{ id: COMM, name: 'G13', type: 'group' }, { id: ANN, name: 'G13', type: 'group' }, { id: GRAFIK, name: 'Grafik', type: 'group' }];
+  const run = groupData => {
+    const env = pollEnv('2026-10-07T10:00:00+02:00');
+    env.http.handler = (url, opts) => {
+      if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(contacts) };
+      if(/\/getGroupData\//.test(url)) return groupData(JSON.parse(opts.payload).groupId);
+      return { code: 404, body: '' };
+    };
+    return { env, names: env.api.getPollChats(TEST_PIN).map(c => c.name) };
+  };
+  const a = run(id => ({ code: 200, body: JSON.stringify(id === COMM ? { isCommunity: true, size: 40 } : { allowParticipantsSendMessages: false, size: 40 }) }));
+  check('dopiski z getGroupData: społeczność i „piszą tylko administratorzy"', JSON.stringify(a.names) ===
+    JSON.stringify(['G13 (cała społeczność — tu bot nie wyśle)', 'G13 (piszą tylko administratorzy)', 'Grafik']), JSON.stringify(a.names));
+  check('bramka pytana tylko o grupy o powtórzonej nazwie', a.env.http.calls.filter(c => /getGroupData/.test(c.url)).length === 2);
+  const b = run(() => ({ code: 400, body: 'nie' }));
+  check('bramka nic nie powie — numery, nadal dwie różne pozycje', JSON.stringify(b.names) === JSON.stringify(['G13 #1', 'G13 #2', 'Grafik']), JSON.stringify(b.names));
+  const c = run(() => ({ code: 200, body: JSON.stringify({ size: 40 }) }));
+  check('ten sam dopisek u obu — też numery', JSON.stringify(c.names) === JSON.stringify(['G13 (40 os.) #1', 'G13 (40 os.) #2', 'Grafik']), JSON.stringify(c.names));
+})();
+
+/* ---------- B69: lista dnia do prowadzącej na WhatsAppie ---------- */
+const ANIA = '48600100200@c.us';
+const msgs = env => env.http.calls.filter(c => /\/sendMessage\//.test(c.url)).map(c => JSON.parse(c.opts.payload));
+function reportGateway(env, send){
+  env.http.handler = (url, opts) => {
+    if(/\/sendMessage\//.test(url)) return send ? send(url, opts) : { code: 200, body: JSON.stringify({ idMessage: 'BAE5MSG1' }) };
+    if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify([
+      { id: ANIA, name: 'Ania', contactName: 'Ania prowadząca', type: 'user' },
+      { id: '48600100300@c.us', name: 'Kasia', type: 'user' },                       // nie w kontaktach telefonu bota
+      { id: '48500100100@c.us', name: '', contactName: 'Basia', type: 'user' },
+      { id: '157000000000001@lid', contactName: 'Ktoś', type: 'user' },
+      { id: GRAFIK, name: 'Grafik', contactName: 'Grafik', type: 'group' },
+    ]) };
+    return { code: 404, body: '' };
+  };
+}
+function reportEnv(o){
+  o = o || {};
+  const env = build([{id:1, name:'Borys', ident:'1/26'}, {id:2, name:'', ident:'2077'}, {id:3, name:'Luna, ta mała'}],
+                    { props: Object.assign({}, GREEN) });
+  reportGateway(env, o.send);
+  if(o.on !== false) env.api.setDayReportSettings({ enabled: true, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
+  return env;
+}
+const walkAll = (env, date) => { env.api.markWalked(1, 'Ola', 1, date); env.api.markWalked(2, 'Iza', 1, date); env.api.markWalked(3, 'Ola', 1, date); };
+const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z grupy G13.\ndata,pies,numer\n04.08.2026,,2077\n'
+  + '04.08.2026,Borys,1/26\n04.08.2026,"Luna, ta mała",\nPozdrawiam,\n';
+
+(function(){
+  console.log('B69: lista dnia do prowadzącej — ustawienia, kontakty z telefonu bota, wysyłka po czyszczeniu raz na dzień');
+  const env = reportEnv({ on: false });
+  check('kontakty tylko z PIN-em', throws(() => env.api.getDayReportContacts('zly')));
+  const list = env.api.getDayReportContacts(TEST_PIN);
+  check('kontakty: tylko zapisane w telefonie bota, prywatne @c.us, po nazwie, z numerem', JSON.stringify(list) === JSON.stringify([
+    { id: ANIA, name: 'Ania prowadząca', phone: '+48600100200' }, { id: '48500100100@c.us', name: 'Basia', phone: '+48500100100' }]),
+    JSON.stringify(list));
+  check('pyta bramkę o czaty prywatne', /\/getContacts\/tok3n5ecret\?group=false$/.test(env.http.calls.slice(-1)[0].url));
+  check('włączenie bez kontaktu — błąd', throws(() => env.api.setDayReportSettings({ enabled: true }, TEST_PIN)));
+  check('kontakt spoza WhatsAppa (grupa, śmieć) — błąd', throws(() => env.api.setDayReportSettings({ chatId: GRAFIK }, TEST_PIN))
+    && throws(() => env.api.setDayReportSettings({ chatId: '48600 100 200' }, TEST_PIN)));
+  check('ustawienia tylko z PIN-em', throws(() => env.api.setDayReportSettings({ enabled: false }, 'zly')));
+
+  // wyłączone (kontakt zapisany): czyszczenie nic nie wysyła
+  env.api.setDayReportSettings({ enabled: false, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
+  walkAll(env, '2026-08-04');
+  env.setNow('2026-08-04T22:30:00+02:00');
+  env.api.endOfDay();
+  check('wyłączone — po czyszczeniu nic nie idzie', msgs(env).length === 0 && hist(env).length === 3);
+
+  const on = reportEnv();
+  check('panel: włączone, kontakt prowadzącej', on.api.dayReportPanel_().settings.enabled && on.api.dayReportPanel_().settings.chatName === 'Ania prowadząca');
+  walkAll(on, '2026-08-04');
+  on.api.reserve(1, 'Ola', '2026-08-05', 1);
+  on.setNow('2026-08-04T22:30:00+02:00');
+  on.api.endOfDay();
+  const m = msgs(on);
+  check('po czyszczeniu: jedna wiadomość do prowadzącej', m.length === 1 && m[0].chatId === ANIA, JSON.stringify(m));
+  check('...treść jak „Skopiuj treść": szablon z datą i CSV (pies raz, bez imienia — pusta kolumna, przecinek w cudzysłowie)',
+    m[0].message === LIST_0408, JSON.stringify(m[0].message));
+  check('...Historia zapisana normalnie', hist(on).length === 3);
+  on.api.endOfDay();
+  check('drugie czyszczenie tego samego dnia — nic drugi raz', msgs(on).length === 1);
+  const p = on.api.dayReportPanel_();
+  check('panel: ostatni dzień 04.08 — wysłana; ostatnia próba ok', p.day.date === '2026-08-04' && p.day.status === 'sent' && p.last.ok
+    && p.last.day === '2026-08-04' && !p.last.manual, JSON.stringify(p));
+  let err = '';
+  try { on.api.sendDayReportNow(TEST_PIN, '2026-08-04'); } catch(e){ err = e.message; }
+  check('„Wyślij listę" już wysłanej — komunikat, nic nie idzie', /już poszła/.test(err) && msgs(on).length === 1, err);
+  const again = on.api.sendDayReportNow(TEST_PIN, '2026-08-04', true);
+  check('...z potwierdzeniem (force) — idzie jeszcze raz, oznaczona jako ręczna', msgs(on).length === 2 && again.sent.day === '2026-08-04'
+    && again.panel.last.manual === true);
+  check('„Wyślij listę" za dzień niezamknięty — błąd', throws(() => on.api.sendDayReportNow(TEST_PIN, '2026-08-05', true)));
+  check('„Wyślij listę" bez PIN-u — błąd', throws(() => on.api.sendDayReportNow('zly', '2026-08-04', true)));
+  check('w getDiagnostics', !!on.api.getDiagnostics(TEST_PIN).dayReport);
+
+  // dzień bez spacerów (sama rezerwacja 5.08) i dwa zaległe dni naraz
+  on.setNow('2026-08-05T22:30:00+02:00');
+  on.api.endOfDay();
+  check('dzień bez spacerów — nic', msgs(on).length === 2);
+  let none = '';
+  try { on.api.sendDayReportNow(TEST_PIN, '2026-08-05', true); } catch(e){ none = e.message; }
+  check('...ręcznie też nic — komunikat, że nie ma spacerów', /nie ma spacerów/.test(none) && msgs(on).length === 2, none);
+  walkAll(on, '2026-08-06');
+  on.setNow('2026-08-07T10:00:00+02:00');
+  on.api.markWalked(1, 'Ola', 1, '2026-08-07');
+  on.setNow('2026-08-08T23:00:00+02:00');           // czyszczenie nie szło dwa dni
+  on.api.endOfDay();
+  const late = msgs(on).slice(2).map(x => x.message.match(/z (\d\d\.\d\d\.\d{4})/)[1]);
+  check('zaległe dni: każdy osobno, po kolei', JSON.stringify(late) === '["06.08.2026","07.08.2026"]', JSON.stringify(late));
+})();
+
+(function(){
+  console.log('B70: lista dnia — bramka zawodzi: czyszczenie i Historia i tak idą, wynik w panelu, ponowna wysyłka');
+  const e5 = reportEnv({ send: () => ({ code: 502, body: 'bad gateway' }) });
+  walkAll(e5, '2026-08-04');
+  e5.setNow('2026-08-04T22:30:00+02:00');
+  let thrown = '';
+  try { e5.api.endOfDay(); } catch(e){ thrown = e.message; }
+  check('bramka 502: czyszczenie bez błędu, Historia zapisana', !thrown && hist(e5).length === 3, thrown);
+  const p5 = e5.api.dayReportPanel_();
+  check('...panel: „nie wiadomo" (mogła dojść), znacznik zostaje', p5.last && p5.last.ok === false && p5.last.unknown === true
+    && p5.day.status === 'unknown' && !/tok3n5ecret/.test(JSON.stringify(p5)), JSON.stringify(p5));
+  let err = '';
+  try { e5.api.sendDayReportNow(TEST_PIN, '2026-08-04'); } catch(e){ err = e.message; }
+  check('...ręcznie bez potwierdzenia — „nie wiadomo", nic nie idzie', /Nie wiadomo/.test(err) && msgs(e5).length === 1, err);
+  reportGateway(e5);
+  e5.api.sendDayReportNow(TEST_PIN, '2026-08-04', true);
+  check('...z potwierdzeniem — idzie, panel: wysłana', msgs(e5).length === 2 && e5.api.dayReportPanel_().day.status === 'sent');
+
+  const e4 = reportEnv({ send: () => ({ code: 400, body: 'zły numer' }) });
+  walkAll(e4, '2026-08-04');
+  e4.setNow('2026-08-04T22:30:00+02:00');
+  e4.api.endOfDay();
+  const p4 = e4.api.dayReportPanel_();
+  check('bramka 400: „nie wyszła" (pewne), znacznik zdjęty', p4.last.ok === false && !p4.last.unknown && p4.day.status === '' && /400/.test(p4.last.msg),
+    JSON.stringify(p4));
+  reportGateway(e4);
+  e4.api.sendDayReportNow(TEST_PIN, '2026-08-04');
+  check('...ręcznie bez potwierdzenia — idzie od razu', msgs(e4).length === 2);
+
+  // dwa zaległe dni, pierwszy nie wychodzi — drugi i tak idzie
+  const e2 = reportEnv({ send: (url, opts) => /04\.08\.2026/.test(JSON.parse(opts.payload).message)
+    ? { code: 400, body: 'nie' } : { code: 200, body: JSON.stringify({ idMessage: 'OK2' }) } });
+  walkAll(e2, '2026-08-04');
+  e2.setNow('2026-08-05T10:00:00+02:00');
+  e2.api.markWalked(1, 'Ola', 1, '2026-08-05');
+  e2.setNow('2026-08-06T23:00:00+02:00');
+  let t3 = '';
+  try { e2.api.endOfDay(); } catch(e){ t3 = e.message; }
+  check('zaległe dni: pierwszy nie wyszedł, drugi poszedł mimo to', !t3 && msgs(e2).length === 2
+    && e2.api.dayReportPanel_().last.ok === true && e2.api.dayReportPanel_().last.day === '2026-08-05', t3 || JSON.stringify(e2.api.dayReportPanel_()));
+
+  const noGw = build([{id:1, name:'Borys'}]);
+  noGw.api.setDayReportSettings({ enabled: true, chatId: ANIA, chatName: 'Ania' }, TEST_PIN);
+  noGw.api.markWalked(1, 'Ola', 1, '2026-08-04');
+  noGw.setNow('2026-08-04T22:30:00+02:00');
+  let t2 = '';
+  try { noGw.api.endOfDay(); } catch(e){ t2 = e.message; }
+  check('bez bramki: czyszczenie bez błędu, w panelu — co ustawić', !t2 && hist(noGw).length === 1
+    && /greenApiInstance/.test(noGw.api.dayReportPanel_().last.msg), t2);
+})();
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

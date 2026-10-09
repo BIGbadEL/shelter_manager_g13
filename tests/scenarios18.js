@@ -310,7 +310,91 @@ function S137(){
   check('bez błędów', app.errors.length===0, app.errors.join('; '));
 }
 
-for(const s of [S130, S131, S132, S133, S134, S135, S136, S137]){
+/* ---------- S139: lista dnia do prowadzącej = „Skopiuj treść" ---------- */
+function S139(){
+  console.log('S139: lista dnia, którą bot wysyła prowadzącej, jest tą samą treścią co „📋 Skopiuj treść" (serwer = przeglądarka)');
+  const TPL = 'Dzień dobry,\nlista z [DATA] (grupa G13):\n[LISTA]\n— [DATA] —\n';
+  const app = buildApp();
+  app.seed(base({mailTemplate: TPL, mailSubject: 'Lista [DATA]'}));
+  const env = makeContext({ props: { mailTemplate: TPL } });
+  const sets = [
+    [{name:'Borys', ident:'1/26'}, {name:'Borys', ident:'1/26'}, {name:'#2077', ident:'2077'}, {name:'Luna, ta mała', ident:''}],
+    [{name:'Łatka', ident:'5'}, {name:'Lusia', ident:'6'}, {name:'Ąda "Mała"', ident:'7'}, {name:'Żaba', ident:'8'}, {name:'Azor', ident:'9'}],
+    [],
+  ];
+  const diff = sets.map(entries => {
+    S(app).past['2026-10-07'] = entries.map(e => Object.assign({date:'2026-10-07', who:'Ola', time:'10:00', group:0}, e));
+    const client = app.window.mailText('2026-10-07'), server = env.ctx.__api.dayReportText_('2026-10-07', S(app).past['2026-10-07']);
+    return client === server ? '' : JSON.stringify([client, server]);
+  }).filter(Boolean);
+  check('3 zestawy wpisów: tekst serwera = tekst „Skopiuj"', diff.length === 0, diff.join(' | '));
+  S(app).past['2026-10-07'] = sets[0].map(e => Object.assign({date:'2026-10-07'}, e));
+  check('...i to nie jest pusty tekst', /lista z 07\.10\.2026/.test(app.window.mailText('2026-10-07'))
+    && /07\.10\.2026,,2077/.test(app.window.mailText('2026-10-07')));
+}
+
+/* ---------- S140: panel — lista dnia do prowadzącej ---------- */
+function S140(){
+  console.log('S140: panel — kontakt prowadzącej z kontaktów bota, włącznik, zapis, „Wyślij listę" z potwierdzeniem');
+  const ANIA = '48600100200@c.us';
+  const REPORT = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:''}, s), configured: true, last: null,
+    day: {date:'2026-10-07', label:'07.10.2026', status:'', at:''}}, o);
+  const POLL = {settings: {question:'Grafik [TYDZIEŃ]', options:['Pon','Wt'], multi:true, day:0, hour:12, enabled:false, chatId:'', chatName:''},
+    configured: true, state: null, last: null, next: {day:'2026-10-11', label:'12-18.10'}, now: {label:'12-18.10', question:'Grafik 12-18.10', status:'', at:''}};
+  const DIAG = r => ({env:'prod', triggerInstalled:true, triggerCount:1, resetHour:18, serverDate:D, serverTime:'10:00', businessDate:D,
+    timezone:'Europe/Warsaw', dogCount:1, taskCount:0, histCount:3, poll: POLL, dayReport: r});
+  const open = r => {
+    const app = buildApp();
+    app.seed(base({dogs:[d1(1,'Borys')]}));
+    app.window.__setAdmin('1234');
+    app.click('.tab[data-tab="diag"]');
+    respondTo(app, 'getDiagnostics', DIAG(r));
+    calls(app, 'getPollState').forEach(() => respondTo(app, 'getPollState', {code:'authorized', text:'połączone'}));
+    return app;
+  };
+  const app = open(REPORT());
+  check('sekcja w panelu, „Wyślij listę z 07.10.2026"', /Lista dnia do prowadzącej/.test(app.html())
+    && /Wyślij listę z 07\.10\.2026/.test(txt(doc(app).querySelector('[data-act="reportSend"]'))));
+  app.click('[data-act="reportContacts"]');
+  respondTo(app, 'getDayReportContacts', [{id: ANIA, name:'Ania prowadząca', phone:'+48600100200'}, {id:'48500100100@c.us', name:'Basia', phone:'+48500100100'}]);
+  check('kontakty z telefonu bota na liście, z numerem', opts(app, '#reportChat')
+    === '=— wybierz kontakt —|48600100200@c.us=Ania prowadząca (+48600100200)|48500100100@c.us=Basia (+48500100100)', opts(app, '#reportChat'));
+  const en = doc(app).getElementById('reportEnabled');
+  en.checked = true; en.dispatchEvent(new app.window.Event('change', {bubbles:true}));
+  app.click('[data-act="reportSave"]');
+  check('włączenie bez kontaktu — komunikat, nic nie idzie', /Wybierz kontakt/.test(toastOf(app)) && !calls(app, 'setDayReportSettings').length, toastOf(app));
+  fill(app, {'#reportChat': ANIA});
+  check('„Niezapisane zmiany" przy liście, nie przy ankiecie', !hidden(app, '.reportdirty') && hidden(app, '.polldirty'));
+  fill(app, {'#pollQuestion': 'Grafik na [TYDZIEŃ]'});
+  fill(app, {'#pollQuestion': 'Grafik [TYDZIEŃ]'});    // ankieta wraca do zapisanej — jej napis znika
+  check('ankieta bez zmian chowa SWÓJ napis, nie ten przy liście (osobne klasy)', !hidden(app, '.reportdirty') && hidden(app, '.polldirty'));
+  app.window.eval('fetchDiag()');                       // panel się przerysowuje
+  respondTo(app, 'getDiagnostics', DIAG(REPORT()));
+  calls(app, 'getPollState').forEach(() => respondTo(app, 'getPollState', {code:'authorized', text:'połączone'}));
+  check('szkic przeżył przerysowanie', doc(app).getElementById('reportChat').value === ANIA && doc(app).getElementById('reportEnabled').checked);
+  app.click('[data-act="reportSave"]');
+  const save = lastCall(app, 'setDayReportSettings');
+  check('zapis: kontakt (nazwa bez numeru), włączone, PIN', !!save && JSON.stringify(save.args) ===
+    JSON.stringify([{chatId: ANIA, chatName:'Ania prowadząca', enabled:true}, '1234']), save && JSON.stringify(save.args));
+  respondTo(app, 'setDayReportSettings', REPORT({}, {enabled:true, chatId:ANIA, chatName:'Ania prowadząca'}));
+  check('po zapisie: bez „Niezapisane", opis włączonego', hidden(app, '.reportdirty') && /Włączone/.test(app.html()));
+
+  let asked = '';
+  app.window.confirm = m => { asked = m; return true; };
+  app.click('[data-act="reportSend"]');
+  check('„Wyślij listę": pytanie, potem wysyłka bez force', /Wysłać teraz listę z 07\.10\.2026 do Ania prowadząca/.test(asked)
+    && JSON.stringify(lastCall(app, 'sendDayReportNow').args) === JSON.stringify(['1234', '2026-10-07']), asked);
+  respondTo(app, 'sendDayReportNow', {sent:{day:'2026-10-07', at:'2026-10-09 14:00'},
+    panel: REPORT({last:{day:'2026-10-07', at:'2026-10-09 14:00', ok:true, manual:true, chatName:'Ania prowadząca'}, day:{date:'2026-10-07', label:'07.10.2026', status:'sent', at:'2026-10-09 14:00'}},
+                  {enabled:true, chatId:ANIA, chatName:'Ania prowadząca'})});
+  check('wynik w panelu: wysłana (ręcznie)', /wysłana 2026-10-09 14:00 do Ania prowadząca \(ręcznie\)/.test(txt(doc(app).getElementById('view'))));
+  app.click('[data-act="reportSend"]');
+  check('już poszła — pytanie „jeszcze raz", wysyłka z force', /już poszła/.test(asked)
+    && JSON.stringify(lastCall(app, 'sendDayReportNow').args) === JSON.stringify(['1234', '2026-10-07', true]), asked);
+  check('bez błędów', app.errors.length===0, app.errors.join('; '));
+}
+
+for(const s of [S130, S131, S132, S133, S134, S135, S136, S137, S139, S140]){
   try{ s(); }
   catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
 }

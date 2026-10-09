@@ -30,7 +30,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `Dogs.gs` | katalog psów + spacery (zakładka Spacery, przepisanie starego układu, jednorazowy import) + akcje na spacerach + kolory wolontariuszy |
 | `Tasks.gs` | zadania |
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
-| `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel |
+| `Poll.gs` | WhatsApp (bramka Green API): ankieta tygodniowa (ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel) i lista dnia do prowadzącej po nocnym czyszczeniu (1.3) |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
@@ -230,7 +230,24 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   to stan `error`, nie wyjątek), w przeglądarce `fetchPollState` po panelu, „sprawdzam…", po
   `T.pollState` bez odpowiedzi — „bramka długo nie odpowiada". „Wyślij teraz" bez odpowiedzi w czasie
   watchdoga (`fail(msg, lost)`) — „Wysyłka trwa dłużej", panel od razu i po `T.pollRecheck` jeszcze raz.
-  Przypięcie ankiety zostaje ręczne.
+  Przypięcie ankiety zostaje ręczne. **Lista grup** (`getPollChats`): społeczność i jej ogłoszenia mają
+  tę samą nazwę („G13, G13, Grafik" — zgłoszenie z 1.3) — powtórzone nazwy dostają dopisek z `getGroupData`
+  (`chatNote_`: `isCommunity`, `isCommunityAnnounce` — tylko dla adminów społeczności; `allowParticipantsSendMessages`
+  === false; liczba osób), a gdy dalej się powtarzają — numer „#1", „#2" (B68). Pytań bramki najwyżej `CHAT_NOTE_MAX`.
+  Co faktycznie zwraca bramka dla społeczności — do sprawdzenia na teście („Pobierz grupy").
+- **Lista dnia do prowadzącej** (1.3, `Poll.gs`, B69–B70, S139–S140; decyzje właściciela 2026-10-09): po nocnym
+  czyszczeniu bot wysyła prowadzącej prywatną wiadomość (`sendMessage`, czat `…@c.us`) z listą każdego
+  domkniętego dnia z NASZYMI spacerami — dokładnie treść „📋 Skopiuj treść" (`dayReportText_` = `mailText`,
+  z `readHistoryDays_` jak `getHistoryDays`; S139 porównuje oba teksty). `endOfDay` zbiera dni, których wpisy
+  właśnie trafiły do Historii (`closeWalks_(match, days)`), i **po zdjęciu blokady** woła
+  `sendClosedDayReports_` — ono nigdy nie rzuca: czyszczenie jest już zrobione, błąd zostaje w panelu
+  (`dayReportLast`). Dzień bez spacerów — nic; zaległe dni — każdy osobno, po kolei; każdy dzień najwyżej raz
+  (`dayReportSent`, ten sam schemat co ankieta: „w toku" pod blokadą → bramka bez blokady → wynik pod blokadą,
+  `pollMarkState_`). Ustawienia `dayReport` {enabled, chatId, chatName}: `setDayReportSettings(s, pin)` (RETRIABLE),
+  kontakt z `getDayReportContacts(pin)` — tylko zapisani w kontaktach telefonu bota (`contactName`; bez tego
+  lista miałaby każdego członka społeczności). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
+  ostatniego dnia z Historii (`lastHistDay_`); już wysłaną albo „nie wiadomo" — po potwierdzeniu (`force`;
+  prywatna wiadomość drugi raz nikomu nie szkodzi). Nie w RETRIABLE. Panel: `getDiagnostics().dayReport`.
 - **Dziennik spowolnień** (1.2, `Diag.gs`, B62–B64, S122–S128) — po zgłoszeniu 7–8.10.2026 „strona
   długo się ładowała, a potem wisiała": dziennik wykonań Google zna tylko łączny czas na serwerze
   (bez kroków, bez filtra po funkcji), a telefonu nie widzi wcale. **Serwer** (`diagServer_`, właściwość
@@ -505,7 +522,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1583 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1630 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -615,7 +632,8 @@ między otwarciami, wysyłka tylko w ciszy, Panel, opis telefonu z userAgent, ko
 S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`) — runda 3,
 S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z obu list, zamrożona lista a zmiana
 grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
-dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3),
+dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
+(serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -647,7 +665,9 @@ B62 dziennik spowolnień — serwer (kroki `doGet`/`getData`/`withLock_`, błąd
 nazwa akcji, awaria właściwości nic nie psuje), B63 sufity dziennika i `reportDiag`, B64 dziennik w Panelu,
 B65 grupa psa (zakładka bez kolumny, dokładanie kolumny, pisownia, karta sprzed 1.3, nocne czyszczenie i `migrate()`
 na wąskiej zakładce), B66 cudza kolumna O, B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
-z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`),
+z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
+dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
+dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację (`tests/tooling.js`).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
@@ -887,8 +907,11 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   Otwarcie strony bez listy w środku (żeby utknięcie `doGet` nie trzymało strony) — rozważone, odrzucone przez
   właściciela: każde otwarcie byłoby o ~1,5 s dłuższe, a utknięcie zdarza się rzadko.
 - **Wersja 1.3 w przygotowaniu** (gałąź `release/1.3`, PR #6): psy innych grup — dwie listy, grupa psa w panelu,
-  „Bierze G7"; do tego `T.readStale` 20 s i bramka powrotu do karty. Test: @26 (2026-10-08, 18:41) — przed
-  napisem „✓ G7" i zmianami odświeżania. Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
+  „Bierze G7"; `T.readStale` 20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup
+  bota bez dwóch „G13". Test: @27 (2026-10-09, 13:39) — z „✓ G7" i odświeżaniem, jeszcze bez listy dnia.
+  **Do sprawdzenia na teście:** „Pobierz grupy" (jakie dopiski dostają oba „G13" — bramka podaje szczegóły
+  społeczności tylko administratorom), „Pobierz kontakty" (czy prowadząca jest na liście), „Wyślij listę",
+  potem wiadomość po czyszczeniu o 19:00. Arkusz: kolumna `grupa_psa` dokłada się sama, `migrate()` niepotrzebne.
   Cofnięcie: `deploy:prod` z `release/1.2`; wiersze `team` w Spacery 1.2 pokaże jako odbyte „✓ G7".
 - **Decyzje właściciela z review PR #5 — nie zmieniać bez pytania:** `checkPin` **bez limitu prób**
   (limit pozwoliłby każdemu z linkiem zablokować prowadzącą; ochrona to dłuższy PIN we właściwości

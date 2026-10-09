@@ -59,6 +59,9 @@
     pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
     pollChats:null,        // grupy konta bota z bramki („Pobierz grupy"): [{id, name}]; null = jeszcze nie pobrane
     pollChatsLoading:false,
+    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatId, chatName, enabled}
+    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{id, name, phone}]; null = jeszcze nie pobrane
+    dayReportContactsLoading:false,
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -482,7 +485,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -1847,7 +1850,7 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>${d && d.poll ? renderPollBox(d.poll) : ''}` : '';
+      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}` : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -2182,6 +2185,94 @@
     if(!panel || !state.diag || state.diag.failed) return;
     const prev = state.diag.poll;
     state.diag.poll = Object.assign({}, panel, {state: panel.state || (prev && prev.state) || null});
+  }
+
+  /* ---------- lista dnia do prowadzącej na WhatsAppie (1.3) ----------
+     Po nocnym czyszczeniu bot wysyła prowadzącej treść „📋 Skopiuj treść" każdego domkniętego dnia ze
+     spacerami (serwer: dayReportText_ — ta sama reguła co mailText, S139). Ustawienia jak ankieta: szkic
+     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty"). */
+  const DAY_REPORT_FIELDS = ['reportChat','reportEnabled'];
+  function dayReportSaved(){
+    const s = (state.diag && state.diag.dayReport && state.diag.dayReport.settings) || {};
+    return {chatId: s.chatId || '', chatName: s.chatName || '', enabled: !!s.enabled};
+  }
+  function dayReportForm(){ return state.dayReportDraft || dayReportSaved(); }
+  function dayReportDirty(){ return !!state.dayReportDraft && JSON.stringify(state.dayReportDraft) !== JSON.stringify(dayReportSaved()); }
+  /** Te same reguły co setDayReportSettings na serwerze — komunikat od razu. '' = w porządku. */
+  function dayReportProblem(f, configured){
+    if(f.enabled && !f.chatId) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
+    if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
+    return '';
+  }
+  /** Pola panelu -> szkic. Nazwa kontaktu z wybranej pozycji (bez numeru — numer jest w opisie pozycji). */
+  function readDayReportForm(){
+    const chat = viewEl.querySelector('#reportChat'), en = viewEl.querySelector('#reportEnabled');
+    const opt = chat && chat.selectedIndex >= 0 ? chat.options[chat.selectedIndex] : null;
+    return {chatId: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
+  }
+  function showDayReportDirty(){
+    const d = dayReportDirty();
+    viewEl.querySelectorAll('.reportdirty, [data-act="reportReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    invalidateHtml();
+  }
+  function renderDayReportBox(r){
+    const f = dayReportForm(), s = r.settings;
+    const list = (state.dayReportContacts || []).slice();
+    if(f.chatId && !list.some(c => c.id === f.chatId)) list.unshift({id: f.chatId, name: f.chatName || f.chatId, phone: '+' + f.chatId.split('@')[0]});
+    const opts = (f.chatId ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + list.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    const dirty = dayReportDirty();
+    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || s.chatId)}.`
+      : 'Wysyłanie po czyszczeniu jest wyłączone.';
+    const L = r.last;
+    const last = !L ? ''
+      : L.ok ? `<div class="hint">Ostatnia: lista z ${esc(plDate(L.day))} — wysłana ${esc(L.at)}${L.chatName ? ' do ' + esc(L.chatName) : ''}${L.manual ? ' (ręcznie)' : ''}.</div>`
+      : L.unknown ? `<div class="hint pollerr">Ostatnia próba: lista z ${esc(plDate(L.day))} (${esc(L.at)}) — nie wiadomo, czy wyszła (bramka
+          nie odpowiedziała). Sprawdź na WhatsAppie prowadzącej.</div>`
+      : `<div class="hint pollerr">Ostatnia próba: lista z ${esc(plDate(L.day))} (${esc(L.at)}) — NIE WYSZŁA: ${esc(L.msg)}</div>`;
+    const day = r.day;
+    const sendBtn = day ? `<div class="adminrow" style="margin-top:8px"><button class="btn outline" data-act="reportSend">Wyślij listę z ${esc(day.label)}</button></div>` : '';
+    return `
+      <div class="panelbox">
+        <h3>Lista dnia do prowadzącej na WhatsAppie</h3>
+        <label class="mailfl" for="reportChat">Prowadząca — z kontaktów telefonu bota</label>
+        <div class="pollchat"><select id="reportChat">${opts}</select>
+          <button class="btn outline" data-act="reportContacts"${state.dayReportContactsLoading ? ' disabled' : ''}>${state.dayReportContactsLoading ? 'Pobieram…' : 'Pobierz kontakty'}</button></div>
+        <div class="pollchecks">
+          <label class="check"><input type="checkbox" id="reportEnabled"${f.enabled ? ' checked' : ''}> wysyłaj po nocnym czyszczeniu</label>
+        </div>
+        <div class="reportdirty${dirty ? '' : ' hidden'}">Niezapisane zmiany — wysyłka idzie według zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="reportSave">Zapisz</button>
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="reportReset">Przywróć zapisane</button></div>
+        <div class="hint">${state1}</div>
+        ${last}
+        ${sendBtn}
+        <div class="hint">Treść to dokładnie to, co kopiuje „📋 Skopiuj treść" w minionym dniu (szablon maila wyżej, z datą i listą
+        psów). Każdy dzień idzie najwyżej raz; dzień bez spacerów — nic. Czyszczenie nie czeka na bota — gdy bramka zawiedzie,
+        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota.</div>
+      </div>`;
+  }
+  /** „Pobierz kontakty": kontakty z telefonu bota z bramki (czytanie — bez kolejki). */
+  function loadDayReportContacts(){
+    if(state.dayReportContactsLoading) return;
+    state.dayReportContactsLoading = true;
+    render('nav');
+    const done = () => { state.dayReportContactsLoading = false; if(state.view==='diag') safeRender('nav'); };
+    google.script.run
+      .withSuccessHandler(list => {
+        state.dayReportContacts = Array.isArray(list) ? list : [];
+        if(!state.dayReportContacts.length) toast('W telefonie bota nie ma zapisanych kontaktów — dodaj prowadzącą do kontaktów tego telefonu');
+        done();
+      })
+      .withFailureHandler(err => {
+        toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się pobrać kontaktów');
+        done();
+      })
+      .getDayReportContacts(state.pin);
+  }
+  function applyDayReportPanel(panel){
+    if(!panel || !state.diag || state.diag.failed) return;
+    state.diag.dayReport = panel;
   }
 
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
@@ -2854,6 +2945,10 @@
   const keepPoll = e => { if(POLL_FIELDS.indexOf(e.target.id) < 0) return; state.pollDraft = readPollForm(); showPollDirty(); };
   viewEl.addEventListener('input', keepPoll);
   viewEl.addEventListener('change', keepPoll);
+  // lista dnia do prowadzącej — szkic w stanie, jak ankieta
+  const keepDayReport = e => { if(DAY_REPORT_FIELDS.indexOf(e.target.id) < 0) return; state.dayReportDraft = readDayReportForm(); showDayReportDirty(); };
+  viewEl.addEventListener('input', keepDayReport);
+  viewEl.addEventListener('change', keepDayReport);
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -2991,6 +3086,44 @@
           fetchDiag();                                // panel pokaże, co się stało (ostatnia próba, „wysyła się od…")
           if(!lost) return;
           // odpowiedź nie przyszła w czasie watchdoga — bramka bywa wolniejsza; ankieta mogła właśnie wyjść
+          toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
+          setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
+        }});
+    }
+    if(act==='reportContacts') loadDayReportContacts();
+    if(act==='reportReset'){ state.dayReportDraft = null; render('nav'); }
+    if(act==='reportSave'){
+      const r = state.diag && state.diag.dayReport;
+      if(!r) return;
+      const f = readDayReportForm();
+      const problem = dayReportProblem(f, r.configured);  // od razu: zapis jest w RETRIABLE (jak ankieta i mail)
+      if(problem){ toast(problem); return; }
+      enqueue('setDayReportSettings',[f,state.pin],{key:'dayReport',reconcile:res=>{
+        applyDayReportPanel(res);
+        state.dayReportDraft = null;
+        toast(res && res.settings && res.settings.enabled ? 'Zapisane — lista pójdzie po nocnym czyszczeniu' : 'Zapisane', 'ok');
+        safeRender();
+      }});
+    }
+    if(act==='reportSend'){
+      const r = state.diag && state.diag.dayReport;
+      if(!r || !r.day) return;
+      if(dayReportDirty()){ toast('Najpierw zapisz zmiany — „Wyślij listę" wysyła według zapisanych ustawień'); return; }
+      if(!r.settings.chatId){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
+      if(!r.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
+      const who = r.settings.chatName || r.settings.chatId, st = r.day.status;
+      if(st === 'pending'){ toast('Lista z ' + r.day.label + ' właśnie się wysyła (od ' + r.day.at + ')'); return; }
+      // już poszła albo nie wiadomo — prywatna wiadomość drugi raz nikomu nie szkodzi, ale pytamy
+      const force = st === 'sent' || st === 'unknown';
+      if(!ask(st === 'sent' ? 'Lista z ' + r.day.label + ' już poszła do ' + who + ' (' + r.day.at + '). Wysłać jeszcze raz?'
+        : st === 'unknown' ? 'Nie wiadomo, czy lista z ' + r.day.label + ' doszła do ' + who + ' (próba ' + r.day.at + '). Wysłać jeszcze raz?'
+        : 'Wysłać teraz listę z ' + r.day.label + ' do ' + who + '?')) return;
+      // nie w RETRIABLE: powtórka po zaginionej odpowiedzi trafiłaby w „właśnie się wysyła"
+      enqueue('sendDayReportNow', force ? [state.pin, r.day.date, true] : [state.pin, r.day.date], {key:'dayReport',
+        reconcile:res=>{ applyDayReportPanel(res && res.panel); toast('Lista z ' + r.day.label + ' wysłana do ' + who, 'ok'); safeRender(); },
+        fail:(msg, lost)=>{
+          fetchDiag();                                // panel pokaże, co się stało
+          if(!lost) return;
           toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
           setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
         }});

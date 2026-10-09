@@ -195,14 +195,51 @@ function greenCall_(method, body, query) {
  * Grupy, w których jest konto bota — do wyboru w panelu (PIN). Grupa w społeczności to zwykła grupa
  * (…@g.us); bot musi być jej członkiem. Grupa nadrzędna społeczności i „Ogłoszenia" też bywają
  * na liście, ale tam bramka nie wyśle — prowadząca wybiera konkretną grupę.
+ * Społeczność i jej ogłoszenia mają w WhatsAppie tę samą nazwę (zgłoszenie z panelu 1.3: „G13, G13,
+ * Grafik") — powtórzone nazwy dostają dopisek z getGroupData (chatNote_), a gdy bramka nic nie powie,
+ * kolejny numer: na liście nie ma dwóch takich samych pozycji.
  */
+const CHAT_NOTE_MAX = 6;                          // najwyżej tyle dodatkowych pytań bramki na jedno „Pobierz grupy"
 function getPollChats(pin) {
   requirePin_(pin);
   const list = greenCall_('getContacts', null, '?group=true');
-  return (Array.isArray(list) ? list : [])
+  const chats = (Array.isArray(list) ? list : [])
     .filter(c => c && c.type === 'group' && /^\d+(-\d+)?@g\.us$/.test(String(c.id)))
     .map(c => ({ id: String(c.id), name: String(c.name || c.contactName || c.id).slice(0, 100) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const count = {};
+  chats.forEach(c => { count[c.name] = (count[c.name] || 0) + 1; });
+  let asked = 0;
+  chats.forEach(c => {
+    if (count[c.name] < 2 || asked >= CHAT_NOTE_MAX) return;
+    asked++;
+    let note = '';
+    try { note = chatNote_(greenCall_('getGroupData', { groupId: c.id })); } catch (e) { note = ''; }
+    if (note) c.name += ' (' + note + ')';
+  });
+  const left = {}, seen = {};                       // dopisek nie rozróżnił — numer: „G13 #1", „G13 #2"
+  chats.forEach(c => { left[c.name] = (left[c.name] || 0) + 1; });
+  chats.forEach(c => {
+    const k = c.name;
+    if (left[k] < 2) return;
+    seen[k] = (seen[k] || 0) + 1;
+    c.name = k + ' #' + seen[k];
+  });
+  return chats;
+}
+
+/**
+ * Dopisek do grupy o powtórzonej nazwie, z getGroupData. isCommunity / isCommunityAnnounce bramka podaje
+ * tylko administratorom społeczności; allowParticipantsSendMessages === false = piszą tylko admini
+ * (tak wyglądają ogłoszenia). Bez żadnej z tych wskazówek — liczba osób.
+ */
+function chatNote_(g) {
+  if (!g || typeof g !== 'object') return '';
+  if (g.isCommunity) return 'cała społeczność — tu bot nie wyśle';
+  if (g.isCommunityAnnounce) return 'ogłoszenia — piszą tylko administratorzy';
+  if (g.allowParticipantsSendMessages === false) return 'piszą tylko administratorzy';
+  const n = Number(g.size) || (Array.isArray(g.participants) ? g.participants.length : 0);
+  return n > 0 ? n + ' os.' : '';
 }
 
 /* ---------- wysyłka ---------- */
@@ -388,4 +425,183 @@ function getPollState(pin) {
     const m = String(e.message || e);
     return { code: 'error', text: m === GREEN_CONSENT ? m : 'nie udało się sprawdzić (' + m + ')' };
   }
+}
+
+/* ---------- lista dnia do prowadzącej (1.3) ----------
+   Po nocnym czyszczeniu bot wysyła prowadzącej na WhatsAppie listę każdego domkniętego dnia ze
+   spacerami — dokładnie tę treść, którą w minionym dniu kopiuje „📋 Skopiuj treść" (szablon maila
+   z panelu z [DATA] i [LISTA]; dayReportText_ = mailText w Script.html, S139 pilnuje obu). Prowadząca
+   przesyła ją dalej do schroniska. Decyzje właściciela (2026-10-09): numer z kontaktów telefonu bota
+   (wybór w panelu), dzień bez spacerów — nic, każdy dzień najwyżej raz, czyszczenie nigdy nie czeka
+   na bota ani przez niego nie pada, wynik w panelu, włącznik w panelu. */
+
+const DAY_REPORT_CHAT = /^\d{6,15}@c\.us$/;      // prywatny czat WhatsAppa: numer z kierunkowym + @c.us
+
+/** Zapisane ustawienia: {enabled, chatId, chatName}; włączone tylko z kontaktem. */
+function dayReportSettings_() {
+  let s = null;
+  try { s = JSON.parse(prop_(PROP_DAY_REPORT) || 'null'); } catch (e) { s = null; }
+  s = s && typeof s === 'object' ? s : {};
+  const chatId = DAY_REPORT_CHAT.test(String(s.chatId || '')) ? String(s.chatId) : '';
+  return { enabled: !!s.enabled && !!chatId, chatId, chatName: chatId ? String(s.chatName || '').slice(0, 100) : '' };
+}
+
+/** Ustawienia z panelu (PIN). Idempotentne — w RETRIABLE. Reguły jak dayReportProblem w Script.html. */
+function setDayReportSettings(settings, pin) {
+  requirePin_(pin);
+  const o = settings && typeof settings === 'object' ? settings : {};
+  const chatId = String(o.chatId || '').trim();
+  if (chatId && !DAY_REPORT_CHAT.test(chatId)) throw new Error('Nieprawidłowy kontakt — wybierz go z listy („Pobierz kontakty")');
+  if (o.enabled && !chatId) throw new Error('Wybierz kontakt prowadzącej, zanim włączysz wysyłanie');
+  const s = { enabled: !!o.enabled, chatId, chatName: chatId ? clean_(String(o.chatName || '').replace(/[\r\n]+/g, ' '), 100) : '' };
+  withLock_(() => setProp_(PROP_DAY_REPORT, JSON.stringify(s)));
+  return dayReportPanel_();
+}
+
+/**
+ * Kontakty z telefonu bota — do wyboru prowadzącej w panelu (PIN). Tylko zapisane w kontaktach
+ * (`contactName`): bez tego lista zawierałaby każdego, kto jest w społeczności. Numer do opisu pozycji.
+ */
+function getDayReportContacts(pin) {
+  requirePin_(pin);
+  const list = greenCall_('getContacts', null, '?group=false');
+  return (Array.isArray(list) ? list : [])
+    .filter(c => c && c.type === 'user' && DAY_REPORT_CHAT.test(String(c.id)) && String(c.contactName || '').trim())
+    .map(c => ({ id: String(c.id), name: String(c.contactName).trim().slice(0, 100), phone: '+' + String(c.id).split('@')[0] }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+}
+
+/** '2026-10-08' -> '08.10.2026' — jak plDate w Script.html. */
+function plDate_(iso) { const p = String(iso).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : String(iso); }
+function csvCell_(v) { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+
+/**
+ * [LISTA] — CSV `data,pies,numer`, pies raz na dzień, po imieniu; pies bez imienia (etykieta „#numer")
+ * z pustą kolumną „pies". Wpisy z readHistoryDays_ — z tego samego odczytu bierze je przeglądarka
+ * (getHistoryDays), więc tekst jest ten sam co w „Skopiuj treść" (mailList w Script.html).
+ */
+function dayList_(date, entries) {
+  const seen = {}, dogs = [];
+  (entries || []).forEach(e => {
+    const nr = String(e.ident == null ? '' : e.ident).trim(), k = e.name + '|' + nr;
+    if (!seen[k]) { seen[k] = true; dogs.push({ name: String(e.name), nr }); }
+  });
+  dogs.sort((a, b) => a.name.localeCompare(b.name, 'pl') || a.nr.localeCompare(b.nr, 'pl'));
+  const pies = d => d.nr && d.name === '#' + d.nr ? '' : d.name;
+  return ['data,pies,numer'].concat(dogs.map(d => [plDate_(date), pies(d), d.nr].map(csvCell_).join(','))).join('\n');
+}
+function dayReportText_(date, entries) {
+  return mailTemplate_().split('[DATA]').join(plDate_(date)).split('[LISTA]').join(dayList_(date, entries));
+}
+
+/** Świeży odczyt znaczników wysłanych list — pod blokadą, jak pollSent_. */
+function dayReportSent_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(PROP_DAY_REPORT_SENT);
+    const m = raw ? JSON.parse(raw) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveDayReportSent_(m) {
+  const keys = Object.keys(m).sort();                // klucze to daty — najstarsze wypadają
+  keys.slice(0, Math.max(0, keys.length - 31)).forEach(k => { delete m[k]; });
+  setProp_(PROP_DAY_REPORT_SENT, JSON.stringify(m));
+}
+
+/**
+ * Wysyła prowadzącej listę dnia `date` — najwyżej raz (dayReportSent), jak ankieta: znacznik „w toku"
+ * pod blokadą → wysyłka BEZ blokady (bramka potrafi odpowiadać do minuty) → wynik pod blokadą
+ * (wysłana / nie wyszła — znacznik zdjęty / nie wiadomo — znacznik zostaje; pollMarkState_).
+ * `manual` — z panelu: każdy powód, dla którego nic nie poszło, to błąd z komunikatem; `force` —
+ * prowadząca potwierdziła wysyłkę mimo „już poszła" albo „nie wiadomo" (prywatna wiadomość drugi raz
+ * nikomu nie szkodzi). Zwraca {day, at} albo null.
+ */
+function sendDayReport_(date, manual, force) {
+  const s = dayReportSettings_();
+  if (!s.chatId) { if (manual) throw new Error('Najpierw wybierz i zapisz kontakt prowadzącej'); return null; }
+  const entries = readHistoryDays_(date, date);
+  if (!entries.length) { if (manual) throw new Error('Z ' + plDate_(date) + ' nie ma spacerów w Historii — nie ma czego wysłać'); return null; }
+  const text = dayReportText_(date, entries);
+  const busy = withLock_(() => {
+    const sent = dayReportSent_(), m = sent[date], st = pollMarkState_(m);
+    if (st === 'pending') return 'Lista z ' + plDate_(date) + ' właśnie się wysyła (od ' + m.at + ')';
+    if (st === 'sent' && !(manual && force)) return 'Lista z ' + plDate_(date) + ' już poszła (' + m.at + ')';
+    if (st === 'unknown' && !(manual && force)) return 'Nie wiadomo, czy lista z ' + plDate_(date) + ' wyszła (próba ' + m.at + ')';
+    sent[date] = { at: stamp_(), t: Date.now(), pending: true };
+    saveDayReportSent_(sent);
+    return '';
+  });
+  if (busy) {
+    if (manual) throw new Error(busy);
+    return null;
+  }
+  const last = { day: date, at: stamp_(), chatName: s.chatName, manual: !!manual };
+  let err = null;
+  try {
+    const res = greenCall_('sendMessage', { chatId: s.chatId, message: text });
+    if (!res || !res.idMessage) throw new Error('Bramka WhatsAppa nie potwierdziła wysłania');
+  } catch (e) {
+    err = e;
+  }
+  const unknown = !!(err && err.unknown);
+  withLock_(() => {
+    const sent = dayReportSent_();
+    if (!err) sent[date] = { at: last.at };
+    else if (unknown) sent[date] = { at: last.at, t: Date.now(), unknown: true };
+    else delete sent[date];
+    saveDayReportSent_(sent);
+    setProp_(PROP_DAY_REPORT_LAST, JSON.stringify(Object.assign(last, !err ? { ok: true }
+      : { ok: false, unknown, msg: String(err.message || err) })));
+  });
+  if (err) throw err;
+  return { day: date, at: last.at };
+}
+
+/**
+ * Po nocnym czyszczeniu (endOfDay, już bez blokady): lista każdego domkniętego dnia ze spacerami,
+ * po kolei. Nic stąd nie wychodzi na zewnątrz — czyszczenie jest już zrobione, a błąd bramki zostaje
+ * w panelu (PROP_DAY_REPORT_LAST), skąd prowadząca wyśle listę jeszcze raz.
+ */
+function sendClosedDayReports_(days) {
+  try {
+    if (!days || !days.length || !dayReportSettings_().enabled) return;
+    days.slice().sort().forEach(d => {
+      try { sendDayReport_(d, false); } catch (e) { console.warn('Lista z ' + d + ' do prowadzącej nie wyszła: ' + (e && e.message || e)); }
+    });
+  } catch (e) {
+    console.warn('Lista dnia do prowadzącej: ' + (e && e.message || e));
+  }
+}
+
+/** Ostatni dzień w Historii (zamknięty) — o niego pyta „Wyślij listę" w panelu. '' = Historia pusta. */
+function lastHistDay_() {
+  const sh = ss_().getSheetByName(SHEETS.HIST);
+  const last = sh ? sh.getLastRow() : 0;
+  if (last < 2) return '';
+  let max = '';
+  sh.getRange(2, HIST.DATE, last - 1, 1).getValues().forEach(r => { const d = cellDate_(r[0]); if (isDate_(d) && d > max) max = d; });
+  return max;
+}
+
+/** Panel: ustawienia, ostatnia próba i stan listy ostatniego dnia z Historii. Bez pytania bramki. */
+function dayReportPanel_() {
+  let last = null, sent = {};
+  try { last = JSON.parse(prop_(PROP_DAY_REPORT_LAST) || 'null'); } catch (e) { last = null; }
+  try { sent = JSON.parse(prop_(PROP_DAY_REPORT_SENT) || '{}') || {}; } catch (e) { sent = {}; }
+  const day = lastHistDay_(), m = day ? sent[day] : null;
+  return {
+    settings: dayReportSettings_(), configured: !!greenApi_(), last,
+    day: day ? { date: day, label: plDate_(day), status: pollMarkState_(m), at: m ? m.at : '' } : null,
+  };
+}
+
+/** „Wyślij listę" z panelu (PIN): dzień już zamknięty; `force` — mimo „już poszła" / „nie wiadomo". Nie w RETRIABLE. */
+function sendDayReportNow(pin, date, force) {
+  requirePin_(pin);
+  const d = String(date || '');
+  if (!isDate_(d) || d >= businessDate_()) throw new Error('Listę wysyła się za dzień już zamknięty');
+  const sent = sendDayReport_(d, true, force === true);
+  return { sent, panel: dayReportPanel_() };
 }
