@@ -448,7 +448,7 @@ async function S102(){
   check('odłączony Witkacy 1/2: wszystko w jednym wierszu', !!row && !!row.querySelector('.name') && /Witkacy/.test(row.querySelector('.name').textContent)
     && /1\/2/.test(row.querySelector('.slotno').textContent) && /Grzesiek/.test(row.querySelector('.vol').textContent)
     && !!row.querySelector('.acts [data-act="walk"]') && !!row.querySelector('.acts [data-act="free"]'), s1 ? s1.outerHTML.slice(0, 400) : '(brak)');
-  check('…bez trudności, numeru, boksu i notatki', !s1.querySelector('.dif, .dogmeta, .note, .row'), s1.outerHTML.slice(0, 300));
+  check('…bez trudności, numeru, boksu i notatki', !s1.querySelector('.dif, .difnote, .dogmeta, .note, .row'), s1.outerHTML.slice(0, 300));
   // przyciski spaceru trzymają się razem — schodzą pod spód razem, nie „Zwolnij" samo
   const accts = [...doc(app).querySelectorAll('[data-act="walk"]')];
   check('„Wrócił ✓" i „Zwolnij" zawsze w jednej grupie (.acts)', accts.length >= 4
