@@ -9,6 +9,8 @@ Wynik trafia do opisu PR i do tabeli na dole. Merge i `deploy:prod` dopiero po o
 
 ## Kiedy
 
+- **Tylko w procedurze wydania, raz — przed mergem do `main`.** Nie przy każdym pushu ani każdym `deploy:test`
+  w trakcie pracy nad wydaniem (doprecyzowanie właściciela 13.10).
 - **Na wersji, która pójdzie na produkcję** — po ostatniej zmianie plików aplikacji (`npm run files`), łącznie
   z datą w pierwszym wpisie `WHATS_NEW`. Na test wysyła ją `npm run deploy:test` — jak każde wdrożenie, na
   polecenie właściciela.
