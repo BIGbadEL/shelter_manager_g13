@@ -98,11 +98,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 Statusy spaceru: `free` / `reserved` / `walked` / `team` (1.3 — spacer psa innej grupy bierze jego
 własna grupa, `kto` = nazwa grupy; dla listy „załatwiony" jak odbyty — `slotDone_` / `isDone`, ale
 **nie idzie do Historii ani maila**, tylko do `ostatni_spacer`). Trudności: `easy` / `med` / `hard`
-(zielony / żółty / czerwony). **Od 1.4 (decyzja właściciela 13.10) znaczą: łatwy / „wymaga wprowadzenia" /
-„tylko wyznaczone osoby"** — na pełnym kafelku i w katalogu pasek pod numerem jak notatka, w kolorze trudności
-(`difNote`, napis ciemniejszym odcieniem — `DIF[].ink`, bo żółty na bladym tle miał kontrast ~2:1), zielony —
-sam kolor kafelka z lewej; bez dawnej plakietki „● wymagający" i bez legendy nad listą (S144). Wartości
-w arkuszu bez zmian. Kolumny dat i godzin mają **format tekstowy `@`** —
+(zielony / żółty / czerwony). Kolumny dat i godzin mają **format tekstowy `@`** —
 bez tego arkusz parsuje `"17:21"` na `Date` z epoką 1899.
 
 Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setup.gs`
@@ -564,7 +560,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1728 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1714 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -587,7 +583,7 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
 spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
-serwera) i `scenarios21` (trudność na kafelku) też.
+serwera) też.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -685,9 +681,7 @@ dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do
 (serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.4), S142 pasek
 „Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska), S143 stan startowy z pamięci
-serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu), S144 trudność jako pasek
-„Wymaga wprowadzenia" / „Tylko wyznaczone osoby" (zielony bez napisu, nie na kafelku odłączonym, katalog, nazwy
-w formularzach, bez legendy — 1.4),
+serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -1018,14 +1012,15 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   blokada składa „psy bez zmian" z obu prac (B71); README „Cofnięcie wdrożenia": ponowne wdrożenie 1.4 w ciągu 6 h od
   cofnięcia — najpierw `migrate()`. Do wiadomości: pasek „Nowa wersja" zobaczy też ktoś, kto otwiera aplikację
   pierwszy raz; T6 nie wymusza daty najnowszego wpisu — wpisać ją przed `deploy:prod`.
-  **13.10 dołożone:** kolory trudności jako pasek na kafelku (Arkusz, „Trudności"; S144) i test wydania (`RELEASE.md`,
-  decyzja właściciela). **Pierwszy test wydania — na @34, przed zmianą kolorów** (tabela w RELEASE.md): strona i `doGet`
+  **13.10 dołożone:** test wydania (`RELEASE.md`, decyzja właściciela). Kolory trudności jako pasek na kafelku („Wymaga
+  wprowadzenia" / „Tylko wyznaczone osoby", test @35) **cofnięte 23.10** — właścicielowi nie podobają się wizualnie,
+  wraca do tematu (dawna plakietka i legenda zostają, jak w 1.3). **Pierwszy test wydania — na @34** (ten sam kod
+  aplikacji co po cofnięciu; tabela w RELEASE.md): strona i `doGet`
   w normie (1,22 s / 0,81 s), test funkcjonalny w Chrome bez błędów (spacer grupowy — tylko na telefonie), **`getData`
   ponad progiem** — 2,2 s w dwóch cichych oknach wobec 1,73 s 9.10; dzień był wolniejszy (`reportDiag` 0,72 zamiast ~0,5 s),
   ale w wolnych odczytach nowy krok „pamięć" (odczyt znaczników + zapis stanu do `CacheService` przy KAŻDYM odczycie
   listy) brał 0,2–1,8 s. **Do decyzji właściciela** (przyjąć / zapisywać do pamięci tylko, gdy stan się zmienił /
-  najpierw A/B z 1.3 na teście). Kolory zmieniły pliki aplikacji, więc test wydania idzie jeszcze raz na wdrożeniu
-  z nimi (procedura: zmiana po teście = test od nowa).
+  najpierw A/B z 1.3 na teście).
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,

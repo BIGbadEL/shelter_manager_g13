@@ -2,13 +2,10 @@
   /* =========================================================
      STAN I STAŁE
      ========================================================= */
-  // Trudność (1.4, decyzja właściciela): żółty = „wymaga wprowadzenia", czerwony = „tylko wyznaczone osoby" —
-  // na pełnym kafelku jako pasek pod numerem (difNote); zielony — sam kolor kafelka z lewej. `ink` — napis
-  // paska: ciemniejszy odcień tego samego koloru (żółty #d99a1c na bladym żółtym tle ma kontrast ~2:1).
   const DIF = {
     easy:{label:"łatwy", color:"#3f9e57"},
-    med :{label:"wymaga wprowadzenia", note:"Wymaga wprowadzenia", color:"#d99a1c", ink:"#8a5a00"},
-    hard:{label:"tylko wyznaczone osoby", note:"Tylko wyznaczone osoby", color:"#cf4a3a", ink:"#a8321f"},
+    med :{label:"wymagający", color:"#d99a1c"},
+    hard:{label:"bardzo wymagający", color:"#cf4a3a"},
   };
   const WATCHDOG_MS = 12000;   // po tylu ms bez odpowiedzi uznajemy zapis za zaginiony (i raz ponawiamy)
 
@@ -1408,8 +1405,8 @@
     }
     const fields = one ? slotRow(dog, one) : t.slots.map(s => slotBox(dog, s, count)).join('');
     return `${open}
-        <div class="row"><span class="name${allDone?' done':''}">${label}</span>${badge}${resv}</div>
-        ${dogMeta(dog, t)}${difNote(dog)}${dogNote(dog)}
+        <div class="row"><span class="name${allDone?' done':''}">${label}</span>${badge}${resv}<span class="flex"></span>${difChipHtml(dm)}</div>
+        ${dogMeta(dog, t)}${dogNote(dog)}
         ${fields}${pk.box}</li>`;
   }
 
@@ -1484,15 +1481,9 @@
     return `<div class="slot ${s.status}${pk.cls}" data-slot="${s.n}"><span class="slotno">${s.n}/${count}</span>${slotRow(dog, s)}${pk.box}</div>`;
   }
 
-  /**
-   * Trudność na pełnym kafelku i w katalogu (1.4): pasek jak notatka, w kolorze trudności — „Wymaga
-   * wprowadzenia" / „Tylko wyznaczone osoby". Łatwy — nic, wystarczy zielony kolor kafelka z lewej.
-   * Dawna plakietka „● wymagający" w linijce imienia zniknęła (decyzja właściciela).
-   */
-  function difNote(dog){
-    const dm = DIF[dog.dif];
-    if(!dm || !dm.note) return '';
-    return `<div class="difnote" style="color:${dm.ink};background:${dm.color}1f"><span class="dot" style="background:${dm.color}"></span>${dm.note}</div>`;
+  function difChipHtml(dm){
+    return `<span class="dif" style="color:${dm.color};background:${dm.color}1a">
+      <span class="dot" style="background:${dm.color}"></span>${dm.label}</span>`;
   }
 
   /**
@@ -1509,10 +1500,10 @@
     const meta = (pill || bits.length)
       ? `<div class="dogmeta">${pill}${pill&&bits.length?' ':''}${bits.join(' · ')}</div>` : '';
     return `<li class="dog" data-dog="${dog.id}" style="border-left-color:${dm.color}">
-      <div class="row"><span class="name">${esc(dogLabel(dog))}</span><span class="flex"></span>
+      <div class="row"><span class="name">${esc(dogLabel(dog))}</span><span class="flex"></span>${difChipHtml(dm)}
         <button class="btn edit" data-act="edit" data-id="${dog.id}">✎</button>
         <button class="btn del" data-act="remove" data-id="${dog.id}">✕</button></div>
-      ${meta}${difNote(dog)}${noteHtml(dog)}</li>`;
+      ${meta}${noteHtml(dog)}</li>`;
   }
 
   /** Tryb edycji: zadania, katalog psów, dodawanie psa. Bez dat i bez rezerwacji. */
@@ -1588,7 +1579,7 @@
       </div>
       <div class="adminrow" style="margin-top:7px">
         <input type="text" id="newBox" maxlength="20" placeholder="Boks" value="${esc(formVal('newBox'))}">
-        <select id="newDif">${Object.keys(DIF).map(k => opt(k, DIF[k].label)).join('')}</select>
+        <select id="newDif">${opt('easy','łatwy')}${opt('med','wymagający')}${opt('hard','b. wymagający')}</select>
       </div>
       ${teamField('id="newTeam"', 'id="newTeamName"', formVal('newTeam'), formVal('newTeamName'))}
       <div class="adminrow" style="margin-top:7px">
@@ -1721,8 +1712,12 @@
       : `<div class="dayhint">Rezerwacja z wyprzedzeniem — spacer odhaczysz w dniu spaceru.</div>`;
     const top = hint + renderTasks(state.date);
 
-    // bez legendy kolorów (1.4, decyzja właściciela): trudność mówi pasek na kafelku (difNote)
     let html=`
+      <div class="diflegend">
+        <span><span class="dot" style="background:${DIF.easy.color}"></span>łatwy</span>
+        <span><span class="dot" style="background:${DIF.med.color}"></span>wymagający</span>
+        <span><span class="dot" style="background:${DIF.hard.color}"></span>b. wymagający</span>
+      </div>
       ${top}
       <div class="count" data-list="home">${countLine(false)}</div>
       <ul>`;
@@ -3199,9 +3194,6 @@
         'Przycisk „Co nowego” — ta lista: wszystkie zmiany w aplikacji w jednym miejscu, najnowsze na górze.',
         'Strona otwiera się szybciej i nie czeka, gdy Google zwalnia przy arkuszu — lista jest od razu i zaraz się odświeża.',
         'Rezerwacje i „Wrócił ✓” zapisują się szybciej, gdy kilka osób klika naraz.',
-        'Kolor psa mówi wprost, co trzeba wiedzieć: żółty — „Wymaga wprowadzenia”, czerwony — „Tylko wyznaczone osoby” (napis na kafelku). Zielony — bez napisu, sam kolor z lewej.',
-      ], admin: [
-        'Przy dodawaniu i edycji psa trudność ma te same nazwy: łatwy, wymaga wprowadzenia, tylko wyznaczone osoby.',
       ] },
     { v: '1.3', date: '9 października 2026', items: [
         'Psy innych grup, którym pomagamy, mają osobną listę pod naszą. Nasze psy są zawsze wyżej.',
