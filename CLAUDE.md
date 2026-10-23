@@ -1023,8 +1023,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   w normie (1,22 s / 0,81 s), test funkcjonalny w Chrome bez błędów (spacer grupowy — tylko na telefonie), **`getData`
   ponad progiem** — 2,2 s w dwóch cichych oknach wobec 1,73 s 9.10; dzień był wolniejszy (`reportDiag` 0,72 zamiast ~0,5 s),
   ale w wolnych odczytach nowy krok „pamięć" (odczyt znaczników + zapis stanu do `CacheService` przy KAŻDYM odczycie
-  listy) brał 0,2–1,8 s. **Decyzja właściciela 23.10: poprawka przed wydaniem** — `getData` wkłada do pamięci tylko
-  zmiany (B73); przez to test wydania idzie od nowa, na wersji z poprawką.
+  listy) brał 0,2–1,8 s. **Zamknięte — decyzja i akceptacja właściciela 23.10: poprawka przed wydaniem** — `getData`
+  wkłada do pamięci tylko zmiany (B73); przez to test wydania idzie od nowa, na wersji z poprawką.
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,

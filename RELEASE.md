@@ -143,7 +143,8 @@ mierzony bez warunku cichego okna (zwykły ruch testu).
 | 1.4 (przed testem wydania) | 9.10.2026, 17:32 | @33 | 1,23 / 1,70 s / 3 | 0,79 s | 1,73 s | 1,8 / 2,8 / 2,8 s |
 | 1.4 (pierwszy test wydania) | 13.10.2026, 17:04–18:10 | @34 | 1,22 / 1,87 s / 2 | 0,81 s | **2,20 s** (cicho, n=30; powtórka 18:00: 2,22 s, n=28) | 2,0 / 2,8 / 4,2 s |
 
-**13.10 — `getData` ponad progiem** (+27% wobec 1,73 s, w obu cichych oknach). Kod `getData` taki sam jak w @33.
+**13.10 — `getData` ponad progiem** (+27% wobec 1,73 s, w obu cichych oknach). **Zamknięte 23.10 — właściciel
+zna wynik i akceptuje rozwiązanie: poprawka B73 przed wydaniem, potem test wydania od nowa.** Kod `getData` taki sam jak w @33.
 `reportDiag` (bez zmian od 1.2) szedł 0,72 s wobec ok. 0,5 s 9.10, czyli Google był tego dnia wolniejszy. Ale Dziennik
 spowolnień w wolnych odczytach pokazuje nowy krok 1.4 „pamięć" (odczyt znaczników i zapis stanu do `CacheService`):
 0,2 / 1,0 / 1,5 / 1,8 s w czterech wpisach. **Decyzja właściciela 23.10: poprawka przed wydaniem** — odczyt listy
