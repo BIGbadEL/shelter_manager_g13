@@ -35,7 +35,9 @@ function S141(){
   check('stuknięcie otwiera listę na cały ekran (strona pod spodem się nie przewija)', !hidden(app, 'whatsNew')
     && doc(app).body.classList.contains('wn-open'));
   const vers = [...doc(app).querySelectorAll('#wnList .wn-ver h3')].map(head);
-  check('najnowsza na górze, oznaczona „nowa": ' + vers[0], vers[0] === 'Wersja ' + VER + ' nowa', vers[0]);
+  // przed wydaniem bez daty („Wersja 1.4 nowa"), po wpisaniu daty — z nią przed „nowa"
+  check('najnowsza na górze, oznaczona „nowa": ' + vers[0], vers[0] === 'Wersja ' + VER + ' nowa'
+    || new RegExp('^Wersja ' + VER.replace(/\./g, '\\.') + ' \\d{1,2} \\S+ \\d{4} nowa$').test(vers[0]), vers[0]);
   check('...potem starsze, aż do 1.0', vers.length >= 7 && /^Wersja 1\.3 9 października 2026$/.test(vers[1]) && /^Wersja 1\.0 /.test(vers[vers.length - 1]),
     JSON.stringify(vers));
   check('tylko najnowsza ma „nowa"', doc(app).querySelectorAll('#wnList .wn-new').length === 1);
