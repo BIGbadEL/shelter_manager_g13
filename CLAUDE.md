@@ -857,7 +857,7 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
   (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08),
-  **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09).
+  **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09), **1.4** = @22 = `caba4e4` (merge `9ebfb21`, 2026-10-23).
 - **„Co nowego" (od 1.4) — każda wersja dopisuje wpis na górze `WHATS_NEW` w `Script.html`**, w gałęzi
   wydania, z datą wdrożenia przed `deploy:prod` (pusta data = niewydana, T6). Pisane dla wolontariuszy
   (decyzja właściciela): krótko, po ludzku, co widać na ekranie — „poprawa sortowania", nie jego reguły;
@@ -1001,10 +1001,19 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   (5 zakładek, 505 wpisów Historii), równoległe odczyty, sieć i waga strony. Możliwe kierunki (do decyzji właściciela):
   krótsza praca pod blokadą, stan strony i odczyty z `CacheService` zamiast arkusza, odczyt trzech zakładek jednym
   wywołaniem (Sheets API — nowa zgoda).
-- **Wersja 1.4 w przygotowaniu** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
+- **Produkcja: wersja 1.4 (PR #7, `caba4e4`, merge `9ebfb21`) od 2026-10-23, 19:02 — wdrożenie @22** (test: @38, ta sama
+  treść, 18:29; produkcja dopiero po 19:00 — godzina czyszczenia 18:00–18:59, choć czyszczenie już przeszło). „Co nowego?",
+  szybsze otwieranie strony i zapisy (niżej). Arkusz bez zmian, bez nowych uprawnień i wyzwalaczy, `migrate()` niepotrzebne.
+  Poprzednia to 1.3 = @21 = `c68a141` (gałąź `release/1.3`) — do niej się cofa zwykłym `deploy:prod` z tej gałęzi; stary kod
+  pamięci podręcznej nie czyta, a **ponowne wdrożenie 1.4 w ciągu 6 h od cofnięcia — najpierw `migrate()`** (README).
+  **Po wdrożeniu do sprawdzenia:** na telefonie pasek „Nowa wersja 1.4", lista zmian, „Zamknij", spacer grupowy; po
+  pierwszym czyszczeniu na 1.4 (24.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; przez dzień–dwa Dziennik spowolnień
+  i Wykonania produkcji (otwarcie strony, odczyt listy). Kolory trudności i zgłaszanie spacerów formularzem schroniska
+  (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania.
+- **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
-  bez nowych uprawnień. **Przed `deploy:prod`: data wdrożenia w pierwszym wpisie `WHATS_NEW`.** Na 320 px kapsułka
+  bez nowych uprawnień. Data wdrożenia w pierwszym wpisie `WHATS_NEW` — wpisana 23.10. Na 320 px kapsułka
   schodzi pod „Spacery" (nic nie wystaje). **Zmierzone na teście po wdrożeniu @33 (9.10, 17:32)**, tą samą metodą co
   „Pomiar opóźnień": sonda 120 otwarć strony — mediana 2,20 → **1,23 s**, 90% 3,14 → 1,70 s, najdłużej 7,3 → 4,3 s,
   ≥3 s 13 → 3; `doGet` w Wykonaniach — mediana 1,75 → **0,79 s** (207 i 127 wywołań); trzy rezerwacje naraz
@@ -1025,9 +1034,9 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   ale w wolnych odczytach nowy krok „pamięć" (odczyt znaczników + zapis stanu do `CacheService` przy KAŻDYM odczycie
   listy) brał 0,2–1,8 s. **Zamknięte — decyzja i akceptacja właściciela 23.10: poprawka przed wydaniem** — `getData`
   wkłada do pamięci tylko zmiany (B73). **Test wydania z poprawką — 23.10 na @37, w normie** (RELEASE.md): strona
-  1,05 s, `doGet` 0,74 s, `getData` 1,78 s (+5% wobec 1.3), test w Chrome bez błędów. Przed `deploy:prod` zostaje data
-  w `WHATS_NEW` (po niej `deploy:test` i samo otwarcie strony — RELEASE.md, „Kiedy").
-- **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
+  1,05 s, `doGet` 0,74 s, `getData` 1,78 s (+5% wobec 1.3), test w Chrome bez błędów. Data w `WHATS_NEW` wpisana
+  23.10, test @38 sprawdzony otwarciem strony (RELEASE.md, „Kiedy").
+- **Wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,
   changelog 1.3). Na polecenie właściciela test i produkcja jednym ciągiem z `main`, bez sprawdzenia @30 na

@@ -108,8 +108,8 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.1.1 | psy jednej osoby obok siebie na liście, miniony dzień po wolontariuszu i godzinie, z grupami (kolor wpisu i „Spacery grupowe") i numerem psa, pasek „GRUPA" przy kafelkach grupy | `release/1.1.1` (`985dc1a`, merge `31721b5`) | @18, 2026-10-01 |
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
-| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
-| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą | `release/1.3.1` | w przygotowaniu |
+| 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
+| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) = `main` | @22, 2026-10-23 |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -621,7 +621,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
-### 1.4 — w przygotowaniu
+### 1.4 — wdrożone 2026-10-23 (@22)
 
 - **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.4 · Co nowego?"). Otwiera
   na cały ekran listę zmian wszystkich wersji, od najnowszej: krótko i po ludzku, co widać na ekranie,
