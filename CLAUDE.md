@@ -112,7 +112,9 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   przed zwolnieniem, a po flush — nowy znacznik pamięci podręcznej, `cacheBump_`, niżej).
 - **Pamięć podręczna (1.4, `CacheService`, „PAMIĘĆ PODRĘCZNA" w `Utils.gs`; B71–B72, S143)** — po pomiarze
   9.10.2026 („Stan"): katalog psów dla akcji na spacerach pod blokadą (`catalogLocked_`) i stan startowy strony
-  (`bootState_`). Odświeżanie listy (`getData`) dalej czyta arkusz i przy okazji wkłada świeży stan i katalog.
+  (`bootState_`). Odświeżanie listy (`getData`) dalej czyta arkusz i przy okazji wkłada świeży stan i katalog —
+  **tylko gdy różnią się od wpisów w pamięci** (te przychodzą tym samym odczytem co znaczniki; test wydania 13.10:
+  zapis przy każdym odświeżeniu brał w wolnych odczytach 0,2–1,8 s — decyzja właściciela 23.10, B73).
   **Poprawności pilnują znaczniki pokolenia** (`gen` — stan, `genDogs` — katalog): `withLock_` po flush,
   przed zwolnieniem wymienia `gen`, a `genDogs` też — chyba że praca pod blokadą zadeklarowała, że psów nie
   ruszała (`lockKeepsDogs_ = true` — tylko `slotAction_` i `setGroup`; **nowy zapis bez tej flagi unieważnia
@@ -560,7 +562,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1714 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1723 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -722,6 +724,8 @@ B71 krótsza praca pod blokadą (pies z pamięci — 6 wywołań arkusza zamiast
 zmieniającego psy; awarie pamięci), B72 otwarcie strony
 bez arkusza (stan z pamięci bez ani jednego wywołania arkusza; zapis, zapis w środku odczytu i otwarcia, spóźniony odczyt,
 nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, awarie, wpis ponad 100 KB),
+B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
+ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1019,8 +1023,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   w normie (1,22 s / 0,81 s), test funkcjonalny w Chrome bez błędów (spacer grupowy — tylko na telefonie), **`getData`
   ponad progiem** — 2,2 s w dwóch cichych oknach wobec 1,73 s 9.10; dzień był wolniejszy (`reportDiag` 0,72 zamiast ~0,5 s),
   ale w wolnych odczytach nowy krok „pamięć" (odczyt znaczników + zapis stanu do `CacheService` przy KAŻDYM odczycie
-  listy) brał 0,2–1,8 s. **Do decyzji właściciela** (przyjąć / zapisywać do pamięci tylko, gdy stan się zmienił /
-  najpierw A/B z 1.3 na teście).
+  listy) brał 0,2–1,8 s. **Decyzja właściciela 23.10: poprawka przed wydaniem** — `getData` wkłada do pamięci tylko
+  zmiany (B73); przez to test wydania idzie od nowa, na wersji z poprawką.
 - **Produkcja: wersja 1.3 (PR #6, `c68a141`, merge `6f38943`) od 2026-10-09, 15:21 — wdrożenie @21**
   (test: @30, ten sam `main`, 15:19). Psy innych grup — dwie listy, grupa psa w panelu, „Bierze G7"; `T.readStale`
   20 s i bramka powrotu do karty; lista dnia do prowadzącej na WhatsAppie; lista grup bota bez dwóch „G13" (README,

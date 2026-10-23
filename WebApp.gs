@@ -102,18 +102,24 @@ function include(filename) {
  * (1.4, Utils.gs): stamtąd otwiera się strona (bootState_) i biorą psa akcje (catalogLocked_).
  * Znaczniki biorą się PRZED odczytem arkusza — zapis w międzyczasie unieważni ten wpis. Pod blokadą
  * nie: jej koniec i tak wymieni znacznik.
+ * **Wkłada tylko to, co się zmieniło** (test wydania 1.4, 13.10: zapis do pamięci przy każdym odświeżeniu co 15 s
+ * z każdego telefonu brał w wolnych odczytach 0,2–1,8 s) — obecne wpisy przychodzą tym samym jednym odczytem
+ * pamięci co znaczniki; wpis z tym samym znacznikiem i tym samym stanem zostaje, jak jest. Ręczna zmiana
+ * arkusza to inny stan, więc dalej dociera od najbliższego odczytu listy; brak wpisu (wygasł, Google wyrzucił) — też.
  */
 function getData() {
   const t0 = Date.now();
   const parts = {};
-  const gens = lockDepth_ ? {} : cacheGens_(cacheGet_([CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN]), [CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN]);
+  const got = lockDepth_ ? {} : cacheGet_([CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN, CACHE_KEY.BOOT, CACHE_KEY.DOGS]);
+  const gens = lockDepth_ ? {} : cacheGens_(got, [CACHE_KEY.GEN, CACHE_KEY.DOGS_GEN]);
   const tGet = Date.now() - t0;
   const keep = {};
   const out = readState_(parts, keep);
   const t1 = Date.now();
   const put = {};
-  if (gens[CACHE_KEY.GEN]) put[CACHE_KEY.BOOT] = JSON.stringify({ gen: gens[CACHE_KEY.GEN], state: out });
-  if (gens[CACHE_KEY.DOGS_GEN]) put[CACHE_KEY.DOGS] = JSON.stringify({ gen: gens[CACHE_KEY.DOGS_GEN], list: keep.catalog });
+  const fresh = (key, value) => { if (value !== got[key]) put[key] = value; };
+  if (gens[CACHE_KEY.GEN]) fresh(CACHE_KEY.BOOT, JSON.stringify({ gen: gens[CACHE_KEY.GEN], state: out }));
+  if (gens[CACHE_KEY.DOGS_GEN]) fresh(CACHE_KEY.DOGS, JSON.stringify({ gen: gens[CACHE_KEY.DOGS_GEN], list: keep.catalog }));
   cachePut_(put);
   if (!lockDepth_) parts.pamięć = tGet + Date.now() - t1;
   const ms = Date.now() - t0;

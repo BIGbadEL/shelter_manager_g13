@@ -2534,8 +2534,9 @@ const psyCalls = env => env.calls.bySheet['Psy'] || 0;
   psy[row][10] = 2;
   check('ręczna zmiana w arkuszu: do odczytu listy akcja widzi katalog z pamięci', throws(() => env.api.reserve(rex, 'Ola', D, 2)));
   env.api.getData();
-  env.api.reserve(rex, 'Ola', D, 2);
-  check('...po odczycie listy już nowy', slotAt(env, rex, D, 2).status === 'reserved');
+  let late = '';
+  try { env.api.reserve(rex, 'Ola', D, 2); } catch(e){ late = e.message; }
+  check('...po odczycie listy już nowy', !late && slotAt(env, rex, D, 2).status === 'reserved', late);
 
   // akcja na spacerze wołana spod zapisu, który zmienił psy (dziś takiej ścieżki nie ma — review PR #7):
   // „psy bez zmian" zostaje tylko wtedy, gdy deklarują to obie prace
@@ -2667,6 +2668,50 @@ const psyCalls = env => env.calls.bySheet['Psy'] || 0;
   let e2 = '';
   try { big.api.getData(); big.api.doGet(); big.api.reserve(2, 'Ola', D, 1); } catch(e){ e2 = e.message; }
   check('stan ponad 100 KB: bez pamięci, bez błędu', !e2 && !bootOf(big).cached && slotAt(big, 2, D, 1).status === 'reserved', e2);
+})();
+
+/* ---------- B73: odczyt listy wkłada do pamięci tylko zmiany (test wydania 1.4, 13.10) ----------
+   Każdy telefon odświeża listę co 15 s; zapis stanu i katalogu do pamięci przy każdym odczycie brał w wolnych
+   odczytach 0,2–1,8 s, także gdy nic się nie zmieniło. Teraz wpis z tym samym znacznikiem i stanem zostaje. */
+(function(){
+  console.log('B73: odczyt listy wkłada do pamięci tylko to, co się zmieniło — bez zmian jedno wywołanie pamięci, bez zapisu');
+  const D = '2026-08-04';
+  const env = build([{id:1, name:'Borys'}, {id:2, name:'Luna'}], { walks: [] });
+  const bootOf = () => JSON.parse(env.html.evaluated[env.html.evaluated.length - 1].boot);
+  const opsOf = fn => { const i = env.cache.ops.length; const r = fn(); return { r, ops: env.cache.ops.slice(i) }; };
+  const puts = ops => ops.filter(o => o.op === 'put').map(o => o.keys.map(k => k.replace(env.conf.CACHE_PREFIX, '')).sort().join('+'));
+  env.api.getData();
+  env.api.reserve(1, 'Ola', D, 1);
+  env.api.getData();                                 // stan po zapisie już w pamięci
+  const same = opsOf(() => env.api.getData());
+  check('nic się nie zmieniło: odczyt listy bez zapisu do pamięci', puts(same.ops).length === 0, JSON.stringify(same.ops));
+  check('...i jedno wywołanie pamięci (znaczniki i wpisy razem)', same.ops.length === 1 && same.ops[0].op === 'get', JSON.stringify(same.ops));
+  env.api.doGet();
+  check('...a strona dalej otwiera się z pamięci, z tym stanem', bootOf().cached === true
+    && bootOf().slots.some(s => s.dogId === 1 && s.status === 'reserved'));
+
+  env.api.reserve(2, 'Ala', D, 1);
+  const afterWrite = opsOf(() => env.api.getData());
+  check('po rezerwacji: nowy stan do pamięci, katalog (psy bez zmian) zostaje', puts(afterWrite.ops).join() === 'boot', puts(afterWrite.ops).join());
+  env.api.doGet();
+  check('...strona z pamięci widzi rezerwację', bootOf().cached === true && bootOf().slots.some(s => s.dogId === 2 && s.who === 'Ala'));
+
+  env.sheets['Psy']._data[1][1] = 'Borys II';        // ręczna zmiana w Arkuszach Google — znacznik bez zmian
+  const manual = opsOf(() => env.api.getData());
+  check('ręczna zmiana arkusza: stan i katalog do pamięci (inny stan, ten sam znacznik)', puts(manual.ops).join() === 'boot+dogs', puts(manual.ops).join());
+  env.api.doGet();
+  check('...strona i akcje widzą nowe imię', bootOf().cached === true && bootOf().dogs[0].name === 'Borys II'
+    && env.api.reserve(1, 'Ola', D, 1).dog.name === 'Borys II');
+
+  env.api.getData();
+  delete env.cache.store[cacheKey(env, 'BOOT')];     // Google wyrzucił wpis
+  const evicted = opsOf(() => env.api.getData());
+  check('wpis wyrzucony z pamięci: odczyt listy wkłada go z powrotem', puts(evicted.ops).join() === 'boot', puts(evicted.ops).join());
+  env.setNow('2026-08-04T19:30:00+02:00');           // ponad 6 h bez zapisu — znaczniki i wpisy wygasły
+  const expired = opsOf(() => env.api.getData());
+  env.api.doGet();
+  check('wszystko wygasło: nowe znaczniki i wpisy, strona znów z pamięci', puts(expired.ops).some(p => /boot/.test(p))
+    && bootOf().cached === true, puts(expired.ops).join(' | '));
 })();
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');

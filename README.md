@@ -635,7 +635,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   (właściciel wybrał je z czterech):
   - **Otwarcie strony bez arkusza.** Stan startowy idzie z pamięci podręcznej Google (`CacheService`), dopóki od
     jego zapisania nikt nic nie zapisał i dzień się nie zmienił — wtedy strona nie czeka na arkusz ani na jego
-    przestoje. Taki stan jest oznaczony, a telefon od razu dociąga świeży. Pamięć odświeża każdy odczyt listy.
+    przestoje. Taki stan jest oznaczony, a telefon od razu dociąga świeży. Odczyt listy dokłada do pamięci tylko to,
+    co się zmieniło (po teście wydania 13.10 — zapis przy każdym odświeżeniu potrafił brać 1–2 s).
   - **Krótsza praca zapisu pod blokadą.** Rezerwacja, „Wrócił ✓", „Zwolnij", „Bierze G7" i spacer grupowy biorą psa
     z katalogu w tej samej pamięci (zmiana psa w panelu ją unieważnia), a kolory wolontariuszy czytają raz: pod
     blokadą 6 wywołań arkusza zamiast 11. Kolejne zapisy czekają krócej, a przestój Google rzadziej trafia pod blokadę.

@@ -146,5 +146,6 @@ mierzony bez warunku cichego okna (zwykły ruch testu).
 **13.10 — `getData` ponad progiem** (+27% wobec 1,73 s, w obu cichych oknach). Kod `getData` taki sam jak w @33.
 `reportDiag` (bez zmian od 1.2) szedł 0,72 s wobec ok. 0,5 s 9.10, czyli Google był tego dnia wolniejszy. Ale Dziennik
 spowolnień w wolnych odczytach pokazuje nowy krok 1.4 „pamięć" (odczyt znaczników i zapis stanu do `CacheService`):
-0,2 / 1,0 / 1,5 / 1,8 s w czterech wpisach. Rozstrzygnięcie i ewentualna zmiana — decyzja właściciela (CLAUDE.md, „Stan").
+0,2 / 1,0 / 1,5 / 1,8 s w czterech wpisach. **Decyzja właściciela 23.10: poprawka przed wydaniem** — odczyt listy
+wkłada do pamięci tylko zmiany (B73); test wydania od nowa, na wersji z poprawką.
 Jedno otwarcie strony z 110 s (17:06:45) bez wpisu w Dzienniku — przestój Google przed naszym kodem.
