@@ -236,3 +236,13 @@ const DIAG_SLOW_MS = 3000;
 const DIAG_KEEP = 30;
 const DIAG_BYTES = 8000;
 const DIAG_REPORT_MAX = 10;
+
+/**
+ * Pamięć podręczna Google (CacheService, 1.4) — katalog psów dla akcji pod blokadą i stan startowy
+ * strony (opis: „PAMIĘĆ PODRĘCZNA" w Utils.gs). CACHE_PREFIX — zmiana kształtu wpisów w przyszłej
+ * wersji = nowy przedrostek, żeby nowy kod nie czytał starych wpisów. CACHE_TTL_S — najdłużej, ile
+ * Google pozwala (6 h): o poprawności decydują znaczniki pokolenia, nie czas.
+ */
+const CACHE_PREFIX = 'g13c1:';
+const CACHE_TTL_S = 21600;
+const CACHE_KEY = { GEN: 'gen', DOGS_GEN: 'genDogs', DOGS: 'dogs', BOOT: 'boot' };

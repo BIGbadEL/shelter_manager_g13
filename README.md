@@ -22,6 +22,8 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Script.html` | logika interfejsu |
 | `tests/` | harness jsdom (`scenarios`…`scenarios17`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
+| `RELEASE.md` | test wydania przed mergem do `main`: pomiar (czy nic nie zwolniło) i test funkcjonalny w Chrome, historia pomiarów |
+| `scripts/` | `warmup.js` (otwarcie aplikacji po wdrożeniu), `perf.js` (sonda otwierania strony testu), `executions.js` (Wykonania w oknie czasu) — nie jadą do Apps Script |
 
 Zakładki arkusza (tworzy je `setup()`):
 - **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
@@ -86,11 +88,18 @@ od razu wdrożenie na produkcję** z aktualnego `main` — tak, żeby na produkc
 dokładnie to, co na `main`. Gałęzie `release/…` zostają po wydaniu jako ślad tego, co poszło
 na produkcję.
 
+**Przed mergem — test wydania** (`RELEASE.md`): finalna wersja gałęzi stoi na teście i przechodzi pomiar
+(`npm run perf:test` + Wykonania, porównanie z poprzednim wydaniem) oraz test funkcjonalny w Chrome — nowości
+i ich połączenie z wcześniejszymi funkcjami. Wynik idzie do opisu PR.
+
 ### Wersje
 
 Numer `1.X.Y`: **X** rośnie przy dużych zmianach; **Y** — przy drobnych poprawkach i błędach
 w tym, czego dotyczyło ostatnie X. Wolontariuszy informujemy wtedy, gdy trzeba — niezależnie od
-numeru. Wersja jest też w `package.json`.
+numeru. Wersja jest też w `package.json`, przy nazwie „Spacery" w aplikacji i — od 1.4 — na liście
+„Co nowego" (`WHATS_NEW` w `Script.html`): **każde wydanie dopisuje tam wpis na górze, z datą wdrożenia,
+przed `deploy:prod`** — po ludzku i krótko, co widać na ekranie, osobno „W panelu admina". Test T6
+pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę.
 
 | wersja | co | gałąź | wdrożenie |
 |---|---|---|---|
@@ -100,6 +109,7 @@ numeru. Wersja jest też w `package.json`.
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) = `main` | @21, 2026-10-09 |
+| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą | `release/1.3.1` | w przygotowaniu |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -204,7 +214,8 @@ i sprawdzasz na żywo, na prawdziwym urządzeniu i prawdziwym zasięgu.
 npm run deploy:prod
 ```
 
-To samo na produkcji, dopiero gdy test wypadł dobrze. Oba wdrożenia są wersjonowane
+To samo na produkcji, dopiero gdy test wypadł dobrze — telefon i test wydania (`RELEASE.md`,
+`npm run perf:test` mierzy otwieranie strony testu). Oba wdrożenia są wersjonowane
 osobno, więc produkcja nie zmienia się ani o krok, dopóki sam jej nie ruszysz.
 
 Na nowej maszynie wystarczy odtworzyć dwa pliki projektu (`.clasp.json`, `.clasp.test.json` —
@@ -371,6 +382,13 @@ Co wolontariusze zapisali na nowej wersji, zostaje tylko w odłożonej zakładce
 układ)` — w razie potrzeby trzeba to przepisać ręcznie. Ponowne wdrożenie nowej wersji przepisze
 przywróconą zakładkę od nowa, znów z kopią: znacznik `walksLayout` pamięta id zakładki (`2:<id>`),
 więc podmiana zakładki nie przejdzie niezauważona i nowa wersja nie przeczyta starego układu jak nowego.
+
+**Pamięć podręczna (od 1.4) przy cofnięciu i ponownym wdrożeniu.** Wersja sprzed 1.4 pamięci nie czyta,
+więc samo cofnięcie niczego nie wymaga. Ale jej zapisy nie wymieniają znaczników, a wpisy żyją do 6 h — gdy
+1.4 wróci w ciągu 6 h od cofnięcia, wpisy sprzed cofnięcia byłyby dla niej znów ważne, choć arkusz się zmienił
+(stan startowy telefon i tak od razu odświeża, ale katalog dla akcji byłby stary do najbliższego odczytu listy:
+pies dodany w czasie cofnięcia przez kilka sekund nie dałby się zarezerwować). **Przed ponownym wdrożeniem 1.4
+w ciągu 6 h od cofnięcia uruchom z edytora `migrate()`** (wymienia znaczniki) albo odczekaj 6 h (review PR #7).
 
 **Projekt bez wersji z datami** (produkcja przed pierwszym wdrożeniem dat — nie ma zakładki Spacery):
 nowa wersja zakłada zakładkę od razu w nowym układzie, kopii nie ma czego robić. Poprzednia wersja
@@ -602,6 +620,34 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.4 — w przygotowaniu
+
+- **„Co nowego?"** — numer wersji przy „Spacery" jest przyciskiem (kapsułka „v1.4 · Co nowego?"). Otwiera
+  na cały ekran listę zmian wszystkich wersji, od najnowszej: krótko i po ludzku, co widać na ekranie,
+  a pod „W panelu admina" zmiany w trybie edycji. Wersja A z czterech makiet — na górze strony nic
+  nie dochodzi.
+- **Pasek „✨ Nowa wersja … — zobacz, co się zmieniło"** pod nagłówkiem, raz na telefon: znika po „Zobacz"
+  albo ✕ i wraca przy następnej wersji. Telefon bez pamięci przeglądarki (tryb prywatny) go nie pokazuje —
+  wisiałby przy każdym otwarciu; przycisk działa i tam.
+- **Opóźnienia — pomiar 9.10.2026** (CLAUDE.md, „Pomiar opóźnień"): całe opóźnienie siedzi w wykonaniu na serwerze,
+  a pojedyncze wywołanie arkusza potrafi stanąć (raz 351 s); każdy zapis trzymał blokadę ~2 s. Dwie zmiany
+  (właściciel wybrał je z czterech):
+  - **Otwarcie strony bez arkusza.** Stan startowy idzie z pamięci podręcznej Google (`CacheService`), dopóki od
+    jego zapisania nikt nic nie zapisał i dzień się nie zmienił — wtedy strona nie czeka na arkusz ani na jego
+    przestoje. Taki stan jest oznaczony, a telefon od razu dociąga świeży. Odczyt listy dokłada do pamięci tylko to,
+    co się zmieniło (po teście wydania 13.10 — zapis przy każdym odświeżeniu potrafił brać 1–2 s).
+  - **Krótsza praca zapisu pod blokadą.** Rezerwacja, „Wrócił ✓", „Zwolnij", „Bierze G7" i spacer grupowy biorą psa
+    z katalogu w tej samej pamięci (zmiana psa w panelu ją unieważnia), a kolory wolontariuszy czytają raz: pod
+    blokadą 6 wywołań arkusza zamiast 11. Kolejne zapisy czekają krócej, a przestój Google rzadziej trafia pod blokadę.
+  - Poprawności pilnują znaczniki pokolenia wymieniane przez każdy zapis — nic sprzed zapisu nie zostanie użyte;
+    każdy błąd pamięci = arkusz, jak dotąd. Arkusz bez zmian, nowych uprawnień brak. Ręczna zmiana w arkuszu
+    (np. liczba spacerów psa wpisana w Arkuszach Google) dociera do akcji od najbliższego odczytu listy.
+  - Cofnięcie do 1.3 i ponowne wdrożenie 1.4 w ciągu 6 h: najpierw `migrate()` z edytora (*Cofnięcie wdrożenia*).
+- **Test wydania** przed mergem (`RELEASE.md`): pomiar na teście (`npm run perf:test` + Wykonania) i test
+  funkcjonalny w Chrome — od 1.4 stały krok każdego wydania.
+- Numer: 1.4, nie 1.3.1 — nowa funkcja i przebudowa odczytów to nie poprawki 1.3 (review PR #7, decyzja
+  właściciela). Gałąź została pod nazwą `release/1.3.1` (z niej PR #7).
 
 ### 1.3 — wdrożone 2026-10-09 (@21)
 

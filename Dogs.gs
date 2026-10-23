@@ -49,9 +49,23 @@ function readDogCatalog_() {
     .map(r => mapDogRow_(r, teamCol));
 }
 
-/** Wiersz psa po numerze wiersza — jeden odczyt zakresu. */
-function readDogRow_(sh, row) {
-  return sh.getRange(row, 1, 1, dogWidth_(sh)).getValues()[0];
+/**
+ * Katalog dla akcji na spacerach pod blokadą (1.4) — z pamięci podręcznej, dopóki nikt nie zmienił
+ * psów (znacznik katalogu, cacheBump_ w Utils.gs). Dawniej każda rezerwacja czytała tu arkusz
+ * (~5 wywołań) i przez ten czas trzymała blokadę wszystkim. Pod blokadą nikt nie zapisze między
+ * odczytem a włożeniem, więc brakujący znacznik zakładamy na miejscu. Tylko tam, gdzie praca pod
+ * blokadą psów nie zmienia (lockKeepsDogs_) — po zmianie katalogu w tej samej blokadzie byłby stary.
+ */
+function catalogLocked_() {
+  const c = cacheGet_([CACHE_KEY.DOGS_GEN, CACHE_KEY.DOGS]);
+  const hit = cacheSigned_(c[CACHE_KEY.DOGS], c[CACHE_KEY.DOGS_GEN]);
+  if (hit && Array.isArray(hit.list)) return hit.list;
+  const list = readDogCatalog_();
+  const gen = c[CACHE_KEY.DOGS_GEN] || cacheToken_();
+  const put = { [CACHE_KEY.DOGS]: JSON.stringify({ gen: gen, list: list }) };
+  if (!c[CACHE_KEY.DOGS_GEN]) put[CACHE_KEY.DOGS_GEN] = gen;
+  cachePut_(put);
+  return list;
 }
 
 /**
@@ -139,13 +153,6 @@ function teamWritable_(sh, team) {
  */
 function knownTeams_(exceptId) {
   return readDogCatalog_().filter(d => d.team && d.id !== Number(exceptId)).map(d => d.team);
-}
-
-/** Jeden pies z katalogu albo null. */
-function catalogDog_(id) {
-  const sh = ss_().getSheetByName(SHEETS.DOGS);
-  const row = rowById_(sh, id);
-  return row < 0 ? null : mapDogRow_(readDogRow_(sh, row));
 }
 
 /* ---------- SPACERY (zakładka Spacery) ---------- */
@@ -527,13 +534,17 @@ function volAssign_(map, norm, n, max) {
 }
 
 /**
- * Kolory wolontariuszy dnia — świeży odczyt (pod blokadą, przed przydziałem).
+ * Kolory wolontariuszy dnia — świeży odczyt (pod blokadą, przed przydziałem); w tej samej blokadzie
+ * drugi raz z pamięci wykonania (volLock_ w Utils.gs, 1.4 — rezerwacja czytała dwa razy).
  * null = nie udało się odczytać: bez kolorów, ale akcja, która o nie pyta, przechodzi.
  */
 function volunteersOf_(date) {
+  if (lockDepth_ && volLock_ && Object.prototype.hasOwnProperty.call(volLock_, date)) return volLock_[date];
   try {
     const raw = PropertiesService.getScriptProperties().getProperty(PROP_VOL_PREFIX + date);
-    return raw ? JSON.parse(raw) : {};
+    const map = raw ? JSON.parse(raw) : {};
+    if (lockDepth_) (volLock_ = volLock_ || {})[date] = map;
+    return map;
   } catch (e) {
     return null;
   }
@@ -558,6 +569,7 @@ function noteVolunteer_(date, name) {
     if (!Object.prototype.hasOwnProperty.call(map, norm)) return;   // przydział pełny
     setProp_(key, JSON.stringify(map));
   } catch (e) {
+    if (volLock_) delete volLock_[date];      // mapa w pamięci ma już nowe imię, którego nie zapisano
     console.warn('Kolor wolontariusza nie zapisany (' + date + '): ' + e);
   }
 }
@@ -617,10 +629,12 @@ function pickSlot_(dog, slots, slot, fallback) {
  * Wspólny szkielet akcji na spacerze: pod blokadą czyta psa i jego dzień,
  * `choose(dog, slots)` wybiera numer spaceru (0 = nic do zrobienia), `change(s, dog, d)`
  * zmienia spacer (i przez `d` ewentualnie grupę) i mówi, czy jest co zapisać.
+ * Psa bierze z katalogu w pamięci podręcznej (catalogLocked_, 1.4) — katalogu nie rusza.
  */
 function slotAction_(id, date, choose, change) {
   return withLock_(() => {
-    const dog = catalogDog_(id);
+    lockKeepsDogs_ = true;
+    const dog = catalogLocked_().filter(x => x.id === Number(id))[0] || null;
     if (!dog) return { slot: null, dog: null };
     const d = walkDay_(walksSheetLocked_(), date);
     const n = choose(dog, d.slotsOf(id));
@@ -700,9 +714,8 @@ function markTeam(id, date, slot) {
   const a = actionDate_(date);
   return slotAction_(id, a.date,
     (dog, slots) => pickSlot_(dog, slots, slot, count => firstSlot_(slots, count, s => s.status === STATUS.FREE && !s.group)),
-    s => {
+    (s, dog) => {
       if (s.status !== STATUS.FREE || s.group) return false;          // już wzięty, zajęty albo w naszej grupie
-      const dog = readDogCatalog_().filter(x => x.id === Number(id))[0];
       if (!dog || !dog.team) throw new Error('To pies naszej grupy — jego spacer wyprowadzamy my');
       s.status = STATUS.TEAM;
       s.who = dog.team;
@@ -796,8 +809,9 @@ function setGroup(date, ids, gid, seen) {
   if (!g && Number(gid)) throw new Error('Nieprawidłowy numer grupy');   // 1.5, -2 — nie zgadujemy
 
   return withLock_(() => {
+    lockKeepsDogs_ = true;                               // grupa zmienia spacery, nie katalog
     const dogs = {};
-    readDogCatalog_().forEach(x => { dogs[x.id] = x; });
+    catalogLocked_().forEach(x => { dogs[x.id] = x; });
     const d = walkDay_(walksSheetLocked_(), a.date);
     const count = id => slotCount_(dogs[id], d.slotsOf(id));
     const current = id => {

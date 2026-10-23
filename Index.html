@@ -12,7 +12,7 @@
   <header>
     <div class="eyebrow">Grupa G13 · schronisko</div>
     <div class="titlerow">
-      <h1>Spacery <span class="ver">v1.3</span></h1>
+      <h1>Spacery <button class="ver" id="verBtn" type="button"><span class="vernum">v1.4</span> · Co nowego?</button></h1>
       <button class="gear" id="gear" title="Tryb edycji">⚙️</button>
     </div>
     <div class="meta">
@@ -25,6 +25,13 @@
     </div>
     <div class="pinerr hidden" id="pinErr">Zły PIN.</div>
   </header>
+
+  <!-- „Nowa wersja" — raz na telefon, do „Zobacz" albo ✕ (1.4; Script.html: CO NOWEGO) -->
+  <div class="wnbanner hidden" id="wnBanner">
+    <span>✨ <b>Nowa wersja <span id="wnBannerVer"></span></b> — zobacz, co się zmieniło</span>
+    <button class="btn outline" id="wnSee" type="button">Zobacz</button>
+    <button class="wnx" id="wnDismiss" type="button" aria-label="Schowaj">✕</button>
+  </div>
 
   <!-- Strzałki rysujemy sami: znaki ← → każdy telefon bierze ze swojego fontu, często
        z różnymi marginesami, i wtedy para wygląda krzywo. Prawa to dokładne lustro lewej. -->
@@ -43,6 +50,14 @@
   </div>
 
   <div id="view"><div class="empty">Ładowanie…</div></div>
+
+  <!-- „Co nowego" — lista zmian, najnowsza wersja na górze; treść rysuje openWhatsNew -->
+  <div class="wn hidden" id="whatsNew" role="dialog" aria-modal="true" aria-labelledby="wnTitle">
+    <div class="wn-in">
+      <div class="wn-head"><h2 id="wnTitle">Co nowego</h2><button class="btn outline" id="wnClose" type="button">Zamknij</button></div>
+      <div id="wnList"></div>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
