@@ -142,6 +142,20 @@ mierzony bez warunku cichego okna (zwykły ruch testu).
 | 1.3 | 9.10.2026 | @31–@32 (1.3 + „Co nowego") | 2,20 / 3,14 s / 13 | 1,75 s | 1,69 s | 1,9 / 3,7 / 5,7 s |
 | 1.4 (przed testem wydania) | 9.10.2026, 17:32 | @33 | 1,23 / 1,70 s / 3 | 0,79 s | 1,73 s | 1,8 / 2,8 / 2,8 s |
 | 1.4 (pierwszy test wydania) | 13.10.2026, 17:04–18:10 | @34 | 1,22 / 1,87 s / 2 | 0,81 s | **2,20 s** (cicho, n=30; powtórka 18:00: 2,22 s, n=28) | 2,0 / 2,8 / 4,2 s |
+| **1.4 (test wydania z poprawką B73)** | 23.10.2026, 18:00–18:27 | @37 | 1,05 / 1,67 s / 0 | 0,74 s | 1,78 s (cicho, n=40; 90% 2,23 s) | 1,4 / 2,2 / 2,8 s |
+
+**23.10 — w normie.** Wobec 1.3: strona −52%, `doGet` −58%, `getData` +5% (próg 15%), trzy rezerwacje naraz krócej.
+Wobec 13.10 `getData` −19% (90%: 3,47 → 2,23 s). Dziennik spowolnień bez ani jednego wpisu z testu (nic ≥3 s w naszym
+kodzie). Zapisy w teście funkcjonalnym (Wykonania): `reserve` 2,2 s, `markWalked` 1,8 s, `setFree` 1,8 s (mediany).
+Test w Chrome bez błędów:
+- zmiana psa w panelu (notatka, 2 spacery) widoczna od razu u wolontariusza, rezerwacja 2/2 przyjęta;
+- świeże otwarcie strony z pamięci ze zmianą i rezerwacją, po przywróceniu psa — od razu przywrócony;
+- rezerwacja, „Wrócił ✓", „Cofnij", 1/2 i 2/2, jutro (rezerwacja, „Bierze TTB"), trzy naraz, miniony dzień;
+- „Co nowego" (1.4 bez kolorów trudności, „nowa"), plakietki i legenda jak w 1.3, Panel.
+
+Pominięte: „Skopiuj treść" (schowek właściciela, kod bez zmian od 13.10), dodanie i usunięcie psa oraz zadania
+(okienka potwierdzenia; właściciel był poza komputerem) — zamiast tego zmiana i przywrócenie istniejącego psa.
+Spacer grupowy — na telefonie.
 
 **13.10 — `getData` ponad progiem** (+27% wobec 1,73 s, w obu cichych oknach). **Zamknięte 23.10 — właściciel
 zna wynik i akceptuje rozwiązanie: poprawka B73 przed wydaniem, potem test wydania od nowa.** Kod `getData` taki sam jak w @33.
