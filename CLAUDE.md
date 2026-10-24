@@ -32,12 +32,14 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | WhatsApp (bramka Green API): ankieta tygodniowa (ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel) i lista dnia do prowadzącej po nocnym czyszczeniu (1.3) |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
+| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): kolejka powiadomień bramki → ankiety, głosy, czat → wiadomości PRYWATNIE do właściciela (`helperTick` co 10 min), panel, pytania w prywatnym czacie |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
 | `scripts/perf.js` / `scripts/executions.js` | test wydania: sonda otwierania strony testu (`npm run perf:test`) / Wykonania w oknie czasu (wkleja Claude in Chrome na stronie Wykonań) |
 | `SORTING.md` | **model spacerów, kafelków i kolejności listy** — czytaj przed każdą zmianą sortowania |
 | `RELEASE.md` | **test wydania** (pomiar + test funkcjonalny w Chrome, progi, lista, historia pomiarów) — przed każdym mergem do `main` |
+| `HELPER.md` | **pomocnik Grafiku** — co dzieje się w „Grafiku" (eksport czatu), funkcje, jak bot czyta grupę, bezpieczniki, co sprawdzić na teście |
 
 **Nazwy plików HTML w Apps Script muszą brzmieć dokładnie `Index`, `Styles`, `Script`** —
 `include()` odwołuje się do nich po nazwie.
@@ -293,6 +295,24 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
   Panel: `getDiagnostics().diag`. Bez imion i treści.
+- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B80, S145; decyzja właściciela 24.10.2026:
+  „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
+  bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
+  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, zmiany w ankiecie (netto,
+  po `HELPER_QUIET_MIN` ciszy), przegląd tygodnia, nowa ankieta, nowe osoby, miniony tydzień, pogoda, odpowiedzi na
+  pytania w prywatnym czacie. Każda funkcja ma włącznik (`features`). **Na czas testów pisze TYLKO prywatnie** — adres
+  grupy jako odbiorcę odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`) i wysyłka (`helperSend_`, B74);
+  **nie dokładaj wysyłki do grupy bez decyzji właściciela**. `helperTick` jest publiczne (wyzwalacz), więc nic nie
+  przyjmuje; raporty mają znaczniki „wysłany" (`helperOnce_`), sufity `HELPER_SEND_MAX` / `HELPER_DAY_MAX`, jeden
+  przebieg naraz (`helperBusy`). Pomocnik nie pisze do arkusza i nie bierze `withLock_` (stan we właściwościach, każda
+  część ≤ `HELPER_BYTES`; arkusz czyta leniwie, tylko gdy składa raport — `helperCtx_`); błąd bramki zostaje w jego
+  dzienniku (panel), wyzwalacz nie rzuca. **Kolejka jest jedna na instancję, a test i produkcja dzielą instancję —
+  włączony tylko w jednym środowisku.** Głosy: powiadomienie dotyczy jednej osoby (dokumentacja bramki) — jedna
+  w odpowiedziach = jej wybory, nikt = wycofała wszystko, dwie i więcej = pełny stan; numer głosującego bywa w innym
+  formacie niż nadawcy (`@lid`) — `alias`. Ankieta sprzed włączenia poznana z głosu = `partial` (starszych głosów
+  bramka nie odda). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
+  („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. Czat (`helperDayRefs_`, `helperKind_`, `helperAbsence_`)
+  to heurystyka na eksporcie z 16.03–24.10 — cytaty idą do wiadomości w całości, więc pomyłka rodzaju nie ukrywa treści.
 - **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
   katalogu z grupą (`team` w `getData`, kolumna `grupa_psa`). `addDog(data…)` i `updateDog(id, data…)`
   przyjmują `data.team`; **brak pola (karta sprzed 1.3) = grupa zostaje, jaka była** — inaczej stara karta
@@ -562,7 +582,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1723 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1855 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -585,7 +605,10 @@ ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({
 spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
-serwera) też.
+serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku) — S145c czeka na skrócony `T.helperWait`.
+**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B80): bramka na niby z kolejką jak
+prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
+żadna wiadomość ze wszystkich scenariuszy nie poszła do grupy.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -622,7 +645,7 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
   `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51). `env.http` to
   `UrlFetchApp` na niby: `http.calls` (adres, opcje) i `http.handler(url, opts)` → `{code, body}`
-  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_nearMinute`, `_tz` (B57).
+  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_everyMinutes` (B74), `_nearMinute`, `_tz` (B57).
   **`env.cost`** — koszt usług w ms przy zamrożonym zegarze: `read[zakładka]` (każde `getValues`),
   `waitLock` (`lockFail` — blokada rzuca), `flush`, `template`, `evaluate`; `env.now()`, `env.html.evaluated`
   (szablony z `doGet`: `boot`, `served`). Uwaga: pusta zakładka nie woła `getValues` — koszt jej odczytu
@@ -683,7 +706,10 @@ dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do
 (serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.4), S142 pasek
 „Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska), S143 stan startowy z pamięci
-serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu),
+serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu), S144 „OK" przy imieniu w polu 2/2
+w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px), S145 panel pomocnika Grafiku (grupa i kontakt
+z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
+reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -726,6 +752,8 @@ bez arkusza (stan z pamięci bez ani jednego wywołania arkusza; zapis, zapis w 
 nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, awarie, wpis ponad 100 KB),
 B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
 ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
+B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, czat i nieobecności,
+skład dnia wieczorem i rano, zmiany w ankiecie po ciszy, przegląd tygodnia / skład grupy / pytania / sufity / panel),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1010,6 +1038,16 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   pierwszym czyszczeniu na 1.4 (24.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; przez dzień–dwa Dziennik spowolnień
   i Wykonania produkcji (otwarcie strony, odczyt listy). Kolory trudności i zgłaszanie spacerów formularzem schroniska
   (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania.
+- **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
+  ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
+  testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie
+  wiadomości prywatnie do właściciela, na podstawie prawdziwego „Grafiku". Na produkcji wyłączony (domyślnie). **Do zrobienia
+  przez właściciela przed testem:** w konsoli Green API powiadomienia przychodzące, o ankietach i o wiadomościach wysłanych
+  (API i telefon), pusty adres webhooka (panel → „Sprawdź bramkę"); potem w panelu TESTU grupa „Grafik", kontakt, „włączony".
+  **Do sprawdzenia w pierwszych dniach** (HELPER.md): czy przychodzą głosy na ankietę z produkcji, format numerów (`@c.us`
+  / `@lid`), czy powiadomienie o głosie ma jedną osobę czy pełny stan, które wiadomości to szum. Pełny obraz głosów — od
+  ankiety z niedzieli 25.10 (prod, „Grafik 26.10-01.11"), jeśli pomocnik ruszy przed nią. Limit planu Developer dotyczy też
+  odbierania (3 czaty w miesiącu) — w październiku „Grafik" i właściciel są w trójce.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,

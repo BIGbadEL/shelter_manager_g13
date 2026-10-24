@@ -198,6 +198,43 @@ const POLL_LIMITS = { QUESTION: 200, OPTION: 100, OPTIONS_MIN: 2, OPTIONS_MAX: 1
  */
 const POLL_WINDOW_H = 3;
 
+/**
+ * Pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) — bot czyta grupę „Grafik" (ankieta i czat)
+ * i pisze PRYWATNIE do właściciela: skład dnia, zmiany w ankiecie, przegląd tygodnia… Wyłączony, dopóki
+ * prowadząca go nie włączy. `features` — włącznik każdej funkcji (panel). min — ilu osób trzeba na dzień
+ * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
+ * weekDays — dni przeglądu tygodnia (0 = niedziela), purple / rookies — imiona fioletowych i nowych,
+ * names — imiona dla numerów bez nazwy („…123 = Ania").
+ */
+const DEFAULT_HELPER = {
+  enabled: false, chatId: '', chatName: '', toId: '', toName: '',
+  min: 3, evening: 20, morning: 7, weekDays: [0, 3], purple: '', rookies: '', names: '',
+  features: { evening: true, eveningAlways: true, morning: true, changes: true, week: true, newPoll: true,
+              members: true, lastWeek: true, weather: true, commands: true },
+};
+const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
+/**
+ * Sufity pomocnika. Właściwość ma limit 9 KB na wartość — każda część stanu najwyżej HELPER_BYTES bajtów,
+ * listy najwyżej tyle pozycji. NAMES / NAME_MAP — pola panelu (te same liczby w Script.html — S145),
+ * TEXT — cytat z czatu, MESSAGE — długość wiadomości, DAY_NOTES — cytatów w składzie dnia, CMDS — pytań na przebieg.
+ */
+const HELPER_LIMITS = { MIN_MAX: 10, NAMES: 300, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, NOTES: 40, GONE: 40, ABS: 20,
+                        SEEN: 60, LOG: 30, PANEL_LOG: 15, TEXT: 160, DAY_NOTES: 8, CMDS: 3, MESSAGE: 3500 };
+const HELPER_BYTES = 8000;
+const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps Script: 1, 5, 10, 15 albo 30)
+const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)
+const HELPER_MAX_EVENTS = 40;        // powiadomień na przebieg
+const HELPER_INTAKE_MS = 150000;     // najdłużej tyle czytamy kolejkę w jednym przebiegu
+const HELPER_QUIET_MIN = 15;         // zmiany w ankiecie idą, gdy przez tyle minut nic się nie zmieniło
+const HELPER_CHANGE_DAYS = 3;        // zmiany: dziś, jutro, pojutrze
+const HELPER_WINDOW_H = 3;           // wiadomość o swojej porze najpóźniej tyle godzin po niej
+const HELPER_SEND_MAX = 6;           // wiadomości na przebieg
+const HELPER_DAY_MAX = 25;           // wiadomości na dzień
+const HELPER_BUSY_MS = 8 * 60000;    // znacznik „pracuję" starszy niż to = przebieg ubity, można dalej
+const HELPER_HIST_DAYS = 60;         // Historia: kto ostatnio chodził z psem dla wyznaczonych osób
+const HELPER_HEAT = 28;              // od tylu °C — „upał"
+const HELPER_WEATHER = { LAT: 52.17, LON: 20.95 };   // okolice schroniska Na Paluchu (Open-Meteo)
+
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
 

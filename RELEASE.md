@@ -94,7 +94,8 @@ Kolejność:
   - konsola strony bez błędów.
 - [ ] **Rezerwacja z imieniem:** kafelek zarezerwowany, kolor osoby, potem „Zwolnij".
 - [ ] **„Wrócił ✓"**, potem „Cofnij".
-- [ ] **Pies na dwa spacery:** 1/2 i 2/2 osobno (rezerwacja, spacer, cofnięcie).
+- [ ] **Pies na dwa spacery:** 1/2 i 2/2 osobno (rezerwacja, spacer, cofnięcie); pole „Twoje imię" w 1/2 i 2/2
+  z „OK" w ramce pola przy 360 px (od 1.5).
 - [ ] **Strzałka na jutro:** rezerwacja z wyprzedzeniem, powrót na dziś.
 - [ ] **Trzy rezerwacje naraz** (pomiar c): każda zapisana, lista się nie rozjeżdża.
 - [ ] **Spacer grupowy** — na telefonie (Chrome nie umie przytrzymać: przeciągnięcie w miejscu trwa krócej
@@ -119,7 +120,8 @@ PIN wpisuje właściciel.
 - [ ] **Panel:**
   - liczniki, Dziennik spowolnień;
   - ustawienia maila (bez zapisu);
-  - WhatsApp: stan konta, bez wysyłek.
+  - WhatsApp: stan konta, bez wysyłek;
+  - pomocnik Grafiku (od 1.5): stan, „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu.
 - [ ] **Sprzątanie:** usunięcie psa próbnego i zadań, wyjście z trybu edycji.
 
 ## 3. Wynik

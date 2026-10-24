@@ -132,7 +132,7 @@ function applyTextFormats_() {
  * Przy okazji przywraca wyzwalacz ankiety tygodniowej z zapisanych ustawień (Poll.gs) — po tej
  * jednej funkcji z edytora wszystkie wyzwalacze są na miejscu. Zgody na połączenie z bramką
  * WhatsAppa NIE daje (z bramką się nie łączy, a edytor pyta tylko o to, czego wykonanie
- * potrzebuje) — do tego authorizeWhatsApp().
+ * potrzebuje) — do tego authorizeWhatsApp(). Tak samo wyzwalacz pomocnika Grafiku (Helper.gs, 1.5).
  */
 function installTriggers() {
   ScriptApp.getProjectTriggers()
@@ -147,4 +147,5 @@ function installTriggers() {
     .create();
 
   installPollTrigger_(pollSettings_());
+  installHelperTrigger_(helperSettings_());
 }

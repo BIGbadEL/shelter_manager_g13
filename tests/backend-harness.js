@@ -6,7 +6,7 @@ const vm = require('vm');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs','Diag.gs'];
+const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs','Diag.gs','Helper.gs'];
 
 /* ---------- atrapa arkusza ---------- */
 let sheetSeq = 0;
@@ -241,12 +241,13 @@ function makeContext(opts){
       getProjectTriggers: ()=>triggers.slice(),
       deleteTrigger: t => { const i = triggers.indexOf(t); if(i>=0) triggers.splice(i,1); },
       newTrigger(fn){
-        const t = { _fn: fn, _hour: null, _weekDay: null, _everyWeeks: null, _everyDays: null, _nearMinute: null, _tz: null,
+        const t = { _fn: fn, _hour: null, _weekDay: null, _everyWeeks: null, _everyDays: null, _everyMinutes: null, _nearMinute: null, _tz: null,
                     getHandlerFunction: ()=>fn };
         const b = {
           timeBased: ()=>b,
           everyDays(n){ t._everyDays = n; return b; },
           everyWeeks(n){ t._everyWeeks = n; return b; },
+          everyMinutes(n){ t._everyMinutes = n; return b; },
           onWeekDay(d){ t._weekDay = d; return b; },
           nearMinute(m){ t._nearMinute = m; return b; },
           inTimezone(z){ t._tz = z; return b; },
@@ -283,11 +284,14 @@ function makeContext(opts){
                           sendWeeklyPoll, pollPanel_, authorizeWhatsApp, getPollState,
                           doGet, reportDiag, diagServer_, diagBytes_, diagCaller_, dogTeam_, markTeam,
                           setDayReportSettings, getDayReportContacts, sendDayReportNow, dayReportText_, dayReportPanel_,
-                          catalogLocked_, bootState_, cacheBump_ };
+                          catalogLocked_, bootState_, cacheBump_,
+                          setHelperSettings, helperSettings_, helperTick, helperRunNow, helperPreview, getHelperGateway, helperPanel_,
+                          helperRange_, helperOptDay_, helperDayRefs_, helperKind_, helperAbsence_, helperLoad_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,
-                           CACHE_PREFIX, CACHE_KEY };
+                           CACHE_PREFIX, CACHE_KEY, DEFAULT_HELPER, HELPER_LIMITS, HELPER_FEATURES, HELPER_SEND_MAX, HELPER_DAY_MAX,
+                           HELPER_QUIET_MIN, HELPER_TICK_MIN, HELPER_BYTES };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0;
                                          lockKeepsDogs_ = false; volLock_ = null; };

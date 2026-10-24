@@ -17,12 +17,14 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z rozbiciem na kroki + to, co dosłały telefony (`reportDiag`) — w Panelu |
+| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): bot czyta „Grafik" (ankieta i czat) i pisze prywatnie do właściciela — projekt w `HELPER.md` |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios17`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios21`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`, pomocnik Grafiku — `helper.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 | `RELEASE.md` | test wydania przed mergem do `main`: pomiar (czy nic nie zwolniło) i test funkcjonalny w Chrome, historia pomiarów |
+| `HELPER.md` | pomocnik Grafiku: co dzieje się w „Grafiku" (z eksportu czatu), funkcje, jak bot czyta grupę, bezpieczniki, co sprawdzić na teście |
 | `scripts/` | `warmup.js` (otwarcie aplikacji po wdrożeniu), `perf.js` (sonda otwierania strony testu), `executions.js` (Wykonania w oknie czasu) — nie jadą do Apps Script |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -110,6 +112,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
 | 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) = `main` | @22, 2026-10-23 |
+| 1.5 | (w przygotowaniu) „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów, tylko na teście | `release/1.5` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -558,6 +561,27 @@ wysyłanie po czyszczeniu zostaw wyłączone** (inaczej prowadząca co noc dosta
 testowego), a do próby „Wyślij listę" wybierz **tę samą osobę co na produkcji** — nowy adresat, np. własny
 numer, to czwarty czat. Stan licznika: konsola Green API.
 
+### Pomocnik Grafiku (od 1.5 — faza testów)
+
+Bot czyta grupę „Grafik" (ankietę tygodniową i czat) i pisze **tylko prywatnie** do wybranej osoby: skład
+na jutro, zmiany w ankiecie, przegląd tygodnia, nowa ankieta, nowe osoby, miniony tydzień, odpowiedzi na
+pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decyzje: **`HELPER.md`**. Włączenie (raz):
+
+1. **Konsola Green API → instancja → ustawienia**: włącz powiadomienia o wiadomościach przychodzących,
+   o ankietach i o wiadomościach wysłanych z API i z telefonu; adres webhooka zostaw **pusty**. Panel →
+   „Sprawdź bramkę" pokazuje, czego jeszcze brakuje.
+2. **Tylko w jednym środowisku** (na czas testów — na teście): kolejka powiadomień jest jedna na instancję,
+   a test i produkcja dzielą instancję — dwa czytające zjadałyby sobie powiadomienia.
+3. Panel → „Pomocnik Grafiku (test)": „Pobierz grupy" → „Grafik", „Pobierz kontakty" → do kogo pisać
+   (w fazie testów: właściciel), minimum osób, godziny, „fioletowi" i „nowi", włączniki funkcji, „włączony",
+   „Zapisz". Wyzwalacz `helperTick` (co 10 min) zakłada się sam; `installTriggers()` też go przywraca.
+4. Pełny obraz głosów — od pierwszej ankiety wysłanej po włączeniu (bramka podaje głosy, gdy ktoś coś
+   zmienia; ankieta sprzed włączenia jest oznaczona jako niepełna).
+
+**Limit darmowego planu** dotyczy też odbierania: powiadomienia tylko z 3 czatów w miesiącu. „Grafik"
+i właściciel są już w tej trójce; czat spoza niej pomocnik pomija (`quotaExceeded`). Od 1. dnia miesiąca
+trzy pierwsze czaty, które się odezwą, zajmują limit — jeśli bot jest w innych grupach, warto go z nich wypisać.
+
 Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
 ## Kolejność psów na liście
@@ -620,6 +644,18 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.5 — w przygotowaniu (`release/1.5`)
+
+- **„OK" przy imieniu wychodził poza ramkę pola 2/2** (zgłoszenie z testu, Android, 360 px). Pole „Twoje imię"
+  w układzie flex trzymało domyślną szerokość pola tekstowego (ok. 20 znaków fontu telefonu) i w węższym polu
+  psa na dwa spacery nie mogło się zwęzić. Teraz nie ma własnej szerokości (`width:0`, `min-width:0`) i zajmuje
+  to, co zostaje obok „OK". Pomiar w Chromium 320–412 px, także szerszym fontem: przed — „OK" wystawał do 55 px,
+  po — 0 (S144).
+- **Pomocnik Grafiku — faza testów** (`Helper.gs`, `HELPER.md`, B74–B80, S145): bot czyta „Grafik" i pisze tylko
+  prywatnie do właściciela. Wyłączony, dopóki nie włączy się go w panelu; na produkcję w tej wersji nie jest
+  przewidziany (decyzja właściciela 24.10). `greenCall_` dostał metodę HTTP (DELETE dla `deleteNotification`),
+  a pusta odpowiedź bramki to `null`.
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 

@@ -155,18 +155,19 @@ function greenApi_() {
 
 /**
  * Wywołanie bramki: `method` (sendPoll, getContacts…), `body` — POST z JSON-em, bez niego GET,
- * `query` — dopisek do adresu. Token jest w samym adresie, więc żaden komunikat błędu (także błąd
- * sieci z UrlFetchApp, który potrafi zacytować adres) nie wychodzi z niego nietknięty.
+ * `query` — dopisek do adresu, `http` — inna metoda HTTP ('delete': deleteNotification, pomocnik Grafiku).
+ * Pusta odpowiedź = null (receiveNotification przy pustej kolejce). Token jest w samym adresie, więc żaden
+ * komunikat błędu (także błąd sieci z UrlFetchApp, który potrafi zacytować adres) nie wychodzi z niego nietknięty.
  * Błąd bez odpowiedzi bramki (timeout, zerwane połączenie) ma `unknown = true`: żądanie mogło
  * dojść i zostać wykonane — dla wysyłki to „nie wiadomo", nie „nie wyszła" (review PR #5, runda 2).
  */
-function greenCall_(method, body, query) {
+function greenCall_(method, body, query, http) {
   const g = greenApi_();
   if (!g) throw new Error(GREEN_MISSING);
   if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(g.url)) throw new Error('greenApiUrl musi być adresem https://… z konsoli Green API');
   if (!/^\d+$/.test(g.id)) throw new Error('greenApiInstance to sam numer instancji (idInstance)');
   const hide = s => String(s).split(g.token).join('…');
-  const opts = { method: body ? 'post' : 'get', muteHttpExceptions: true };
+  const opts = { method: http || (body ? 'post' : 'get'), muteHttpExceptions: true };
   if (body) { opts.contentType = 'application/json'; opts.payload = JSON.stringify(body); }
   let res;
   try {
@@ -193,6 +194,7 @@ function greenCall_(method, body, query) {
     if (code >= 500) err.unknown = true;
     throw err;
   }
+  if (!text.trim()) return null;
   try { return JSON.parse(text); } catch (e) { throw new Error('Bramka WhatsAppa: nieczytelna odpowiedź'); }
 }
 

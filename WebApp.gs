@@ -168,16 +168,19 @@ function readState_(parts, keep) {
  * Dane do panelu diagnostycznego (tylko tryb edycji — stąd PIN). `poll` — ankieta tygodniowa
  * (Poll.gs, bez tokenu bramki i bez pytania bramki — stan konta bota idzie osobno, getPollState);
  * jej awaria nie może zabrać panelu, więc wtedy `null`. `diag` — dziennik spowolnień (Diag.gs).
+ * `helper` — pomocnik Grafiku (Helper.gs, 1.5), też bez pytania bramki.
  */
 function getDiagnostics(pin) {
   requirePin_(pin);
   const t = triggerInfo_();
-  let poll = null, dayReport = null;
+  let poll = null, dayReport = null, helper = null;
   try { poll = pollPanel_(); } catch (e) { poll = null; }
   try { dayReport = dayReportPanel_(); } catch (e) { dayReport = null; }
+  try { helper = helperPanel_(); } catch (e) { helper = null; }
   return {
     poll: poll,
     dayReport: dayReport,
+    helper: helper,
     diag: diagLog_(),
     resetHour: resetHour_(),
     triggerInstalled: t.installed,

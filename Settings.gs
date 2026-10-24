@@ -24,6 +24,13 @@ const PROP_POLL_LAST = 'pollLast';             // ostatnia próba wysłania (JSO
 const PROP_DAY_REPORT = 'dayReport';           // lista dnia do prowadzącej na WhatsAppie (JSON, panel) — patrz Poll.gs
 const PROP_DAY_REPORT_SENT = 'dayReportSent';  // wysłane listy {'<dzień>': {at, pending, unknown}} — każdy dzień raz
 const PROP_DAY_REPORT_LAST = 'dayReportLast';  // ostatnia próba wysłania listy (JSON) — do panelu
+const PROP_HELPER = 'helper';                  // pomocnik Grafiku: ustawienia (JSON, panel) — Helper.gs
+const PROP_HELPER_POLLS = 'helperPolls';       // ...ankiety z „Grafiku" i głosy
+const PROP_HELPER_PEOPLE = 'helperPeople';     // ...osoby (numer → nazwa z WhatsAppa) i powiązania numerów
+const PROP_HELPER_NOTES = 'helperNotes';       // ...wiadomości z czatu o najbliższych dniach, nieobecności, wypisania
+const PROP_HELPER_STATE = 'helperState';       // ...znaczniki wysłanych wiadomości, punkt odniesienia zmian, skład grupy
+const PROP_HELPER_LOG = 'helperLog';           // ...dziennik do panelu
+const PROP_HELPER_BUSY = 'helperBusy';         // ...przebieg w toku (znacznik czasu) — jeden naraz
 const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
 const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)
 // Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:

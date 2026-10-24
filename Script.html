@@ -28,11 +28,12 @@
    *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać
    *              (20 s, nie 60 — 1.3: zastój Google dotyka pojedynczego wykonania, równoległe idą po 1,5 s,
    *              więc drugi odczyt prawie zawsze przechodzi; dziennik wykonań produkcji 2–9.10.2026),
-   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle.
+   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle,
+   *   helperWait — przyciski pomocnika Grafiku czekają na odpowiedź najwyżej tyle (przebieg trwa do ~3 min).
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
     diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
-    refresh:15000, readStale:20000, wake:15000 }, window.__G13_TIMING || {});
+    refresh:15000, readStale:20000, wake:15000, helperWait:240000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -62,6 +63,10 @@
     dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatId, chatName, enabled}
     dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{id, name, phone}]; null = jeszcze nie pobrane
     dayReportContactsLoading:false,
+    helperDraft:null,      // pomocnik Grafiku (1.5), niezapisany — kształt jak helperSaved()
+    helperBusy:'',         // przycisk pomocnika w toku: 'run' | 'gate' | 'preview' | 'send' | ''
+    helperGate:null,       // „Sprawdź bramkę": [{key, label, ok}] albo {error}
+    helperPreview:null,    // podgląd wiadomości: {kind, text}
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -485,7 +490,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -1850,7 +1855,7 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}` : '';
+      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}${d && d.helper ? renderHelperBox(d.helper) : ''}` : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -2273,6 +2278,167 @@
   function applyDayReportPanel(panel){
     if(!panel || !state.diag || state.diag.failed) return;
     state.diag.dayReport = panel;
+  }
+
+  /* ---------- pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) ----------
+     Bot czyta „Grafik" (ankieta i czat) i pisze TYLKO prywatnie do wybranej osoby. Ustawienia jak ankieta:
+     szkic w stanie (state.helperDraft), „Niezapisane zmiany", te same reguły co serwer (helperProblem). Grupa
+     i kontakt z tych samych list co ankieta i lista dnia („Pobierz grupy", „Pobierz kontakty"). „Sprawdź teraz",
+     „Sprawdź bramkę" i podgląd idą wprost (nie przez kolejkę): przebieg potrafi trwać ponad 2 minuty. */
+  const HELPER_MIN_MAX = 10;                        // tyle, ile HELPER_LIMITS.MIN_MAX w Config.gs (S145 pilnuje)
+  const HELPER_NAMES_MAX = 300;                     // HELPER_LIMITS.NAMES
+  const HELPER_NAME_MAP_MAX = 600;                  // HELPER_LIMITS.NAME_MAP
+  const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;        // jak na serwerze: tylko prywatny czat
+  const HELPER_FEATURES = [
+    ['evening', 'skład na jutro — wieczorem'], ['eveningAlways', '…codziennie (wyłączone: tylko gdy coś nie gra)'],
+    ['morning', 'dziś rano — gdy coś nie gra'], ['changes', 'zmiany w ankiecie (po 15 min ciszy)'],
+    ['week', 'przegląd tygodnia'], ['newPoll', 'nowa ankieta (daty, przypięcie)'], ['members', 'nowe osoby w grupie'],
+    ['lastWeek', 'miniony tydzień — poniedziałek rano'], ['weather', 'pogoda'], ['commands', 'odpowiedzi na pytania w prywatnym czacie'],
+  ];
+  const HELPER_KINDS = [['jutro', 'jutro'], ['dzis', 'dziś'], ['tydzien', 'tydzień'], ['miniony', 'miniony tydzień'], ['stan', 'stan']];
+  const HELPER_WD = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
+
+  /** Zapisane ustawienia w kształcie formularza. */
+  function helperSaved(){
+    const s = (state.diag && state.diag.helper && state.diag.helper.settings) || {};
+    const f = s.features || {};
+    const features = {};
+    HELPER_FEATURES.forEach(([k]) => { features[k] = f[k] !== false; });
+    return {chatId: s.chatId || '', chatName: s.chatName || '', toId: s.toId || '', toName: s.toName || '',
+            min: Number(s.min) || 3, evening: Number(s.evening) || 0, morning: Number(s.morning) || 0,
+            weekDays: (s.weekDays || []).map(Number).sort(), purple: s.purple || '', rookies: s.rookies || '', names: s.names || '',
+            features, enabled: !!s.enabled};
+  }
+  function helperForm(){ return state.helperDraft || helperSaved(); }
+  function helperDirty(){ return !!state.helperDraft && JSON.stringify(state.helperDraft) !== JSON.stringify(helperSaved()); }
+  /** Te same reguły co helperValid_ / setHelperSettings na serwerze — komunikat od razu. '' = w porządku. */
+  function helperProblem(f, configured){
+    if(f.toId && !HELPER_PRIVATE.test(f.toId)) return 'Na czas testów pomocnik pisze tylko prywatnie — wybierz kontakt z listy';
+    if(!(f.min >= 1 && f.min <= HELPER_MIN_MAX)) return 'Minimum osób: od 1 do ' + HELPER_MIN_MAX;
+    if(String(f.purple).trim().length > HELPER_NAMES_MAX) return 'Fioletowi — najwyżej ' + HELPER_NAMES_MAX + ' znaków';
+    if(String(f.rookies).trim().length > HELPER_NAMES_MAX) return 'Nowi — najwyżej ' + HELPER_NAMES_MAX + ' znaków';
+    if(String(f.names).replace(/\r\n?/g, '\n').trim().length > HELPER_NAME_MAP_MAX) return 'Imiona — najwyżej ' + HELPER_NAME_MAP_MAX + ' znaków';
+    if(f.enabled && !f.chatId) return 'Wybierz grupę „Grafik", zanim włączysz pomocnika';
+    if(f.enabled && !f.toId) return 'Wybierz kontakt, do którego pomocnik ma pisać';
+    if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
+    return '';
+  }
+  /** Pola panelu -> szkic (nazwy grupy i kontaktu z wybranej pozycji). */
+  function readHelperForm(){
+    const el = id => viewEl.querySelector('#' + id);
+    const pick = id => { const s = el(id), o = s && s.selectedIndex >= 0 ? s.options[s.selectedIndex] : null; return {id: s ? s.value : '', name: o && s.value ? (o.dataset.name || o.textContent) : ''}; };
+    const chat = pick('helperChat'), to = pick('helperTo');
+    const features = {};
+    HELPER_FEATURES.forEach(([k]) => { const c = el('helperF_' + k); features[k] = !!(c && c.checked); });
+    const weekDays = [0,1,2,3,4,5,6].filter(n => { const c = el('helperWd' + n); return !!(c && c.checked); });
+    const num = (id, def) => { const x = el(id); return x ? Number(x.value) : def; };
+    const txt = id => { const x = el(id); return x ? x.value : ''; };
+    return {chatId: chat.id, chatName: chat.name, toId: to.id, toName: to.name, min: num('helperMin', 3),
+            evening: num('helperEvening', 20), morning: num('helperMorning', 7), weekDays,
+            purple: txt('helperPurple'), rookies: txt('helperRookies'), names: txt('helperNames'), features,
+            enabled: !!(el('helperEnabled') && el('helperEnabled').checked)};
+  }
+  function showHelperDirty(){
+    const d = helperDirty();
+    viewEl.querySelectorAll('.helperdirty, [data-act="helperReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    invalidateHtml();
+  }
+
+  function renderHelperBox(h){
+    const f = helperForm(), s = h.settings || {};
+    const chats = (state.pollChats || []).slice();
+    if(f.chatId && !chats.some(c => c.id === f.chatId)) chats.unshift({id: f.chatId, name: f.chatName || f.chatId});
+    const chatOpts = (f.chatId ? '' : `<option value="">— wybierz grupę —</option>`)
+      + chats.map(c => `<option value="${esc(c.id)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const people = (state.dayReportContacts || []).slice();
+    if(f.toId && !people.some(c => c.id === f.toId)) people.unshift({id: f.toId, name: f.toName || f.toId, phone: '+' + f.toId.split('@')[0]});
+    const toOpts = (f.toId ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + people.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.toId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    let minOpts = '';
+    for(let n = 1; n <= HELPER_MIN_MAX; n++) minOpts += `<option value="${n}"${n===f.min ? ' selected' : ''}>${n}</option>`;
+    const days = [1,2,3,4,5,6,0].map(n => `<label class="check"><input type="checkbox" id="helperWd${n}"${f.weekDays.indexOf(n) >= 0 ? ' checked' : ''}> ${HELPER_WD[n]}</label>`).join('');
+    const feats = HELPER_FEATURES.map(([k, label]) => `<label class="check"><input type="checkbox" id="helperF_${k}"${f.features[k] ? ' checked' : ''}> ${esc(label)}</label>`).join('');
+    const dirty = helperDirty(), busy = state.helperBusy;
+    const st = h.stat;
+    const status = !h.configured
+      ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona — opis przy ankiecie tygodniowej.</div>`
+      : `<div class="pollstate${s.enabled && h.trigger ? ' ok' : ''}">${s.enabled
+          ? 'Włączony — przebieg co 10 min, pisze do ' + esc(s.toName || s.toId) + (h.trigger ? '' : ' · BRAK wyzwalacza — zapisz jeszcze raz')
+          : 'Wyłączony.'}</div>`;
+    const last = st ? `<div class="hint">Ostatni przebieg: ${esc(diagWhen(st.at))} — powiadomień ${st.events} (z Grafiku ${st.grafik}), wiadomości ${st.sent}${st.err ? '' : '.'}</div>`
+      + (st.err ? `<div class="hint pollerr">Błąd: ${esc(st.err)}</div>` : '') : '';
+    const knows = `<div class="hint">Wie o: ankiet ${h.polls.length}, osób ${h.people}, wiadomości o najbliższych dniach ${h.notes}, nieobecności ${h.abs}, skład grupy ${h.members == null ? '—' : h.members + ' os.'}</div>`;
+    const gate = !state.helperGate ? ''
+      : state.helperGate.error ? `<div class="hint pollerr">Bramka: ${esc(state.helperGate.error)}</div>`
+      : `<div class="helpergate">${state.helperGate.map(g => `<div class="${g.ok ? 'gateok' : 'gatebad'}">${g.ok ? '✓' : '✗'} ${esc(g.label)}</div>`).join('')}</div>`
+        + (state.helperGate.every(g => g.ok) ? '' : `<div class="hint">Brakujące ustawienia włącza się w konsoli Green API (instancja → Ustawienia); zmiana działa po kilku minutach.</div>`);
+    const kinds = HELPER_KINDS.map(([k, label]) => `<button class="btn ghost" data-act="helperPreview" data-kind="${k}"${busy ? ' disabled' : ''}>${label}</button>`).join('');
+    const pv = state.helperPreview;
+    const preview = pv ? `<pre class="helperpre" data-helper-preview>${esc(pv.text)}</pre>
+        <div class="adminrow"><button class="btn outline" data-act="helperSendPreview"${busy ? ' disabled' : ''}>Wyślij mi to na WhatsAppie</button></div>` : '';
+    const polls = h.polls.length ? `<div class="mailfl">Ankiety, które zna</div>` + h.polls.map(p =>
+      `<div class="hint">„${esc(p.q)}" — głosujących ${p.voters}${p.partial ? ' (niepełna: sprzed włączenia pomocnika)' : ''}${p.wrong ? ' · ⚠️ daty w pytaniu' : ''}<br>${esc(p.days)}</div>`).join('') : '';
+    const log = h.log && h.log.length ? `<div class="mailfl">Dziennik pomocnika</div><div class="diag">` + h.log.map(l =>
+      `<div class="diaglog"><div><span>${esc(diagWhen(l.at))}</span> <b>${esc({sent:'wysłane', err:'błąd', warn:'uwaga', in:'z Grafiku'}[l.k] || l.k)}</b>${l.n > 1 ? ' ×' + l.n : ''}</div><div>${esc(l.m)}</div></div>`).join('') + `</div>` : '';
+    return `
+      <div class="panelbox">
+        <h3>Pomocnik Grafiku (test)</h3>
+        <div class="hint">Bot czyta „Grafik" — ankietę i czat — i pisze <b>tylko prywatnie</b> do wybranej osoby: skład na jutro, zmiany
+        w ankiecie, przegląd tygodnia… Włącz go tylko w jednym środowisku: test i produkcja dzielą kolejkę bramki.</div>
+        ${status}${last}${knows}
+        <label class="mailfl" for="helperChat">Grupa „Grafik"</label>
+        <div class="pollchat"><select id="helperChat">${chatOpts}</select>
+          <button class="btn outline" data-act="pollChats"${state.pollChatsLoading ? ' disabled' : ''}>${state.pollChatsLoading ? 'Pobieram…' : 'Pobierz grupy'}</button></div>
+        <label class="mailfl" for="helperTo">Pisze do — kontakt z telefonu bota (tylko prywatnie)</label>
+        <div class="pollchat"><select id="helperTo">${toOpts}</select>
+          <button class="btn outline" data-act="reportContacts"${state.dayReportContactsLoading ? ' disabled' : ''}>${state.dayReportContactsLoading ? 'Pobieram…' : 'Pobierz kontakty'}</button></div>
+        <div class="pollwhen"><label for="helperMin">Minimum osób na dzień</label><select id="helperMin">${minOpts}</select></div>
+        <div class="pollwhen"><label for="helperEvening">Wieczorem o</label><select id="helperEvening">${hourOptions(f.evening)}</select>
+          <label for="helperMorning">rano o</label><select id="helperMorning">${hourOptions(f.morning)}</select></div>
+        <div class="mailfl">Przegląd tygodnia (wieczorem) w</div>
+        <div class="pollchecks days">${days}</div>
+        <label class="mailfl" for="helperPurple">Fioletowi — imiona jak w WhatsAppie, po przecinku</label>
+        <input id="helperPurple" class="mailfield" type="text" maxlength="${HELPER_NAMES_MAX}" value="${esc(f.purple)}">
+        <label class="mailfl" for="helperRookies">Nowi (nie mogą być sami)</label>
+        <input id="helperRookies" class="mailfield" type="text" maxlength="${HELPER_NAMES_MAX}" value="${esc(f.rookies)}">
+        <label class="mailfl" for="helperNames">Imiona dla numerów bez nazwy — „…123 = Ania", każde w linijce</label>
+        <textarea id="helperNames" class="mailtpl" rows="3" maxlength="${HELPER_NAME_MAP_MAX}">${esc(f.names)}</textarea>
+        <div class="mailfl">Co wysyła</div>
+        <div class="pollchecks helperfeat">${feats}</div>
+        <div class="pollchecks"><label class="check"><input type="checkbox" id="helperEnabled"${f.enabled ? ' checked' : ''}> włączony</label></div>
+        <div class="helperdirty${dirty ? '' : ' hidden'}">Niezapisane zmiany — pomocnik działa według zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="helperSave">Zapisz</button>
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="helperReset">Przywróć zapisane</button></div>
+        <div class="adminrow" style="margin-top:8px">
+          <button class="btn outline" data-act="helperGate"${busy ? ' disabled' : ''}>${busy === 'gate' ? 'Sprawdzam…' : 'Sprawdź bramkę'}</button>
+          <button class="btn outline" data-act="helperRun"${busy ? ' disabled' : ''}>${busy === 'run' ? 'Pracuję…' : 'Sprawdź teraz'}</button></div>
+        ${gate}
+        <div class="mailfl">Podgląd wiadomości (z tego, co już wie)</div>
+        <div class="adminrow">${kinds}</div>
+        ${preview}${polls}${log}
+        <div class="hint">„Sprawdź teraz" czyta kolejkę od razu i wysyła to, co właśnie wypada (do 2–3 min). Pytania w prywatnym
+        czacie z botem: „jutro", „dziś", „sobota", „31.10", „tydzień", „nieaktywni", „pomoc" — odpowiedź przy najbliższym przebiegu.</div>
+      </div>`;
+  }
+  function applyHelperPanel(panel){
+    if(!panel || !state.diag || state.diag.failed) return;
+    state.diag.helper = panel;
+  }
+  /**
+   * Wywołanie pomocnika wprost (nie przez kolejkę — przebieg trwa do kilku minut, a kolejka po 12 s uznałaby go
+   * za zgubiony). `busy` blokuje przyciski; gdy odpowiedź nie przyjdzie wcale (bug nr 8) — puszcza po T.helperWait.
+   */
+  function helperCall(busy, fn, args, ok){
+    if(state.helperBusy) return;
+    state.helperBusy = busy;
+    render('nav');
+    let done = false;
+    const end = () => { if(done) return; done = true; state.helperBusy = ''; if(state.view==='diag') safeRender('nav'); };
+    const timer = setTimeout(() => { if(!done){ toast('Pomocnik długo nie odpowiada — sprawdź dziennik za chwilę'); end(); } }, T.helperWait);
+    google.script.run
+      .withSuccessHandler(res => { clearTimeout(timer); if(done) return; try{ ok(res); } finally { end(); } })
+      .withFailureHandler(err => { clearTimeout(timer); if(done) return; toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się'); end(); })
+      [fn](...args);
   }
 
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
@@ -2949,6 +3115,10 @@
   const keepDayReport = e => { if(DAY_REPORT_FIELDS.indexOf(e.target.id) < 0) return; state.dayReportDraft = readDayReportForm(); showDayReportDirty(); };
   viewEl.addEventListener('input', keepDayReport);
   viewEl.addEventListener('change', keepDayReport);
+  // pomocnik Grafiku — szkic w stanie, jak ankieta (wszystkie pola mają id od „helper")
+  const keepHelper = e => { if(!/^helper/.test(e.target.id || '') || !state.diag || !state.diag.helper) return; state.helperDraft = readHelperForm(); showHelperDirty(); };
+  viewEl.addEventListener('input', keepHelper);
+  viewEl.addEventListener('change', keepHelper);
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -3128,6 +3298,44 @@
           setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
         }});
     }
+    if(act==='helperReset'){ state.helperDraft = null; render('nav'); }
+    if(act==='helperSave'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      const f = readHelperForm();
+      const problem = helperProblem(f, h.configured);   // od razu: zapis jest w RETRIABLE (jak ankieta)
+      if(problem){ toast(problem); return; }
+      enqueue('setHelperSettings',[f,state.pin],{key:'helper',reconcile:res=>{
+        applyHelperPanel(res);
+        state.helperDraft = null;
+        toast(res && res.settings && res.settings.enabled ? 'Pomocnik zapisany i włączony — przebieg co 10 min' : 'Pomocnik zapisany', 'ok');
+        safeRender();
+      }});
+    }
+    if(act==='helperGate') helperCall('gate', 'getHelperGateway', [state.pin], list => { state.helperGate = Array.isArray(list) ? list : {error: 'nieczytelna odpowiedź'}; });
+    if(act==='helperRun'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      if(helperDirty()){ toast('Najpierw zapisz zmiany — przebieg idzie według zapisanych ustawień'); return; }
+      if(!h.settings.chatId || !h.settings.toId){ toast('Najpierw wybierz i zapisz grupę i kontakt'); return; }
+      // nie w RETRIABLE i nie przez kolejkę: przebieg wysyła wiadomości i trwa do kilku minut
+      helperCall('run', 'helperRunNow', [state.pin], res => {
+        applyHelperPanel(res && res.panel);
+        const r = res && res.run;
+        toast(r ? 'Przebieg: powiadomień ' + r.events + ', wiadomości ' + r.sent + (r.err ? ' — błąd: ' + r.err : '') : 'Przebieg zrobiony', r && r.err ? '' : 'ok');
+      });
+    }
+    if(act==='helperPreview'){
+      const kind = btn.dataset.kind;
+      helperCall('preview', 'helperPreview', [state.pin, kind], res => { state.helperPreview = {kind, text: String(res && res.text || '')}; });
+    }
+    if(act==='helperSendPreview'){
+      const h = state.diag && state.diag.helper, pv = state.helperPreview;
+      if(!h || !pv) return;
+      if(!h.settings.toId){ toast('Najpierw wybierz i zapisz kontakt'); return; }
+      if(!ask('Wysłać ten podgląd do ' + (h.settings.toName || h.settings.toId) + ' na WhatsAppie?')) return;
+      helperCall('send', 'helperPreview', [state.pin, pv.kind, true], () => { toast('Wysłane do ' + (h.settings.toName || h.settings.toId), 'ok'); });
+    }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
       const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };
@@ -3190,6 +3398,9 @@
    * w Index.html (T5, T6). Pusta data = wersja jeszcze niewydana.
    */
   const WHATS_NEW = [
+    { v: '1.5', date: '', items: [
+        'Pies na dwa spacery: po „Zarezerwuj” w polu 1/2 albo 2/2 przycisk „OK” mieści się w ramce, także na wąskim telefonie.',
+      ] },
     { v: '1.4', date: '23 października 2026', items: [
         'Przycisk „Co nowego” — ta lista: wszystkie zmiany w aplikacji w jednym miejscu, najnowsze na górze.',
         'Strona otwiera się szybciej i nie czeka, gdy Google zwalnia przy arkuszu — lista jest od razu i zaraz się odświeża.',

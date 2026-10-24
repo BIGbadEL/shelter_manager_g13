@@ -278,8 +278,13 @@
   /* przyciski zarezerwowanego spaceru trzymają się razem: za wąsko — schodzą pod spód razem */
   .acts{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;}
 
-  .entry{margin-top:10px;display:flex;gap:8px;}
-  .entry input{flex:1;font-family:inherit;font-size:15px;padding:10px 12px;
+  /* Pole imienia nie ma własnej szerokości (width:0 + flex:1 — zajmuje to, co zostaje obok „OK").
+     Bez tego trzymało domyślną szerokość pola tekstowego (ok. 20 znaków fontu telefonu), a pole
+     „Twoje imię" w polu 2/2 psa na dwa spacery (.slot, flex) nie mogło się zwęzić: „OK" wychodziło
+     poza ramkę (zgłoszenie z 1.4 — na teście 360 px, Android; w Chromium od 320 px). */
+  .entry{margin-top:10px;display:flex;gap:8px;min-width:0;}
+  .entry .btn{flex:none;}
+  .entry input{flex:1;width:0;min-width:0;font-family:inherit;font-size:15px;padding:10px 12px;
     border:1.5px solid var(--forest);border-radius:10px;background:#fff;color:var(--ink);outline:none;}
   .hidden{display:none;}
 
@@ -366,6 +371,16 @@
   .pollchecks{display:flex;flex-direction:column;gap:8px;margin:2px 0 10px;}
   .pollchecks input{width:18px;height:18px;margin:0;accent-color:var(--forest);}
   .hint.pollerr{color:var(--warn-ink);font-weight:700;overflow-wrap:anywhere;}
+  /* pomocnik Grafiku (1.5): dni przeglądu tygodnia w jednym wierszu, podgląd wiadomości jak na WhatsAppie */
+  .helperdirty{margin:-2px 0 8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
+    font-size:12.5px;font-weight:700;}
+  .helperdirty.hidden{display:none;}
+  .pollchecks.days{flex-direction:row;flex-wrap:wrap;gap:6px 12px;}
+  .helperpre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:12.5px;line-height:1.45;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin:6px 0 8px;max-height:360px;overflow:auto;}
+  .helpergate{font-size:12.5px;font-weight:700;margin:4px 0 6px;display:flex;flex-direction:column;gap:3px;}
+  .helpergate .gateok{color:var(--forest);}
+  .helpergate .gatebad{color:var(--hard);}
   .diag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
   .diagrow{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--line);}
   .diagrow:last-child{border-bottom:0;}
