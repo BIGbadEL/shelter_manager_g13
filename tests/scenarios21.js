@@ -184,6 +184,23 @@ function S145b(){
   check(cases.length + ' przypadków: przeglądarka odrzuca dokładnie to, co serwer', diff.length === 0, diff.join(' | '));
 }
 
+/* ---------- S145d: panel mówi wprost, że pomocnik nic nie widzi ---------- */
+function S145d(){
+  console.log('S145d: pomocnik — w bramce wyłączone powiadomienia (test 24–25.10): panel mówi, czego brakuje; po włączeniu — od kiedy widzi');
+  const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
+  const off = openPanel(HELPER({trigger: true, gate: {ok: false, at: Date.now(), from: 0,
+    missing: ['powiadomienia o wiadomościach przychodzących', 'powiadomienia o ankietach']}}, on));
+  const box = [...doc(off).querySelectorAll('.panelbox')].find(b => /Pomocnik Grafiku/.test(b.textContent));
+  const warn = box && [...box.querySelectorAll('.pollstate')].map(txt).join(' | ');
+  check('bramka bez powiadomień: ostrzeżenie z listą, stan pomocnika nie „zielony"', /Nie widzi „Grafiku" — w konsoli Green API wyłączone: powiadomienia o wiadomościach przychodzących; powiadomienia o ankietach/.test(warn)
+    && !box.querySelector('.pollstate.ok'), warn);
+  const ok = openPanel(HELPER({trigger: true, gate: {ok: true, at: Date.now(), from: Date.parse('2026-10-25T21:30:00+01:00'), missing: []}}, on));   // 25.10 — już czas zimowy
+  const box2 = [...doc(ok).querySelectorAll('.panelbox')].find(b => /Pomocnik Grafiku/.test(b.textContent));
+  check('włączone: „Powiadomienia w bramce włączone (od 25.10 21:30…)", stan zielony', /Powiadomienia w bramce włączone \(od 25\.10 21:30/.test(txt(box2))
+    && !!box2.querySelector('.pollstate.ok'));
+  check('bez błędów', off.errors.length === 0 && ok.errors.length === 0, off.errors.concat(ok.errors).join('; '));
+}
+
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */
 async function S145c(){
   console.log('S145c: pomocnik — odpowiedź nie przyszła (google.script.run nie oddzwonił): po T.helperWait przyciski wracają');
@@ -197,7 +214,7 @@ async function S145c(){
 }
 
 (async () => {
-  for(const s of [S144, S145, S145b, S145c]){
+  for(const s of [S144, S145, S145b, S145d, S145c]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

@@ -50,6 +50,7 @@ function build(o){
     props: Object.assign({ pin: TEST_PIN, walksImported: '2026-01-01' }, o.gateway === false ? {} : GREEN, o.props),
   });
   const gw = { queue: [], receipt: 0, deleted: [], sent: [], received: 0, members: [ANIA, BASIA], weather: null, fail: null,
+               history: [], historyCalls: [],
                settings: { incomingWebhook: 'yes', pollMessageWebhook: 'yes', outgoingAPIMessageWebhook: 'yes', outgoingMessageWebhook: 'yes', webhookUrl: '' } };
   env.http.handler = (url, opts) => {
     if(gw.fail){ const r = gw.fail(url, opts); if(r) return r; }
@@ -71,6 +72,11 @@ function build(o){
       return { code: 200, body: JSON.stringify({ idMessage: 'OUT' + gw.sent.length }) };
     }
     if(/\/getGroupData\//.test(url)) return { code: 200, body: JSON.stringify({ groupId: GRAFIK, participants: gw.members.map(id => ({ id })) }) };
+    // historia czatu jak getChatHistory: od najnowszej, `count` ostatnich
+    if(/\/getChatHistory\//.test(url)){
+      gw.historyCalls.push(JSON.parse(opts.payload));
+      return { code: 200, body: JSON.stringify(gw.history.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, JSON.parse(opts.payload).count)) };
+    }
     if(/\/getSettings\//.test(url)) return { code: 200, body: JSON.stringify(gw.settings) };
     return { code: 404, body: '' };
   };
@@ -364,7 +370,8 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   on(none, { weekDays: [] });
   none.tick();
   const nm = none.msgs()[0] || '';
-  check('niedziela wieczór bez ankiety: „nie ma jeszcze ankiety na nowy tydzień" i „brak ankiety"', /nie ma jeszcze ankiety na nowy tydzień/.test(nm) && /brak ankiety na ten dzień/.test(nm), nm);
+  check('niedziela wieczór bez ankiety (także w historii czatu): „nie widzę jeszcze ankiety na nowy tydzień"', /Nie widzę jeszcze ankiety na nowy tydzień/.test(nm)
+    && /nie widzę ankiety na ten dzień/.test(nm) && none.gw.historyCalls.length === 1, nm);
 
   // „tylko gdy problem": wszystko w porządku — skład nie idzie
   const calm = build({ now: '2026-10-25T10:20:00+02:00' });
@@ -487,6 +494,86 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   const nowRun = env.api.helperRunNow(TEST_PIN);
   check('„Sprawdź teraz": przebieg i panel', nowRun.run && nowRun.panel && nowRun.panel.stat);
   check('getData nie niesie niczego z pomocnika', !/helper|Grafik|48601/.test(JSON.stringify(env.api.getData())));
+})();
+
+/* ---------- B81: bramka bez powiadomień — pomocnik nic nie widzi ---------- */
+(()=>{
+  console.log('B81: pomocnik — w bramce wyłączone powiadomienia (test 24–25.10): zamiast „brak ankiety" jedno ostrzeżenie dziennie, bez składów');
+  const env = build({ now: '2026-10-24T20:35:00+02:00' });
+  ['incomingWebhook', 'pollMessageWebhook', 'outgoingAPIMessageWebhook', 'outgoingMessageWebhook'].forEach(k => { env.gw.settings[k] = 'no'; });
+  on(env);
+  env.tick();
+  const m = env.msgs();
+  check('wieczór, bramka bez powiadomień: jedno ostrzeżenie z listą wyłączonych, żadnego składu ani przeglądu',
+    m.length === 1 && /Nie widzę „Grafiku"/.test(m[0]) && /powiadomienia o ankietach/.test(m[0]) && /wiadomościach przychodzących/.test(m[0])
+    && !/Jutro|Przegląd|ankiety na ten dzień/.test(m.join('|')), m.join(' | '));
+  const calls = () => env.http.calls.filter(c => /\/getSettings\//.test(c.url)).length;
+  const c1 = calls();
+  env.tick('2026-10-24T20:45:00+02:00');
+  env.tick('2026-10-25T08:05:00+02:00');
+  check('ostrzeżenie raz na dzień (drugi wieczorny przebieg nic), ustawienia sprawdzane co przebieg, dopóki czegoś brakuje',
+    env.msgs().length === 2 && /Nie widzę „Grafiku"/.test(env.msgs()[1]) && calls() === c1 + 2, env.msgs().join(' | '));
+  check('rano bez powiadomień — bez „Dziś — brak ankiety"', !env.msgs().some(x => /Dziś/.test(x)));
+  check('panel: stan bramki z listą brakujących', env.api.helperPanel_().gate && env.api.helperPanel_().gate.ok === false
+    && env.api.helperPanel_().gate.missing.length === 4);
+
+  // ankieta bota z 10:13 i głosy od rana — bramka bez powiadomień nic z tego nie przekazała; właściciel włącza je o 14:30
+  // (poza porami wiadomości — historię ściąga samo włączenie, nie brak ankiety przed raportem)
+  env.gw.history.push({ type: 'outgoing', idMessage: 'P1', timestamp: ts('2026-10-25T10:13:00+02:00'), typeMessage: 'pollMessage', chatId: GRAFIK,
+    pollMessageData: { name: Q, options: OPTS.map(o => ({ optionName: o })), multipleAnswers: true } });
+  ['incomingWebhook', 'pollMessageWebhook', 'outgoingAPIMessageWebhook', 'outgoingMessageWebhook'].forEach(k => { env.gw.settings[k] = 'yes'; });
+  env.tick('2026-10-25T14:30:00+02:00');
+  const st = env.st(), p = pollOf(env, 'P1');
+  check('po włączeniu: od razu historia czatu — ankieta z rana znaleziona, oznaczona jako niepełna', env.gw.historyCalls.length === 1 && !!p && p.partial === true
+    && st.gate.ok && st.gate.from === Date.parse('2026-10-25T14:30:00+02:00'), JSON.stringify({ h: env.gw.historyCalls.length, p: p && p.partial, gate: st.gate }));
+  check('...bez „Nowa ankieta" (wysłana rano, już przypięta)', !env.msgs().some(x => /Nowa ankieta/.test(x)), env.msgs().join(' | '));
+  env.push(vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T14:35:00+02:00', { name: 'Ania' }));
+  env.tick('2026-10-25T14:40:00+02:00');
+  check('kolejny przebieg poza porą wiadomości — bez drugiej historii', env.gw.historyCalls.length === 1);
+  const pv = env.api.helperPreview(TEST_PIN, 'jutro').text;
+  check('skład na jutro z ankiety niepełnej: „co najmniej 1 os." i od kiedy znam głosy', /Jutro — poniedziałek 26\.10\*: co najmniej 1 os\./.test(pv)
+    && /sprzed włączenia powiadomień w bramce \(nd 14:30\)/.test(pv), pv);
+  check('przegląd tygodnia: „≥" przy dniach z ankiety niepełnej', /pn 26\.10 — ≥ 1 os\./.test(env.api.helperPreview(TEST_PIN, 'tydzien').text));
+  check('„stan": bramka włączona od nd 14:30', /bramka: powiadomienia włączone \(od nd 14:30\)/.test(env.api.helperPreview(TEST_PIN, 'stan').text));
+  env.tick('2026-10-25T20:05:00+02:00');
+  const ev = env.msgs().filter(x => /Jutro — poniedziałek/.test(x))[0] || '';
+  check('wieczorem skład z ankietą (niepełną) — nie „nie widzę ankiety"', /co najmniej 1 os\./.test(ev) && !/nie widzę ankiety|Nie widzę jeszcze/.test(ev), ev);
+})();
+
+/* ---------- B82: historia czatu, głosy z czasem, 408 ---------- */
+(()=>{
+  console.log('B82: pomocnik — historia czatu (te same reguły co kolejka, powtarzalnie), starszy głos nie nadpisuje nowszego, 408 to pusta kolejka');
+  const env = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(env, { weekDays: [], features: { newPoll: false, changes: false, members: false } });
+  const H = (o) => Object.assign({ type: 'incoming', chatId: GRAFIK, typeMessage: 'pollUpdateMessage' }, o);
+  const upd = (who, picked, iso, id) => H({ idMessage: id, timestamp: ts(iso), senderId: who, senderName: who === ANIA ? 'Ania' : 'Basia',
+    pollMessageData: { stanzaId: 'P1', name: Q, votes: OPTS.map(o => ({ optionName: o, optionVoters: picked.indexOf(o) >= 0 ? [who] : [] })) } });
+  env.gw.history.push({ type: 'outgoing', idMessage: 'P1', timestamp: ts('2026-10-25T10:13:00+02:00'), typeMessage: 'pollMessage', chatId: GRAFIK,
+      pollMessageData: { name: Q, options: OPTS.map(o => ({ optionName: o })), multipleAnswers: true } },
+    upd(ANIA, ['Wtorek'], '2026-10-25T11:00:00+02:00', 'H1'), upd(ANIA, ['Wtorek', 'Środa'], '2026-10-25T12:00:00+02:00', 'H2'),
+    upd(BASIA, ['Wtorek'], '2026-10-25T13:00:00+02:00', 'H3'),
+    H({ idMessage: 'H4', timestamp: ts('2026-10-25T14:00:00+02:00'), typeMessage: 'textMessage', senderId: BASIA, senderName: 'Basia', textMessage: 'Będę we wtorek 10-12' }));
+  env.api.helperRunNow(TEST_PIN);                         // „Sprawdź teraz" — zawsze z historią
+  const st1 = env.st();
+  check('historia: ankieta, głosy w kolejności czasu (Ania: wt i śr), wiadomość z czatu', votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join()
+    && votersOn(env, 'P1', '2026-10-28').join() === ANIA && st1.notes.length === 1, JSON.stringify(pollOf(env, 'P1').v));
+  env.api.helperRunNow(TEST_PIN);
+  check('druga historia — ten sam stan (bez podwójnych notatek)', env.st().notes.length === 1 && votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join());
+  // kolejka podaje starszy głos Ani (z 11:00) po nowszym z historii — nie nadpisuje
+  env.push(Object.assign(vote('P1', ANIA, ['Wtorek'], '2026-10-25T11:00:00+02:00'), { idMessage: 'H1' }));
+  env.tick('2026-10-26T12:10:00+02:00');
+  check('starszy głos po nowszym (inna kolejność kolejki i historii) — bez zmian', votersOn(env, 'P1', '2026-10-28').join() === ANIA, JSON.stringify(pollOf(env, 'P1').v));
+  env.push(vote('P1', ANIA, [], '2026-10-26T12:15:00+02:00'));
+  env.tick('2026-10-26T12:20:00+02:00');
+  check('nowszy — wycofanie wszystkiego — zmienia', !pollOf(env, 'P1').v[ANIA]);
+  env.api.helperRunNow(TEST_PIN);
+  check('...a historia (starsze głosy Ani) go nie przywraca', !pollOf(env, 'P1').v[ANIA], JSON.stringify(pollOf(env, 'P1').v));
+
+  env.gw.fail = url => /receiveNotification/.test(url) ? { code: 408, body: '' } : null;
+  const r = env.tick('2026-10-26T12:30:00+02:00');
+  check('408 z kolejki (bramka nie doczekała się powiadomienia) — pusta kolejka, bez błędu', r && !r.err && !env.st().log.some(l => /408/.test(l.m)), r && r.err);
+  env.gw.fail = null;
+  check('ankiety w dwóch właściwościach (stan rośnie z czasem głosów)', !!env.props.helperPolls && env.props.helperPolls2 !== undefined);
 })();
 
 /* ---------- B74 (ciąg dalszy): w żadnym scenariuszu nic nie poszło do grupy ---------- */

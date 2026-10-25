@@ -209,19 +209,22 @@ function helperJson_(k, def) {
 }
 
 function helperLoad_() {
-  const polls = helperJson_(PROP_HELPER_POLLS, []);
   const people = helperJson_(PROP_HELPER_PEOPLE, {});
   const notes = helperJson_(PROP_HELPER_NOTES, {});
   const x = helperJson_(PROP_HELPER_STATE, {});
   const log = helperJson_(PROP_HELPER_LOG, []);
   const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
   const arr = v => Array.isArray(v) ? v : [];
+  // ankiety w dwóch właściwościach (helperSave_): nowsze w pierwszej, starsze w drugiej
+  const polls = arr(helperJson_(PROP_HELPER_POLLS, [])).concat(arr(helperJson_(PROP_HELPER_POLLS2, [])))
+    .filter(p => p && p.id).sort((a, b) => a.t - b.t);
   return {
-    polls: arr(polls), people: obj(people.p), alias: obj(people.a),
+    polls, people: obj(people.p), alias: obj(people.a),
     notes: arr(notes.n), abs: arr(notes.b), gone: arr(notes.g),
     rep: obj(x.rep), marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
     seen: arr(x.seen), sent: obj(x.sent), stat: x.stat || null, queue: arr(x.queue), cmds: arr(x.cmds),
-    since: Number(x.since) || 0, log: arr(log),
+    since: Number(x.since) || 0, gate: x.gate && typeof x.gate === 'object' ? x.gate : null,
+    histAt: Number(x.histAt) || 0, catchUp: !!x.catchUp, log: arr(log),
   };
 }
 
@@ -261,11 +264,20 @@ function helperSave_(st) {
     delete st.people[ids[0]];
     return true;
   };
-  put(PROP_HELPER_POLLS, () => st.polls, () => st.polls.length > 1 && !!st.polls.shift());
+  // ankiety w dwóch właściwościach: od najnowszej, ile wejdzie w pierwszą, reszta w drugą (głosy z czasem — `vt` —
+  // to ok. 3 KB na ankietę z 30 osobami, a w jednej 8 KB nie zmieściłyby się cztery); co się nie zmieści — wypada
+  const newest = st.polls.slice().sort((a, b) => b.t - a.t), parts = [[], []];
+  newest.forEach(p => {
+    const k = [0, 1].filter(i => diagBytes_(JSON.stringify(parts[i].concat([p]))) <= HELPER_BYTES)[0];
+    if (k != null) parts[k].push(p);
+  });
+  put(PROP_HELPER_POLLS, () => parts[0], () => false);
+  put(PROP_HELPER_POLLS2, () => parts[1], () => false);
   put(PROP_HELPER_PEOPLE, () => ({ p: st.people, a: st.alias }), oldestPerson);
   put(PROP_HELPER_NOTES, () => ({ n: st.notes, b: st.abs, g: st.gone }), () => !!(st.notes.shift() || st.gone.shift() || st.abs.shift()));
   put(PROP_HELPER_STATE, () => ({ rep: st.rep, marks: st.marks, members: st.members, seen: st.seen, sent: st.sent,
-                                  stat: st.stat, queue: st.queue, cmds: st.cmds, since: st.since }),
+                                  stat: st.stat, queue: st.queue, cmds: st.cmds, since: st.since, gate: st.gate,
+                                  histAt: st.histAt, catchUp: st.catchUp }),
       () => !!st.seen.shift());
   put(PROP_HELPER_LOG, () => st.log, () => !!st.log.shift());
 }
@@ -316,11 +328,16 @@ function helperRun_(s, manual) {
     if (manual) throw new Error('Pomocnik właśnie pracuje — spróbuj za kilka minut');
     return null;
   }
-  const t0 = Date.now(), run = { events: 0, grafik: 0, sent: 0, err: '' };
+  const t0 = Date.now(), run = { events: 0, grafik: 0, sent: 0, err: '', manual: !!manual };
   let st = null;
   try {
     st = helperLoad_();
     if (!st.since) st.since = Date.now();
+    try {
+      helperGate_(s, st, !!manual);
+    } catch (e) {
+      helperLog_(st, 'err', 'ustawienia bramki: ' + (e && e.message || e));
+    }
     try {
       helperIntake_(s, st, run);
     } catch (e) {
@@ -351,10 +368,17 @@ function helperRun_(s, manual) {
 function helperIntake_(s, st, run) {
   const t0 = Date.now();
   while (run.events < HELPER_MAX_EVENTS && Date.now() - t0 < HELPER_INTAKE_MS) {
-    const r = greenCall_('receiveNotification', null, '?receiveTimeout=' + HELPER_RECEIVE_S);
+    let r;
+    try {
+      r = greenCall_('receiveNotification', null, '?receiveTimeout=' + HELPER_RECEIVE_S);
+    } catch (e) {
+      // 408 — bramka nie doczekała się powiadomienia (dziennik testu 25.10, 2:05): pusta kolejka, nie błąd
+      if (/błąd 408/.test(String(e && e.message))) break;
+      throw e;
+    }
     if (!r || r.receiptId == null) break;
     try {
-      helperEvent_(s, st, r.body, run);
+      helperEvent_(s, st, r.body, run, 'queue');
     } catch (e) {
       helperLog_(st, 'err', 'powiadomienie: ' + (e && e.message || e));
     }
@@ -372,8 +396,13 @@ function helperText_(md) {
   return String(t == null ? '' : t).trim();
 }
 
-/** Jedno powiadomienie z kolejki. Z „Grafiku": ankiety, głosy, wiadomości; z prywatnego czatu: pytania właściciela. */
-function helperEvent_(s, st, b, run) {
+/**
+ * Jedno zdarzenie: powiadomienie z kolejki (`src` 'queue') albo wiadomość z historii czatu (`src` 'history',
+ * helperCatchUp_). Z „Grafiku": ankiety, głosy, wiadomości; z prywatnego czatu (tylko z kolejki): pytania właściciela.
+ * Wszystko jest powtarzalne bez skutków ubocznych — ta sama wiadomość z historii i z kolejki to jedna notatka
+ * (po `id`), głos to stan osoby z czasem (`vt` w helperApplyVotes_), ankieta po identyfikatorze.
+ */
+function helperEvent_(s, st, b, run, src) {
   if (!b || typeof b !== 'object') return;
   const type = String(b.typeWebhook || '');
   if (type === 'quotaExceeded') { helperLog_(st, 'warn', 'limit planu bramki: powiadomienie z czatu spoza trzech dozwolonych — pominięte'); return; }
@@ -382,35 +411,102 @@ function helperEvent_(s, st, b, run) {
   const chat = String(sd.chatId || '');
   const id = String(b.idMessage || '');
   const tm = String(md.typeMessage || '');
-  // powtórka po awarii przed deleteNotification — raz; głos z czasem w kluczu (to stan osoby, nie przyrost — gdyby
-  // bramka dawała kolejnym zmianom głosu ten sam identyfikator, późniejsza zmiana nie może przepaść)
-  const key = tm === 'pollUpdateMessage' ? id + '|' + b.timestamp : id;
-  if (id) {
+  const queue = src !== 'history';
+  // powtórka z kolejki po awarii przed deleteNotification — raz (historia czatu idzie bez tej listy: jest długa,
+  // a każde zdarzenie i tak daje ten sam skutek drugi raz)
+  if (id && queue) {
+    const key = tm === 'pollUpdateMessage' ? id + '|' + b.timestamp : id;
     if (st.seen.indexOf(key) >= 0) return;
     st.seen.push(key);
   }
   const at = Number(b.timestamp) > 0 ? Number(b.timestamp) * 1000 : Date.now();
   const incoming = type === 'incomingMessageReceived';
   if (chat === s.chatId) {
-    run.grafik++;
+    if (queue) run.grafik++;
     const sender = String(sd.sender || '');
     if (incoming && sender) helperPerson_(st, sender, sd.senderContactName || sd.senderName, at);
     if (tm === 'pollMessage') {
       const pd = md.pollMessageData || {};
       const opts = (Array.isArray(pd.options) ? pd.options : []).map(o => String(o && o.optionName || ''));
-      const p = helperPollOf_(st, id, pd.name, opts, at, true);
-      if (p && st.queue.indexOf(p.id) < 0) st.queue.push(p.id);
-      helperLog_(st, 'in', 'nowa ankieta: „' + String(pd.name || '').slice(0, 60) + '"');
+      // pełny obraz głosów: ankieta przyszła z kolejki (powiadomienia były włączone, gdy powstała — wszystkie późniejsze
+      // głosy też są w kolejce) albo z historii, ale po włączeniu powiadomień (helperGate_)
+      const full = queue || !!(st.gate && st.gate.from && at >= st.gate.from);
+      const known = st.polls.some(x => x.id === id);
+      const p = helperPollOf_(st, id, pd.name, opts, at, true, full);
+      if (p && queue && st.queue.indexOf(p.id) < 0) st.queue.push(p.id);
+      if (!known) helperLog_(st, 'in', (queue ? 'nowa ankieta' : 'ankieta z historii czatu') + ': „' + String(pd.name || '').slice(0, 60) + '"');
     } else if (tm === 'pollUpdateMessage') {
       helperApplyVotes_(st, sender, md.pollMessageData || {}, at);
     } else if (incoming) {
       const text = helperText_(md);
       if (text) helperNote_(st, id, sender, text, at);
     }
-  } else if (chat === s.toId && incoming) {
+  } else if (chat === s.toId && incoming && queue) {
     const text = helperText_(md);
     if (text) st.cmds.push({ t: text.slice(0, 100), at });
   }
+}
+
+/** Wiadomość z historii czatu (getChatHistory — inny kształt niż powiadomienie) w kształcie powiadomienia. */
+function helperFromHistory_(m, chatId) {
+  const md = { typeMessage: String(m.typeMessage || '') };
+  if (m.textMessage != null) md.textMessageData = { textMessage: m.textMessage };
+  else if (m.extendedTextMessage && m.extendedTextMessage.text != null) md.extendedTextMessageData = { text: m.extendedTextMessage.text };
+  else if (m.caption != null) md.fileMessageData = { caption: m.caption };
+  if (m.pollMessageData) md.pollMessageData = m.pollMessageData;
+  return {
+    typeWebhook: m.type === 'incoming' ? 'incomingMessageReceived' : 'outgoingMessageReceived',
+    idMessage: m.idMessage, timestamp: m.timestamp,
+    senderData: { chatId: String(m.chatId || chatId), sender: String(m.senderId || ''), senderName: m.senderName || '',
+                  senderContactName: m.senderContactName || '' },
+    messageData: md,
+  };
+}
+
+/**
+ * Historia czatu „Grafiku" (getChatHistory) przepuszczona przez te same reguły co kolejka — po włączeniu powiadomień
+ * i przed raportem, w którym brakuje ankiety (najwyżej co HELPER_HISTORY_GAP_H godzin), i przy „Sprawdź teraz".
+ * Ankietę wysłaną przez bota bramka trzyma w historii zawsze (wiadomość wysłana z API), a głosy i wiadomości —
+ * tylko te, które przyszły przy włączonych powiadomieniach. Wcześniejszych głosów nie odda nic (HELPER.md).
+ */
+function helperCatchUp_(s, st, run) {
+  st.histAt = Date.now();
+  st.catchUp = false;
+  const list = greenCall_('getChatHistory', { chatId: s.chatId, count: HELPER_HISTORY_COUNT });
+  const msgs = (Array.isArray(list) ? list : []).filter(m => m && m.idMessage)
+    .sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+  const before = st.polls.length;
+  msgs.forEach(m => {
+    try { helperEvent_(s, st, helperFromHistory_(m, s.chatId), run, 'history'); }
+    catch (e) { helperLog_(st, 'err', 'historia czatu: ' + (e && e.message || e)); }
+  });
+  helperLog_(st, 'in', 'historia czatu: ' + msgs.length + ' wiadomości' + (st.polls.length > before ? ', nowe ankiety: ' + (st.polls.length - before) : ''));
+}
+
+/**
+ * Ustawienia instancji bramki (getSettings): bez powiadomień o wiadomościach i ankietach kolejka jest pusta, a pomocnik
+ * nie wie o „Grafiku" nic (test 24–25.10.2026: wszystkie cztery wyłączone, a pomocnik pisał „W Grafiku nie ma ankiety").
+ * Sprawdzane przy każdym przebiegu, dopóki czegoś brakuje, potem co HELPER_GATE_H godzin. `from` — od kiedy na pewno
+ * są włączone (pierwszy przebieg, który to zobaczył): ankieta z historii sprzed tej chwili jest niepełna. Włączenie
+ * (przejście z „brak" albo pierwszy raz) — `catchUp`: historia czatu przy najbliższych wiadomościach.
+ */
+function helperGate_(s, st, manual) {
+  const g = st.gate;
+  if (!manual && g && g.ok && Date.now() - g.at < HELPER_GATE_H * 3600000) return;
+  const res = greenCall_('getSettings');
+  const missing = HELPER_GATE.filter(x => String(res && res[x.key] != null ? res[x.key] : '') !== x.want).map(x => x.key);
+  const ok = !missing.length;
+  st.gate = { at: Date.now(), ok, missing, from: ok ? (g && g.ok && g.from ? g.from : Date.now()) : 0 };
+  if (ok && !(g && g.ok)) { st.catchUp = true; helperLog_(st, 'info', 'bramka: powiadomienia włączone — od teraz widzę „Grafik"'); }
+  if (!ok && (!g || g.ok)) helperLog_(st, 'warn', 'bramka: wyłączone — ' + missing.join(', '));
+}
+
+/** Alert „nic nie widzę" — raz dziennie, dopóki w ustawieniach bramki czegoś brakuje. */
+function helperGateText_(gate) {
+  return '⚠️ *Nie widzę „Grafiku"* — w konsoli Green API (instancja → Ustawienia) wyłączone:\n'
+    + HELPER_GATE.filter(x => gate.missing.indexOf(x.key) >= 0).map(x => '• ' + x.label).join('\n')
+    + '\nBez tego bot nie dostaje ankiet, głosów ani wiadomości, więc nie wysyłam składów (byłyby bez danych). '
+    + 'Po włączeniu ruszam sam w ciągu ' + HELPER_TICK_MIN + ' minut; głosów oddanych wcześniej bramka już nie odda.';
 }
 
 function helperPerson_(st, id, name, at) {
@@ -483,11 +579,11 @@ function helperPollDays_(q, opts, at) {
 }
 
 /**
- * Ankieta po identyfikatorze (z powiadomienia o ankiecie albo z pierwszego głosu). `created` — powiadomienie
- * o samej ankiecie: wiemy o niej od początku. Ankieta poznana dopiero z głosu, sprzed włączenia pomocnika
- * (tydzień zaczyna się przed `since`), jest `partial` — głosy oddane wcześniej nigdy do nas nie dojdą.
+ * Ankieta po identyfikatorze (z wiadomości o ankiecie albo z pierwszego głosu). `created` — wiadomość o samej ankiecie
+ * (znamy chwilę jej wysłania), `full` — znamy wszystkie głosy od początku (helperEvent_). Ankieta poznana dopiero
+ * z głosu albo z historii sprzed włączenia powiadomień jest `partial`: głosy oddane wcześniej nigdy do nas nie dojdą.
  */
-function helperPollOf_(st, id, name, opts, at, created) {
+function helperPollOf_(st, id, name, opts, at, created, full) {
   if (!id) return null;
   let p = st.polls.filter(x => x.id === id)[0];
   if (p) {
@@ -497,13 +593,13 @@ function helperPollOf_(st, id, name, opts, at, created) {
       const pd = helperPollDays_(p.q, p.opts, p.t);
       p.days = pd.days; p.from = pd.range.from; p.to = pd.range.to; p.wrong = !!pd.range.wrong;
     }
-    if (created) { p.partial = false; p.t = at; }
+    if (created) { p.t = Math.min(p.t, at); if (full) p.partial = false; }
     return p;
   }
   const pd = helperPollDays_(name, opts, at);
   p = { id: String(id).slice(0, 64), q: String(name || '').slice(0, 120), t: at, opts: opts.map(o => o.slice(0, 60)),
-        days: pd.days, from: pd.range.from, to: pd.range.to, wrong: !!pd.range.wrong, v: {},
-        partial: !created && !!st.since && addDays_(pd.range.from, -1) < helperDate_(st.since) };
+        days: pd.days, from: pd.range.from, to: pd.range.to, wrong: !!pd.range.wrong, v: {}, vt: {},
+        partial: !(created && full) };
   st.polls.push(p);
   st.polls.sort((a, b) => a.t - b.t);
   while (st.polls.length > HELPER_LIMITS.POLLS) st.polls.shift();
@@ -532,15 +628,21 @@ function helperApplyVotes_(st, sender, pd, at) {
   });
   const voters = Object.keys(by);
   const before = JSON.parse(JSON.stringify(poll.v));
+  // stan osoby z czasem (sekundy): starszy głos niż ten, który już znamy, nic nie zmienia — historia czatu
+  // i kolejka podają te same głosy, w dowolnej kolejności i po kilka razy
+  poll.vt = poll.vt || {};
+  const sec = Math.floor(at / 1000);
+  const newer = w => !(poll.vt[w] > sec);
+  const put = (w, idx) => { if (!newer(w)) return; if (idx) poll.v[w] = idx.sort((a, b) => a - b); else delete poll.v[w]; poll.vt[w] = sec; };
   if (voters.length >= 2) {
-    poll.v = {};
-    voters.forEach(w => { poll.v[w] = by[w].sort((a, b) => a - b); });
+    voters.forEach(w => put(w, by[w]));
+    Object.keys(poll.v).forEach(w => { if (!by[w]) put(w, null); });
   } else if (voters.length === 1) {
     const w = voters[0];
     if (sender && sender !== w) st.alias[sender] = w;
-    poll.v[w] = by[w].sort((a, b) => a - b);
+    put(w, by[w]);
   } else {
-    delete poll.v[st.alias[sender] || sender];
+    put(st.alias[sender] || sender, null);
   }
   Object.keys(before).forEach(w => {
     const was = helperDatesOf_(poll, before[w]), now = helperDatesOf_(poll, poll.v[w] || []);
@@ -652,6 +754,7 @@ function helperAbsence_(text, msgDate, hour) {
 
 /** Notatka z czatu — tylko taka, która dotyczy konkretnych dni (albo nieobecność). */
 function helperNote_(st, id, sender, text, at) {
+  if (id && (st.notes.some(n => n.id === id) || st.abs.some(a => a.id === id))) return;   // ta sama z historii i z kolejki
   const day = helperDate_(at), hour = Number(helperTime_(at).split(':')[0]);
   const k = helperKind_(text);
   const quote = text.replace(/\s*\n+\s*/g, ' / ').replace(/\s+/g, ' ').trim();
@@ -659,7 +762,7 @@ function helperNote_(st, id, sender, text, at) {
   if (k === 'abs') {
     const iv = helperAbsence_(text, day, hour);
     if (iv.length) {
-      st.abs.push({ w: sender, at, iv, x });
+      st.abs.push({ id, w: sender, at, iv, x });
       const d = [];                                       // cytat przy każdym dniu nieobecności z najbliższych dwóch tygodni
       iv.forEach(r => {
         for (let a = r[0]; a <= r[1] && d.length < 14; a = addDays_(a, 1)) {
@@ -752,14 +855,17 @@ function helperDayText_(s, st, d, ctx) {
   const n = info.voters.length;
   const name = w => helperName_(s, st, w);
   if (!info.poll) {
-    L.push('*' + helperTitle_(d) + '*: brak ankiety na ten dzień ⚠️');
+    L.push('*' + helperTitle_(d) + '*: nie widzę ankiety na ten dzień ⚠️');
   } else {
-    L.push('*' + helperTitle_(d) + '*: ' + n + ' os.' + (n < s.min ? ' ⚠️ (minimum ' + s.min + ')' : ' ✅'));
+    // ankieta znana częściowo (sprzed włączenia powiadomień) — liczba to dolna granica, nie stan
+    const part = info.poll.partial;
+    L.push('*' + helperTitle_(d) + '*: ' + (part ? 'co najmniej ' : '') + n + ' os.' + (n < s.min ? ' ⚠️ (minimum ' + s.min + ')' : ' ✅'));
     if (n) L.push('👥 ' + info.voters.map(name).join(', '));
     const pn = Object.keys(info.parts);
     if (pn.length) L.push('   ' + ['r', 'w'].filter(k => info.parts[k]).map(k => (k === 'r' ? 'rano ' : 'wieczór ') + info.parts[k].length).join(' · '));
     info.extras.forEach(x => L.push('➕ osobno — ' + x.label + ': ' + x.who.length + ' os.'));
-    if (info.poll.partial) L.push('ℹ️ ankieta sprzed włączenia pomocnika — widzę tylko głosy oddane albo zmienione od tamtej pory');
+    if (part) L.push('ℹ️ ankieta sprzed włączenia powiadomień w bramce' + (st.gate && st.gate.from ? ' (' + helperWhen_(st.gate.from) + ')' : '')
+      + ' — znam tylko głosy oddane albo zmienione później; pełny obraz od następnej ankiety');
     if (info.poll.wrong) L.push('⚠️ daty w pytaniu ankiety nie pasują do tygodnia');
   }
   if (info.gone.length) L.push('➖ wypisali się: ' + info.gone.map(g => name(g.w) + ' (' + helperWhen_(g.at) + ')').join(', '));
@@ -847,9 +953,10 @@ function helperWeekText_(s, st) {
   const L = ['*Przegląd tygodnia* (' + helperShortLabel_(days[0].d).slice(-5) + '–' + days[6].d.slice(8) + '.' + days[6].d.slice(5, 7) + ')'];
   days.forEach(i => {
     const extra = i.extras.map(x => x.label + ' ' + x.who.length).join(', ');
-    L.push(helperShortLabel_(i.d) + ' — ' + (!i.poll ? 'brak ankiety'
-      : i.voters.length + ' os.' + (i.voters.length < s.min ? ' ⚠️' : '')) + (extra ? ' (osobno: ' + extra + ')' : ''));
+    L.push(helperShortLabel_(i.d) + ' — ' + (!i.poll ? 'nie widzę ankiety'
+      : (i.poll.partial ? '≥ ' : '') + i.voters.length + ' os.' + (i.voters.length < s.min ? ' ⚠️' : '')) + (extra ? ' (osobno: ' + extra + ')' : ''));
   });
+  if (days.some(i => i.poll && i.poll.partial)) L.push('ℹ️ ≥ — ankieta sprzed włączenia powiadomień: znam tylko część głosów');
   const withPoll = days.filter(i => i.poll);
   const weak = withPoll.filter(i => i.voters.length < s.min).sort((a, b) => a.voters.length - b.voters.length)[0];
   const strong = withPoll.filter(i => i.voters.length > s.min).sort((a, b) => b.voters.length - a.voters.length)[0];
@@ -941,6 +1048,25 @@ function helperSchedule_(s, st, run) {
   const T = today_(), hour = helperHour_(), wd = weekdayOf_(T);
   const inWin = h => hour >= h && hour < h + HELPER_WINDOW_H;
 
+  // bramka bez powiadomień — pomocnik nic nie widzi: zamiast składów „bez ankiety" jeden alert dziennie (skład grupy
+  // idzie innym wywołaniem bramki, więc działa i bez powiadomień); nieznany stan bramki — cisza
+  const gate = st.gate;
+  if (!gate || !gate.ok) {
+    if (gate) helperOnce_(st, 'gate|' + T, run, () => { helperSend_(s, st, helperGateText_(gate), run); });
+    if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => { helperMembers_(s, st, run, true); });
+    return;
+  }
+  // historia czatu: zaraz po włączeniu powiadomień, przy „Sprawdź teraz" i przed wiadomościami o swojej porze, gdy na
+  // któryś z najbliższych dni nie ma ankiety albo zna ją tylko częściowo (najwyżej co HELPER_HISTORY_GAP_H godzin)
+  const week = [];
+  for (let k = 0; k <= 7; k++) week.push(addDays_(T, k));
+  const blind = week.some(d => { const p = helperPollFor_(st, d); return !p || p.partial; });
+  const due = inWin(s.evening) || inWin(s.morning);
+  if (st.catchUp || run.manual || (blind && due && Date.now() - (st.histAt || 0) >= HELPER_HISTORY_GAP_H * 3600000)) {
+    try { helperCatchUp_(s, st, run); }
+    catch (e) { helperLog_(st, 'err', 'historia czatu: ' + (e && e.message || e)); }
+  }
+
   const cmds = st.cmds.splice(0, st.cmds.length);
   if (f.commands) cmds.slice(-HELPER_LIMITS.CMDS).forEach(c => {
     try { helperSend_(s, st, helperCommand_(s, st, c.t, ctx), run); }
@@ -969,7 +1095,7 @@ function helperSchedule_(s, st, run) {
   if (f.evening && inWin(s.evening)) helperOnce_(st, 'ev|' + T, run, () => {
     const D = addDays_(T, 1), info = helperDay_(s, st, D);
     if (!f.eveningAlways && !helperProblems_(s, st, info).length) return;
-    const top = wd === 0 && !info.poll ? '⚠️ *W Grafiku nie ma jeszcze ankiety na nowy tydzień*\n' : '';
+    const top = wd === 0 && !info.poll ? '⚠️ *Nie widzę jeszcze ankiety na nowy tydzień* (w historii czatu też jej nie ma)\n' : '';
     helperSend_(s, st, top + helperDayText_(s, st, D, ctx), run);
   });
   if (f.week && s.weekDays.indexOf(wd) >= 0 && inWin(s.evening)) helperOnce_(st, 'wk|' + T, run, () => {
@@ -1096,7 +1222,10 @@ function helperPeopleText_(s, st) {
 
 function helperStatusText_(s, st) {
   const x = st.stat;
+  const g = st.gate;
   return '*Pomocnik — stan*\n'
+    + 'bramka: ' + (!g ? 'jeszcze nie sprawdzona' : g.ok ? 'powiadomienia włączone (od ' + helperWhen_(g.from) + ')'
+      : 'wyłączone — ' + g.missing.join(', ')) + '\n'
     + 'ostatni przebieg: ' + (x ? helperDate_(x.at).slice(5).split('-').reverse().join('.') + ' ' + helperTime_(x.at) + ', powiadomień ' + x.events + ' (Grafik ' + x.grafik + ')' : '—') + '\n'
     + 'ankiety: ' + (st.polls.map(p => '„' + p.q + '" — ' + Object.keys(p.v).length + ' głosujących' + (p.partial ? ' (niepełna)' : '')).join('; ') || '—') + '\n'
     + 'osoby: ' + Object.keys(st.people).length + ' · notatki: ' + st.notes.length + ' · nieobecności: ' + st.abs.length
@@ -1112,6 +1241,8 @@ function helperPanel_() {
     settings: s, configured: !!greenApi_(), env: env_(),
     trigger: ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'helperTick'),
     stat: st.stat, log: st.log.slice(-HELPER_LIMITS.PANEL_LOG).reverse(),
+    gate: st.gate ? { ok: !!st.gate.ok, at: st.gate.at, from: st.gate.from || 0,
+                      missing: HELPER_GATE.filter(x => (st.gate.missing || []).indexOf(x.key) >= 0).map(x => x.label) } : null,
     polls: st.polls.slice().reverse().map(p => ({ q: p.q, at: p.t, voters: Object.keys(p.v).length, partial: !!p.partial, wrong: !!p.wrong,
       days: p.days.map((o, i) => o.d && !o.x && !o.no ? helperShortLabel_(o.d) + (o.p ? (o.p === 'r' ? ' rano' : ' wiecz.') : '') + ' '
         + Object.keys(p.v).filter(w => p.v[w].indexOf(i) >= 0).length : '').filter(Boolean).join(' · ') })),

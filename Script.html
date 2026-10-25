@@ -2360,11 +2360,15 @@
     const feats = HELPER_FEATURES.map(([k, label]) => `<label class="check"><input type="checkbox" id="helperF_${k}"${f.features[k] ? ' checked' : ''}> ${esc(label)}</label>`).join('');
     const dirty = helperDirty(), busy = state.helperBusy;
     const st = h.stat;
+    const g = h.gate;
     const status = !h.configured
       ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona — opis przy ankiecie tygodniowej.</div>`
-      : `<div class="pollstate${s.enabled && h.trigger ? ' ok' : ''}">${s.enabled
+      : `<div class="pollstate${s.enabled && h.trigger && !(g && !g.ok) ? ' ok' : ''}">${s.enabled
           ? 'Włączony — przebieg co 10 min, pisze do ' + esc(s.toName || s.toId) + (h.trigger ? '' : ' · BRAK wyzwalacza — zapisz jeszcze raz')
-          : 'Wyłączony.'}</div>`;
+          : 'Wyłączony.'}</div>`
+        // bez powiadomień w bramce pomocnik nic nie widzi (test 24–25.10: pisał „brak ankiety", a ankieta była)
+        + (g && !g.ok ? `<div class="pollstate">Nie widzi „Grafiku" — w konsoli Green API wyłączone: ${esc(g.missing.join('; '))}. Do włączenia wysyła tylko to ostrzeżenie (raz dziennie).</div>`
+          : g ? `<div class="hint">Powiadomienia w bramce włączone (od ${esc(diagWhen(g.from))}).</div>` : '');
     const last = st ? `<div class="hint">Ostatni przebieg: ${esc(diagWhen(st.at))} — powiadomień ${st.events} (z Grafiku ${st.grafik}), wiadomości ${st.sent}${st.err ? '' : '.'}</div>`
       + (st.err ? `<div class="hint pollerr">Błąd: ${esc(st.err)}</div>` : '') : '';
     const knows = `<div class="hint">Wie o: ankiet ${h.polls.length}, osób ${h.people}, wiadomości o najbliższych dniach ${h.notes}, nieobecności ${h.abs}, skład grupy ${h.members == null ? '—' : h.members + ' os.'}</div>`;
@@ -2379,7 +2383,7 @@
     const polls = h.polls.length ? `<div class="mailfl">Ankiety, które zna</div>` + h.polls.map(p =>
       `<div class="hint">„${esc(p.q)}" — głosujących ${p.voters}${p.partial ? ' (niepełna: sprzed włączenia pomocnika)' : ''}${p.wrong ? ' · ⚠️ daty w pytaniu' : ''}<br>${esc(p.days)}</div>`).join('') : '';
     const log = h.log && h.log.length ? `<div class="mailfl">Dziennik pomocnika</div><div class="diag">` + h.log.map(l =>
-      `<div class="diaglog"><div><span>${esc(diagWhen(l.at))}</span> <b>${esc({sent:'wysłane', err:'błąd', warn:'uwaga', in:'z Grafiku'}[l.k] || l.k)}</b>${l.n > 1 ? ' ×' + l.n : ''}</div><div>${esc(l.m)}</div></div>`).join('') + `</div>` : '';
+      `<div class="diaglog"><div><span>${esc(diagWhen(l.at))}</span> <b>${esc({sent:'wysłane', err:'błąd', warn:'uwaga', in:'z Grafiku', info:'informacja'}[l.k] || l.k)}</b>${l.n > 1 ? ' ×' + l.n : ''}</div><div>${esc(l.m)}</div></div>`).join('') + `</div>` : '';
     return `
       <div class="panelbox">
         <h3>Pomocnik Grafiku (test)</h3>

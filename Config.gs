@@ -232,6 +232,9 @@ const HELPER_SEND_MAX = 6;           // wiadomości na przebieg
 const HELPER_DAY_MAX = 25;           // wiadomości na dzień
 const HELPER_BUSY_MS = 8 * 60000;    // znacznik „pracuję" starszy niż to = przebieg ubity, można dalej
 const HELPER_HIST_DAYS = 60;         // Historia: kto ostatnio chodził z psem dla wyznaczonych osób
+const HELPER_GATE_H = 6;             // ustawienia bramki (powiadomienia włączone?) — co tyle godzin; gdy czegoś brakuje — co przebieg
+const HELPER_HISTORY_COUNT = 300;    // historia czatu „Grafiku" (getChatHistory): tyle ostatnich wiadomości — tydzień głosów i rozmów
+const HELPER_HISTORY_GAP_H = 3;      // historia przed wiadomościami bez ankiety — najwyżej co tyle godzin
 const HELPER_HEAT = 28;              // od tylu °C — „upał"
 const HELPER_WEATHER = { LAT: 52.17, LON: 20.95 };   // okolice schroniska Na Paluchu (Open-Meteo)
 

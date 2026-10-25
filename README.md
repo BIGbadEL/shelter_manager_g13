@@ -575,8 +575,12 @@ pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decy
 3. Panel → „Pomocnik Grafiku (test)": „Pobierz grupy" → „Grafik", „Pobierz kontakty" → do kogo pisać
    (w fazie testów: właściciel), minimum osób, godziny, „fioletowi" i „nowi", włączniki funkcji, „włączony",
    „Zapisz". Wyzwalacz `helperTick` (co 10 min) zakłada się sam; `installTriggers()` też go przywraca.
-4. Pełny obraz głosów — od pierwszej ankiety wysłanej po włączeniu (bramka podaje głosy, gdy ktoś coś
-   zmienia; ankieta sprzed włączenia jest oznaczona jako niepełna).
+4. Pełny obraz głosów — od pierwszej ankiety wysłanej po włączeniu powiadomień w bramce: bramka nie oddaje
+   wyniku ankiety, tylko głosy oddane przy włączonych powiadomieniach. Ankieta sprzed włączenia jest niepełna
+   („co najmniej N os.").
+
+Bez powiadomień w bramce pomocnik nic nie widzi — wysyła wtedy raz dziennie ostrzeżenie z listą wyłączonych
+ustawień, a nie składy (test 24–25.10: pisał „nie ma ankiety", choć ankieta była).
 
 **Limit darmowego planu** dotyczy też odbierania: powiadomienia tylko z 3 czatów w miesiącu. „Grafik"
 i właściciel są już w tej trójce; czat spoza niej pomocnik pomija (`quotaExceeded`). Od 1. dnia miesiąca
@@ -656,6 +660,10 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   prywatnie do właściciela. Wyłączony, dopóki nie włączy się go w panelu; na produkcję w tej wersji nie jest
   przewidziany (decyzja właściciela 24.10). `greenCall_` dostał metodę HTTP (DELETE dla `deleteNotification`),
   a pusta odpowiedź bramki to `null`.
+- **Pomocnik pisał „W Grafiku nie ma ankiety", choć była** (test 24–25.10). W bramce wszystkie powiadomienia były
+  wyłączone, więc nic do niego nie dochodziło, a on brał pustkę za brak ankiety. Teraz sprawdza ustawienia bramki
+  i bez powiadomień wysyła tylko ostrzeżenie; po włączeniu czyta historię czatu (ankieta bota jest tam zawsze),
+  a ankietę sprzed włączenia oznacza jako niepełną („co najmniej"). 408 z kolejki to pusta kolejka (B81, B82, S145d).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 

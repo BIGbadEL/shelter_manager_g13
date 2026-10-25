@@ -7,7 +7,7 @@ prywatnym czatem (`…@c.us`), adres grupy (`…@g.us`) jest odrzucany przy zapi
 każdej wysyłce (B74). Funkcje, które się nie sprawdzą, wyłącza się pojedynczo w panelu — „lepiej więcej niż
 mniej" (decyzja właściciela 24.10.2026).
 
-Kod: `Helper.gs`. Panel: „Pomocnik Grafiku (test)". Testy: B74–B80 (`tests/backend.js`), S145 (`tests/scenarios21.js`).
+Kod: `Helper.gs`. Panel: „Pomocnik Grafiku (test)". Testy: B74–B82 (`tests/helper.js`), S145–S145d (`tests/scenarios21.js`).
 
 ## Skąd ten pomysł — co się dzieje w „Grafiku"
 
@@ -76,6 +76,19 @@ Fioletowi i nowi: dwa pola w panelu, imiona po przecinku (tak jak widać je w Wh
   (dzień tygodnia, „27.07", „rano/wieczór"); bez dat w pytaniu — tydzień od najbliższego poniedziałku.
   Odpowiedź z dopiskiem („Niedziela - AW", „Warszawski dzień zwierząt") liczy się osobno, nie do składu dnia;
   „Nie mogę" — nigdzie.
+- **Bez tych powiadomień pomocnik jest ślepy** — tak było na teście 24–25.10.2026: wszystkie cztery wyłączone, kolejka
+  pusta, a pomocnik pisał „W Grafiku nie ma jeszcze ankiety", choć ankieta wyszła o 10:13 i ludzie głosowali od rana.
+  Dlatego sprawdza ustawienia bramki (`getSettings`) przy każdym przebiegu, dopóki czegoś brakuje (potem co
+  `HELPER_GATE_H` godzin), i wtedy **zamiast składów wysyła raz dziennie ostrzeżenie** z listą wyłączonych (B81). Panel
+  pokazuje to samo.
+- **Bramka nie oddaje bieżącego wyniku ankiety** (`getMessage` daje ankietę bez głosów) — głosy są tylko jako zdarzenia
+  osób, w kolejce i w historii czatu (`getChatHistory`), i tylko te, które przyszły przy włączonych powiadomieniach.
+  Pomocnik **czyta historię czatu** zaraz po włączeniu powiadomień, przy „Sprawdź teraz" i przed wiadomością o swojej
+  porze, gdy na któryś z najbliższych dni nie zna ankiety albo zna ją częściowo (najwyżej co `HELPER_HISTORY_GAP_H` h).
+  Ankietę wysłaną przez bota historia ma zawsze (wiadomość z API). **Ankieta sprzed włączenia powiadomień jest niepełna**:
+  „co najmniej N os.", „≥" w przeglądzie i od kiedy pomocnik zna głosy; pełny obraz — od następnej ankiety (B81, B82).
+  Głos to stan osoby z czasem (`vt`): starszy niż już znany nic nie zmienia, więc historia i kolejka mogą podawać te same
+  głosy w dowolnej kolejności.
 - **Kolejka jest jedna na instancję**, a test i produkcja dzielą jedną instancję: **pomocnik może być włączony
   tylko w jednym środowisku** (dwa czytające zjadałyby sobie powiadomienia). Na czas testów — na teście;
   wersja produkcyjna nic z kolejki nie czyta.

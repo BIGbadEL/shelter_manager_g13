@@ -309,8 +309,13 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   dzienniku (panel), wyzwalacz nie rzuca. **Kolejka jest jedna na instancję, a test i produkcja dzielą instancję —
   włączony tylko w jednym środowisku.** Głosy: powiadomienie dotyczy jednej osoby (dokumentacja bramki) — jedna
   w odpowiedziach = jej wybory, nikt = wycofała wszystko, dwie i więcej = pełny stan; numer głosującego bywa w innym
-  formacie niż nadawcy (`@lid`) — `alias`. Ankieta sprzed włączenia poznana z głosu = `partial` (starszych głosów
-  bramka nie odda). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
+  formacie niż nadawcy (`@lid`) — `alias`; głos to stan osoby z czasem (`vt`) — starszy niż znany nic nie zmienia.
+  **Bramka nie oddaje bieżącego wyniku ankiety** — tylko zdarzenia osób z czasu, gdy powiadomienia w instancji były
+  włączone. Test 24–25.10: wszystkie wyłączone, pomocnik ślepy, a pisał „W Grafiku nie ma ankiety" — teraz
+  **`helperGate_`** (getSettings co przebieg, dopóki czegoś brakuje): bez powiadomień zamiast składów jedno ostrzeżenie
+  dziennie (B81); po włączeniu i przed raportem bez ankiety — **historia czatu** (`helperCatchUp_`, getChatHistory, te same
+  reguły co kolejka). Ankieta `partial` (poznana z głosu albo z historii sprzed włączenia powiadomień — `gate.from`):
+  „co najmniej N os.", „≥". Ankiety w dwóch właściwościach (`helperPolls`, `helperPolls2`). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
   („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. Czat (`helperDayRefs_`, `helperKind_`, `helperAbsence_`)
   to heurystyka na eksporcie z 16.03–24.10 — cytaty idą do wiadomości w całości, więc pomyłka rodzaju nie ukrywa treści.
 - **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
@@ -582,7 +587,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1855 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1876 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -709,7 +714,7 @@ S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżen
 serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu), S144 „OK" przy imieniu w polu 2/2
 w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px), S145 panel pomocnika Grafiku (grupa i kontakt
 z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
-reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`),
+reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`; S145d — bramka bez powiadomień w panelu),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -753,7 +758,9 @@ nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, a
 B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
 ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
 B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, czat i nieobecności,
-skład dnia wieczorem i rano, zmiany w ankiecie po ciszy, przegląd tygodnia / skład grupy / pytania / sufity / panel),
+skład dnia wieczorem i rano, zmiany w ankiecie po ciszy, przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
+bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu
+powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejka,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1044,9 +1051,12 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   wiadomości prywatnie do właściciela, na podstawie prawdziwego „Grafiku". Na produkcji wyłączony (domyślnie). **Do zrobienia
   przez właściciela przed testem:** w konsoli Green API powiadomienia przychodzące, o ankietach i o wiadomościach wysłanych
   (API i telefon), pusty adres webhooka (panel → „Sprawdź bramkę"); potem w panelu TESTU grupa „Grafik", kontakt, „włączony".
-  **Do sprawdzenia w pierwszych dniach** (HELPER.md): czy przychodzą głosy na ankietę z produkcji, format numerów (`@c.us`
-  / `@lid`), czy powiadomienie o głosie ma jedną osobę czy pełny stan, które wiadomości to szum. Pełny obraz głosów — od
-  ankiety z niedzieli 25.10 (prod, „Grafik 26.10-01.11"), jeśli pomocnik ruszy przed nią. Limit planu Developer dotyczy też
+  **Test 24–25.10:** pomocnik włączony 24.10 wieczorem, ale w bramce wszystkie cztery powiadomienia były wyłączone — pusta
+  kolejka, a pomocnik pisał „W Grafiku nie ma ankiety" (ankieta z prod wyszła 25.10 10:13). Właściciel włączył je 25.10
+  ok. 21:30; poprawka: ostrzeżenie zamiast składów i historia czatu (Konwencje). Ankieta „Grafik 26.10-01.11" zostaje
+  **niepełna** (głosów sprzed 21:30 bramka nie odda) — pełny obraz od ankiety z 1.11.
+  **Do sprawdzenia w pierwszych dniach** (HELPER.md): czy przychodzą głosy, format numerów (`@c.us` / `@lid`), czy
+  powiadomienie o głosie ma jedną osobę czy pełny stan, czy historia czatu ma ankietę bota, które wiadomości to szum. Limit planu Developer dotyczy też
   odbierania (3 czaty w miesiącu) — w październiku „Grafik" i właściciel są w trójce.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
