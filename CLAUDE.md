@@ -1,4 +1,4 @@
-﻿# G13 Spacery — kontekst projektu
+# G13 Spacery — kontekst projektu
 
 Aplikacja Google Apps Script dla grupy wolontariuszy schroniska (grupa G13).
 Zastępuje papierową kartkę z zapisami na spacery psów. Jeden link w przeglądarce,
