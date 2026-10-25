@@ -538,6 +538,9 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   env.tick('2026-10-25T20:05:00+02:00');
   const ev = env.msgs().filter(x => /Jutro — poniedziałek/.test(x))[0] || '';
   check('wieczorem skład z ankietą (niepełną) — nie „nie widzę ankiety"', /co najmniej 1 os\./.test(ev) && !/nie widzę ankiety|Nie widzę jeszcze/.test(ev), ev);
+  env.tick('2026-10-26T08:05:00+01:00');
+  check('rano, ankieta niepełna z 1 osobą przy minimum 3 — bez alarmu „mało osób" (liczba to tylko dolna granica)',
+    !env.msgs().some(x => /Dziś — poniedziałek/.test(x)), env.msgs().slice(-2).join(' | '));
 })();
 
 /* ---------- B82: historia czatu, głosy z czasem, 408 ---------- */

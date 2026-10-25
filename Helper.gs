@@ -840,7 +840,8 @@ function helperDay_(s, st, d) {
 function helperProblems_(s, st, info) {
   const out = [];
   if (!info.poll) return ['brak ankiety'];
-  if (info.voters.length < s.min) out.push('mało osób');
+  // ankieta niepełna (sprzed włączenia powiadomień) — liczba to dolna granica: „mało osób" byłoby fałszywym alarmem
+  if (info.voters.length < s.min && !info.poll.partial) out.push('mało osób');
   const names = info.voters.map(w => helperName_(s, st, w));
   const purple = helperRoleSet_(s.purple), rookies = helperRoleSet_(s.rookies);
   if (purple.length && info.voters.length && !names.some(n => helperHasRole_(purple, n))) out.push('brak fioletowego');

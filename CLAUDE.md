@@ -1,4 +1,4 @@
-# G13 Spacery — kontekst projektu
+﻿# G13 Spacery — kontekst projektu
 
 Aplikacja Google Apps Script dla grupy wolontariuszy schroniska (grupa G13).
 Zastępuje papierową kartkę z zapisami na spacery psów. Jeden link w przeglądarce,
@@ -587,7 +587,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1876 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1877 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
