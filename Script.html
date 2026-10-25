@@ -2381,7 +2381,7 @@
     const preview = pv ? `<pre class="helperpre" data-helper-preview>${esc(pv.text)}</pre>
         <div class="adminrow"><button class="btn outline" data-act="helperSendPreview"${busy ? ' disabled' : ''}>Wyślij mi to na WhatsAppie</button></div>` : '';
     const polls = h.polls.length ? `<div class="mailfl">Ankiety, które zna</div>` + h.polls.map(p =>
-      `<div class="hint">„${esc(p.q)}" — głosujących ${p.voters}${p.partial ? ' (niepełna: sprzed włączenia pomocnika)' : ''}${p.wrong ? ' · ⚠️ daty w pytaniu' : ''}<br>${esc(p.days)}</div>`).join('') : '';
+      `<div class="hint">„${esc(p.q)}" — głosujących ${p.voters}${p.partial ? ' (niepełna: sprzed włączenia powiadomień w bramce — wcześniejszych głosów nie znam)' : ''}${p.wrong ? ' · ⚠️ daty w pytaniu' : ''}<br>${esc(p.days)}</div>`).join('') : '';
     const log = h.log && h.log.length ? `<div class="mailfl">Dziennik pomocnika</div><div class="diag">` + h.log.map(l =>
       `<div class="diaglog"><div><span>${esc(diagWhen(l.at))}</span> <b>${esc({sent:'wysłane', err:'błąd', warn:'uwaga', in:'z Grafiku', info:'informacja'}[l.k] || l.k)}</b>${l.n > 1 ? ' ×' + l.n : ''}</div><div>${esc(l.m)}</div></div>`).join('') + `</div>` : '';
     return `
