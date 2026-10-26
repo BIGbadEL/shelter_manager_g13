@@ -203,7 +203,7 @@ const POLL_WINDOW_H = 3;
  * i pisze PRYWATNIE do właściciela: skład dnia, przegląd tygodnia… Wyłączony, dopóki
  * prowadząca go nie włączy. `features` — włącznik każdej funkcji (panel). min — ilu osób trzeba na dzień
  * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
- * weekDays — dni przeglądu tygodnia (0 = niedziela), names — imiona dla numerów bez nazwy („…123 = Ania").
+ * weekDays — dni przeglądu tygodnia (0 = niedziela), names — imiona dla numerów bez nazwy („+48 600 111 222 = Ania").
  * Klasy osób (fioletowy / pomarańczowy / kandydat) — osobno, z listy członków w panelu (Helper.gs, setHelperRole).
  */
 const DEFAULT_HELPER = {

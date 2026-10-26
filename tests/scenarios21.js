@@ -204,11 +204,12 @@ function S145d(){
 
 /* ---------- S146: członkowie i klasy w panelu ---------- */
 function S146(){
-  console.log('S146: członkowie — lista z grupy, klasa jednym stuknięciem (od razu na ekranie, zapis przez kolejkę), drugie zdejmuje, filtr, bez numerów');
+  console.log('S146: członkowie — lista z grupy (nick z numerem, bez nicka cały numer), klasa jednym stuknięciem (od razu na ekranie, zapis przez kolejkę), drugie zdejmuje, filtr');
   const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
   const ROSTER = () => ({at: Date.parse('2026-10-26T12:00:00+01:00'), chatId: GRAFIK, chatName: 'Grafik', grafikList: true,
-    list: [{key: 'ma1', name: 'Ania Kowalska', named: true, role: 'p', grafik: null}, {key: 'mb2', name: 'Basia', named: true, role: '', grafik: null},
-           {key: 'mc3', name: '…003', named: false, role: 'k', grafik: null}], counts: {all: 3, none: 1, p: 1, o: 0, k: 1}});
+    list: [{key: 'ma1', name: 'Ania Kowalska', phone: '+48 601 000 001', named: true, role: 'p', grafik: null},
+           {key: 'mb2', name: 'Basia', phone: '+48 601 000 002', named: true, role: '', grafik: null},
+           {key: 'mc3', name: '', phone: '+48 601 000 003', named: false, role: 'k', grafik: null}], counts: {all: 3, none: 1, p: 1, o: 0, k: 1}});
   const empty = openPanel(HELPER({trigger: true}, on));
   check('bez pobranej listy — podpowiedź i „Pobierz członków"', /Lista jeszcze nie pobrana/.test(empty.html()) && !!doc(empty).querySelector('[data-act="rosterLoad"]'));
   empty.click('[data-act="rosterLoad"]');
@@ -217,11 +218,14 @@ function S146(){
   check('...lista na ekranie i komunikat', doc(empty).querySelectorAll('.roster .rrow').length === 3 && /Lista członków: 3 os\./.test(toastOf(empty)), toastOf(empty));
 
   const app = openPanel(HELPER({trigger: true, roster: ROSTER()}, on));
-  const row = name => [...doc(app).querySelectorAll('.roster .rrow')].find(li => txt(li.querySelector('.rname')) === name);
+  const NO_NICK = '+48 601 000 003';
+  const row = name => [...doc(app).querySelectorAll('.roster .rrow')].find(li => txt(li.querySelector('.rname')).split(' (')[0] === name);
   const active = name => { const li = row(name); const b = li && li.querySelector('.rrole.on'); return b ? b.dataset.role : ''; };
-  check('lista: imiona, klasy zaznaczone, liczniki w filtrze', !!row('Ania Kowalska') && active('Ania Kowalska') === 'p' && active('Basia') === '' && active('…003') === 'k'
+  check('lista: imiona, klasy zaznaczone, liczniki w filtrze', !!row('Ania Kowalska') && active('Ania Kowalska') === 'p' && active('Basia') === '' && active(NO_NICK) === 'k'
     && /wszyscy 3/.test(txt(doc(app).querySelector('.rchips'))) && /🟣 fioletowi 1/.test(txt(doc(app).querySelector('.rchips'))));
-  check('w panelu żadnych numerów telefonu — tylko klucze', !/4860|@c\.us|@lid/.test(doc(app).querySelector('.roster').innerHTML));
+  const names = [...doc(app).querySelectorAll('.roster .rname')].map(txt);
+  check('obok nicka numer w nawiasie, bez nicka cały numer', JSON.stringify(names) === JSON.stringify(['Ania Kowalska (+48 601 000 001)', 'Basia (+48 601 000 002)', NO_NICK])
+    && !!row('Basia').querySelector('.rphone') && !row(NO_NICK).querySelector('.rphone'), JSON.stringify(names));
   row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
   check('stuknięcie „pomarańczowy": od razu na ekranie, zapis (klucz, klasa, PIN)', active('Basia') === 'o'
     && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', 'o', '1234']));
@@ -229,13 +233,13 @@ function S146(){
   row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
   check('drugie stuknięcie w tę samą klasę — zdejmuje', active('Basia') === '' && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', '', '1234']));
   respondTo(app, 'setHelperRole', {key: 'mb2', role: ''});
-  row('…003').querySelector('[data-role="p"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
-  check('zmiana klasy: kandydat → fioletowy', active('…003') === 'p');
+  row(NO_NICK).querySelector('[data-role="p"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
+  check('zmiana klasy: kandydat → fioletowy', active(NO_NICK) === 'p');
   const sent = app.shipped.filter(f => f === 'setHelperRole').length;
   failTo(app, 'setHelperRole', 'Przekroczono limit czasu');
   check('zapis bez odpowiedzi — powtórzony raz (RETRIABLE)', app.shipped.filter(f => f === 'setHelperRole').length === sent + 1);
   failTo(app, 'setHelperRole', 'Tej osoby nie ma na liście — pobierz członków jeszcze raz');
-  check('nieudany zapis — wraca poprzednia klasa i komunikat', active('…003') === 'k' && /pobierz członków/.test(toastOf(app)), toastOf(app));
+  check('nieudany zapis — wraca poprzednia klasa i komunikat', active(NO_NICK) === 'k' && /pobierz członków/.test(toastOf(app)), toastOf(app));
   app.click('[data-act="rosterFilter"][data-f="none"]');
   check('filtr „bez klasy" — tylko osoby bez klasy', doc(app).querySelectorAll('.roster .rrow').length === 1 && !!row('Basia'));
   check('bez błędów', app.errors.length === 0 && empty.errors.length === 0, app.errors.concat(empty.errors).join('; '));

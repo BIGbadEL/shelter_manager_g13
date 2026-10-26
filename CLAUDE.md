@@ -305,7 +305,9 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   B79 pilnuje ciszy w ciągu dnia) — nie przywracać bez pytania. **Członkowie i klasy** (26.10, prośba właściciela; B83, S146):
   `getHelperMembers(pin, chatId)` — skład grupy z bramki („Grafik" albo ogłoszenia społeczności = cała społeczność) z imionami
   z `getContacts`, zapisany w `helperRoster`; `setHelperRole(key, role, pin)` — 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
-  / '' (RETRIABLE, `helperRoles`); do przeglądarki tylko `helperKey_` (FNV z numeru), nigdy numer. W składzie dnia klasy przy
+  / '' (RETRIABLE, `helperRoles`) — klasa po kluczu `helperKey_` (FNV z numeru). Panel (PIN) pokazuje **obok imienia numer
+  w nawiasie, bez imienia cały numer** (`helperPhone_`; decyzja właściciela 26.10 — wcześniej numerów w panelu nie było); tak samo
+  osoba bez imienia w wiadomościach bota (dawniej „…222"). W składzie dnia klasy przy
   imionach, „brak fioletowego" (tylko gdy ktoś jest fioletowy) i „kandydat bez fioletowego" (`helperSquadRoles_`). Zastąpiło pola
   „Fioletowi" / „Nowi". **Na czas testów pisze TYLKO prywatnie** — adres
   grupy jako odbiorcę odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`) i wysyłka (`helperSend_`, B74);
@@ -594,7 +596,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1898 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1901 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -722,7 +724,7 @@ serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odc
 w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px), S145 panel pomocnika Grafiku (grupa i kontakt
 z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
 reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`; S145d — bramka bez powiadomień w panelu),
-S146 członkowie w panelu (pobranie, klasa jednym stuknięciem od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr),
+S146 członkowie w panelu (pobranie, imię z numerem w nawiasie / sam numer, klasa jednym stuknięciem od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -770,7 +772,7 @@ skład dnia wieczorem i rano, B79 — dopisania i wypisania w ciągu dnia bez os
 przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
 bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu
 powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejka, B83 członkowie i klasy (lista z grupy z imionami,
-bez numerów w odpowiedzi, klasa po kluczu, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
+obok imienia numer, bez imienia cały numer — w panelu i w wiadomości, klasa po kluczu, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy

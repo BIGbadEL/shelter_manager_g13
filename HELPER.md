@@ -55,9 +55,13 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 członków" bierze skład wybranej grupy z bramki (`getGroupData`) — „Grafik" albo **grupę ogłoszeń społeczności, czyli całą
 społeczność** (bot jest jej członkiem; skład samej społeczności-rodzica bramka może podawać niepełny) — z imionami
 z kontaktów telefonu bota (`getContacts`: zapisane imię, inaczej nazwa z WhatsAppa), z wiadomości z „Grafiku" i z pola
-„Imiona"; bez imienia — końcówka numeru. Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
+„Imiona"; **obok imienia zawsze numer w nawiasie, bez imienia — cały numer** (decyzja właściciela 26.10; `helperPhone_`:
+„+48 600 111 222", zagraniczny w całości, konto bez numeru w adresie `@lid` — „konto …"). Ta sama postać numeru idzie do
+wiadomości bota przy osobie bez imienia (dawniej „…222"), a w „Imiona" można wpisać numer tak, jak go pokazuje lista
+(`helperNameMap_` przyjmuje „+" i spacje). Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
 (`setHelperRole`, RETRIABLE), drugie zdejmuje; filtr „bez klasy" pokazuje, kogo jeszcze nie przypisano. Klasa zostaje przy
-osobie także po ponownym pobraniu. Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. W składzie
+osobie także po ponownym pobraniu. Klasę zapisuje się po kluczu osoby (`helperKey_`), nie po numerze; numer idzie do panelu
+tylko do pokazania (panel za PIN-em, `getData` numerów nie ma). W składzie
 dnia: 🟣 🟠 🌱 przy imionach, **„brak fioletowego"** (tylko gdy ktokolwiek jest fioletowy) i **„kandydat bez fioletowego"**
 (z czatu: „tylko fiolet może opiekować się kandydatem", „świeżak nie może być sam") — oba to też powód porannego alarmu;
 przegląd tygodnia — „bez 🟣" / „kandydat bez 🟣". Pomarańczowy na razie tylko oznaczenie.
@@ -113,7 +117,7 @@ Wszystko we właściwościach skryptu (limit 9 KB na wartość — każda ma suf
 `HELPER_POLLS_KEEP`), osoby (numer → nazwa z WhatsAppa, najwyżej `HELPER_PEOPLE_MAX`), notatki z czatu na
 najbliższe dni (najwyżej `HELPER_NOTES_MAX`, po minionym dniu znikają), nieobecności, znaczniki wysłanych
 raportów, dziennik pomocnika do panelu. Numery telefonów nie idą do `getData`; panel (PIN) pokazuje nazwy
-i końcówki numerów. Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
+z numerami (od 26.10 — decyzja właściciela). Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
 
 ## Bezpieczniki
 

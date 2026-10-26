@@ -287,7 +287,7 @@ function makeContext(opts){
                           catalogLocked_, bootState_, cacheBump_,
                           setHelperSettings, helperSettings_, helperTick, helperRunNow, helperPreview, getHelperGateway, helperPanel_,
                           helperRange_, helperOptDay_, helperDayRefs_, helperKind_, helperAbsence_, helperLoad_,
-                          getHelperMembers, setHelperRole };
+                          getHelperMembers, setHelperRole, helperPhone_, helperNameMap_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,

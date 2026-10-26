@@ -94,8 +94,8 @@ function helperShort_(n) {
 }
 
 /**
- * Osoba do wiadomości: imię z ustawień („…123 = Ania" — końcówka numeru), z WhatsAppa (nadawca, także pod
- * innym formatem numeru — alias) albo końcówka numeru. Pełnego numeru pomocnik nigdzie nie pisze.
+ * Osoba do wiadomości: imię z ustawień („+48 600 111 222 = Ania" — numer albo jego końcówka), z WhatsAppa (nadawca, także
+ * pod innym formatem numeru — alias), z listy członków — albo cały numer (decyzja właściciela 26.10: bez nicka numer cały).
  */
 function helperName_(s, st, id) {
   const digits = String(id).split('@')[0];
@@ -107,25 +107,33 @@ function helperName_(s, st, id) {
     const sender = Object.keys(st.alias).filter(k => st.alias[k] === id)[0];
     if (sender) p = st.people[sender];
   }
-  return (p && p.n) || (st.rosterNames && st.rosterNames[id]) || ('…' + digits.slice(-3));
+  return (p && p.n) || (st.rosterNames && st.rosterNames[id]) || helperPhone_(id);
 }
-/** „123 = Ania" w linijkach (albo po przecinku) → {'123': 'Ania'}. */
+/** Numer do pokazania: „+48 600 111 222" (polski), „+…" (inny); konto bez numeru w adresie (`@lid`) — „konto 1570…". */
+function helperPhone_(id) {
+  const p = String(id).split('@'), d = p[0];
+  if (p[1] !== 'c.us') return 'konto ' + d;
+  return /^48\d{9}$/.test(d) ? '+48 ' + d.slice(2, 5) + ' ' + d.slice(5, 8) + ' ' + d.slice(8) : '+' + d;
+}
+/** „123 = Ania" w linijkach (albo po przecinku) → {'123': 'Ania'}; numer też tak, jak go pokazuje panel („+48 600 111 222 = Ania"). */
 function helperNameMap_(text) {
   const out = {};
   String(text || '').split(/[\n,;]+/).forEach(line => {
-    const m = line.match(/^\s*(?:…|\.\.\.)?\s*(\d{3,15})\s*[=:-]\s*(.+?)\s*$/);
-    if (m) out[m[1]] = m[2].slice(0, 40);
+    const m = line.match(/^\s*(?:…|\.\.\.)?\s*\+?\s*(\d(?:[\d ]*\d)?)\s*[=:-]\s*(.+?)\s*$/);
+    const d = m ? m[1].replace(/ /g, '') : '';
+    if (d.length >= 3 && d.length <= 15) out[d] = m[2].slice(0, 40);
   });
   return out;
 }
 /* ---------- członkowie i ich klasa: fioletowy / pomarańczowy / kandydat (identyfikator w schronisku) ----------
    Lista członków to skład grupy z bramki (getGroupData) — „Grafiku" albo ogłoszeń społeczności, czyli całej
    społeczności — z imionami z kontaktów telefonu bota (getContacts). Właściciel klasyfikuje stuknięciem w panelu
-   (setHelperRole). Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. Z „Grafiku": „tylko
+   (setHelperRole). Panel (PIN) pokazuje przy nicku numer telefonu, bez nicka — cały numer (decyzja właściciela 26.10);
+   klasę zapisuje się po kluczu osoby (`helperKey_`), nie po numerze z przeglądarki. Z „Grafiku": „tylko
    fiolet może opiekować się kandydatem", „świeżak nie może być sam" — skład dnia ostrzega o kandydacie bez fioletowego. */
 const HELPER_ROLES = ['p', 'o', 'k'];
 const HELPER_ROLE_MARK = { p: '🟣', o: '🟠', k: '🌱' };
-/** Klucz osoby do panelu (FNV-1a z numeru, z literą na początku — numer telefonu nie wychodzi z serwera). */
+/** Klucz osoby do panelu (FNV-1a z numeru, z literą na początku) — po nim, nie po numerze, zapisuje się klasę. */
 function helperKey_(id) { return 'm' + volHash_(String(id)).toString(36); }
 /** Klasa osoby — po numerze z ankiety albo po jego powiązaniu z numerem nadawcy (alias, `@lid` / `@c.us`). */
 function helperRoleOf_(st, id) {
@@ -1196,7 +1204,7 @@ function helperPeopleText_(s, st) {
   const rows = Object.keys(ids).map(w => ({ n: helperName_(s, st, w), k: st.polls.filter(p => p.v[w]).length }))
     .sort((a, b) => a.n.localeCompare(b.n, 'pl'));
   return '*Znane osoby* (' + rows.length + ')\n' + rows.map(r => r.n + ' — ankiety: ' + r.k).join('\n')
-    + '\nImiona dla numerów bez nazwy: panel → „Imiona" („…123 = Ania").';
+    + '\nImiona dla numerów bez nazwy: panel → „Imiona" („+48 600 111 222 = Ania").';
 }
 
 function helperStatusText_(s, st) {
@@ -1267,14 +1275,19 @@ function setHelperRole(key, role, pin) {
   });
 }
 
-/** Lista członków do panelu: klucz, imię (albo końcówka numeru), klasa, czy jest w „Grafiku"; liczniki klas. */
+/**
+ * Lista członków do panelu: klucz, nick ('' = brak), numer telefonu („+48 600 111 222" — przy nicku w nawiasie, bez nicka
+ * sam; decyzja właściciela 26.10), klasa, czy jest w „Grafiku"; liczniki klas. Najpierw osoby z nickiem, po nicku.
+ */
 function helperRosterPanel_(st, s) {
   const r = st.roster;
   if (!r) return null;
   const inGrafik = st.members && r.chatId !== s.chatId ? st.members.ids : null;
-  const list = r.list.map(x => ({ key: helperKey_(x[0]), name: x[1] || helperName_(s, st, x[0]), named: !!x[1],
-                                  role: st.roles[x[0]] || '', grafik: inGrafik ? inGrafik.indexOf(x[0]) >= 0 : null }))
-    .sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || a.name.localeCompare(b.name, 'pl'));
+  const list = r.list.map(x => {
+    const phone = helperPhone_(x[0]), nick = x[1] || helperName_(s, st, x[0]);
+    return { key: helperKey_(x[0]), name: nick === phone ? '' : nick, phone, named: nick !== phone,
+             role: st.roles[x[0]] || '', grafik: inGrafik ? inGrafik.indexOf(x[0]) >= 0 : null };
+  }).sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || (a.name || a.phone).localeCompare(b.name || b.phone, 'pl'));
   const counts = { all: list.length, none: 0, p: 0, o: 0, k: 0 };
   list.forEach(x => { counts[x.role || 'none']++; });
   return { at: r.at, chatId: r.chatId, chatName: r.chatName || '', grafikList: r.chatId === s.chatId, list, counts };
@@ -1282,7 +1295,7 @@ function helperRosterPanel_(st, s) {
 
 /* ---------- panel ---------- */
 
-/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik. Bez numerów telefonów. */
+/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik, lista członków (z numerami — panel jest za PIN-em). */
 function helperPanel_() {
   const st = helperLoad_(), s = helperSettings_();
   return {
