@@ -203,23 +203,24 @@ const POLL_WINDOW_H = 3;
  * i pisze PRYWATNIE do właściciela: skład dnia, przegląd tygodnia… Wyłączony, dopóki
  * prowadząca go nie włączy. `features` — włącznik każdej funkcji (panel). min — ilu osób trzeba na dzień
  * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
- * weekDays — dni przeglądu tygodnia (0 = niedziela), purple / rookies — imiona fioletowych i nowych,
- * names — imiona dla numerów bez nazwy („…123 = Ania").
+ * weekDays — dni przeglądu tygodnia (0 = niedziela), names — imiona dla numerów bez nazwy („…123 = Ania").
+ * Klasy osób (fioletowy / pomarańczowy / kandydat) — osobno, z listy członków w panelu (Helper.gs, setHelperRole).
  */
 const DEFAULT_HELPER = {
   enabled: false, chatId: '', chatName: '', toId: '', toName: '',
-  min: 3, evening: 20, morning: 7, weekDays: [0, 3], purple: '', rookies: '', names: '',
+  min: 3, evening: 20, morning: 7, weekDays: [0, 3], names: '',
   features: { evening: true, eveningAlways: true, morning: true, week: true, newPoll: true,
               members: true, lastWeek: true, weather: true, commands: true },
 };
 const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
 /**
  * Sufity pomocnika. Właściwość ma limit 9 KB na wartość — każda część stanu najwyżej HELPER_BYTES bajtów,
- * listy najwyżej tyle pozycji. NAMES / NAME_MAP — pola panelu (te same liczby w Script.html — S145),
- * TEXT — cytat z czatu, MESSAGE — długość wiadomości, DAY_NOTES — cytatów w składzie dnia, CMDS — pytań na przebieg.
+ * listy najwyżej tyle pozycji. NAME_MAP — pole panelu „Imiona" (ta sama liczba w Script.html — S145b),
+ * TEXT — cytat z czatu, MESSAGE — długość wiadomości, DAY_NOTES — cytatów w składzie dnia, CMDS — pytań na przebieg,
+ * ROSTER — członków na liście w panelu (społeczność G13 to ok. 40–100 osób; więcej i tak nie zmieści się w 8 KB).
  */
-const HELPER_LIMITS = { MIN_MAX: 10, NAMES: 300, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, NOTES: 40, GONE: 40, ABS: 20,
-                        SEEN: 60, LOG: 30, PANEL_LOG: 15, TEXT: 160, DAY_NOTES: 8, CMDS: 3, MESSAGE: 3500 };
+const HELPER_LIMITS = { MIN_MAX: 10, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, NOTES: 40, GONE: 40, ABS: 20,
+                        SEEN: 60, LOG: 30, PANEL_LOG: 15, TEXT: 160, DAY_NOTES: 8, CMDS: 3, MESSAGE: 3500, ROSTER: 150 };
 const HELPER_BYTES = 8000;
 const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps Script: 1, 5, 10, 15 albo 30)
 const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)

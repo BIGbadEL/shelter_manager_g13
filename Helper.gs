@@ -107,7 +107,7 @@ function helperName_(s, st, id) {
     const sender = Object.keys(st.alias).filter(k => st.alias[k] === id)[0];
     if (sender) p = st.people[sender];
   }
-  return (p && p.n) || ('…' + digits.slice(-3));
+  return (p && p.n) || (st.rosterNames && st.rosterNames[id]) || ('…' + digits.slice(-3));
 }
 /** „123 = Ania" w linijkach (albo po przecinku) → {'123': 'Ania'}. */
 function helperNameMap_(text) {
@@ -118,11 +118,22 @@ function helperNameMap_(text) {
   });
   return out;
 }
-/** Imiona z pola „fioletowi" / „nowi". */
-function helperRoleSet_(text) { return String(text || '').split(/[,;\n]+/).map(x => volNorm_(x)).filter(Boolean); }
-function helperHasRole_(set, name) {
-  const n = volNorm_(name);
-  return set.some(r => n === r || n.indexOf(r + ' ') === 0 || n.split(' ')[0] === r);
+/* ---------- członkowie i ich klasa: fioletowy / pomarańczowy / kandydat (identyfikator w schronisku) ----------
+   Lista członków to skład grupy z bramki (getGroupData) — „Grafiku" albo ogłoszeń społeczności, czyli całej
+   społeczności — z imionami z kontaktów telefonu bota (getContacts). Właściciel klasyfikuje stuknięciem w panelu
+   (setHelperRole). Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. Z „Grafiku": „tylko
+   fiolet może opiekować się kandydatem", „świeżak nie może być sam" — skład dnia ostrzega o kandydacie bez fioletowego. */
+const HELPER_ROLES = ['p', 'o', 'k'];
+const HELPER_ROLE_MARK = { p: '🟣', o: '🟠', k: '🌱' };
+/** Klucz osoby do panelu (FNV-1a z numeru, z literą na początku — numer telefonu nie wychodzi z serwera). */
+function helperKey_(id) { return 'm' + volHash_(String(id)).toString(36); }
+/** Klasa osoby — po numerze z ankiety albo po jego powiązaniu z numerem nadawcy (alias, `@lid` / `@c.us`). */
+function helperRoleOf_(st, id) {
+  const r = st.roles || {};
+  if (r[id]) return r[id];
+  if (st.alias[id] && r[st.alias[id]]) return r[st.alias[id]];
+  const back = Object.keys(st.alias).filter(k => st.alias[k] === id)[0];
+  return back && r[back] ? r[back] : '';
 }
 /** Imię do porównania z Historią aplikacji: pierwszy wyraz, bez wielkości liter i ogonków. */
 function helperFirst_(name) { return volNorm_(helperShort_(name)).split(' ')[0] || ''; }
@@ -172,9 +183,7 @@ function helperValid_(o) {
   if (enabled && !toId) throw new Error('Wybierz kontakt, do którego pomocnik ma pisać');
   const one = v => clean_(String(v || '').replace(/[\r\n]+/g, ' '), 100);
   return { enabled, chatId, chatName: chatId ? one(o.chatName) : '', toId, toName: toId ? one(o.toName) : '',
-           min, evening, morning, weekDays,
-           purple: text(o.purple, HELPER_LIMITS.NAMES, 'Fioletowi'), rookies: text(o.rookies, HELPER_LIMITS.NAMES, 'Nowi'),
-           names: text(o.names, HELPER_LIMITS.NAME_MAP, 'Imiona'), features };
+           min, evening, morning, weekDays, names: text(o.names, HELPER_LIMITS.NAME_MAP, 'Imiona'), features };
 }
 
 /** Wyzwalacz: co HELPER_TICK_MIN minut, gdy pomocnik włączony. */
@@ -218,7 +227,13 @@ function helperLoad_() {
   // ankiety w dwóch właściwościach (helperSave_): nowsze w pierwszej, starsze w drugiej
   const polls = arr(helperJson_(PROP_HELPER_POLLS, [])).concat(arr(helperJson_(PROP_HELPER_POLLS2, [])))
     .filter(p => p && p.id).sort((a, b) => a.t - b.t);
+  // członkowie i klasy — osobne właściwości, pisane tylko z panelu (getHelperMembers, setHelperRole); przebieg ich nie zapisuje
+  const roster = helperJson_(PROP_HELPER_ROSTER, null);
+  const list = roster && Array.isArray(roster.list) ? roster.list : [];
+  const rosterNames = {};
+  list.forEach(x => { if (Array.isArray(x) && x[1]) rosterNames[x[0]] = x[1]; });
   return {
+    roles: obj(helperJson_(PROP_HELPER_ROLES, {})), roster: roster && typeof roster === 'object' ? Object.assign({}, roster, { list }) : null, rosterNames,
     polls, people: obj(people.p), alias: obj(people.a),
     notes: arr(notes.n), abs: arr(notes.b), gone: arr(notes.g),
     marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
@@ -842,10 +857,19 @@ function helperProblems_(s, st, info) {
   if (!info.poll) return ['brak ankiety'];
   // ankieta niepełna (sprzed włączenia powiadomień) — liczba to dolna granica: „mało osób" byłoby fałszywym alarmem
   if (info.voters.length < s.min && !info.poll.partial) out.push('mało osób');
-  const names = info.voters.map(w => helperName_(s, st, w));
-  const purple = helperRoleSet_(s.purple), rookies = helperRoleSet_(s.rookies);
-  if (purple.length && info.voters.length && !names.some(n => helperHasRole_(purple, n))) out.push('brak fioletowego');
-  if (rookies.length && info.voters.length && names.every(n => helperHasRole_(rookies, n))) out.push('same nowe osoby');
+  const r = helperSquadRoles_(st, info.voters);
+  if (r.known && info.voters.length && !r.p.length) out.push('brak fioletowego');
+  if (r.k.length && !r.p.length) out.push('kandydat bez fioletowego');
+  return out;
+}
+
+/**
+ * Klasy w składzie dnia: kto jest fioletowy, pomarańczowy, kandydatem. `known` — czy ktokolwiek w ogóle ma klasę
+ * „fioletowy" (bez sklasyfikowanych „brak fioletowego" byłoby przy każdym dniu i nic by nie znaczyło).
+ */
+function helperSquadRoles_(st, voters) {
+  const out = { p: [], o: [], k: [], known: Object.keys(st.roles || {}).some(k => st.roles[k] === 'p') };
+  voters.forEach(w => { const r = helperRoleOf_(st, w); if (out[r]) out[r].push(w); });
   return out;
 }
 
@@ -861,7 +885,7 @@ function helperDayText_(s, st, d, ctx) {
     // ankieta znana częściowo (sprzed włączenia powiadomień) — liczba to dolna granica, nie stan
     const part = info.poll.partial;
     L.push('*' + helperTitle_(d) + '*: ' + (part ? 'co najmniej ' : '') + n + ' os.' + (n < s.min ? ' ⚠️ (minimum ' + s.min + ')' : ' ✅'));
-    if (n) L.push('👥 ' + info.voters.map(name).join(', '));
+    if (n) L.push('👥 ' + info.voters.map(w => (HELPER_ROLE_MARK[helperRoleOf_(st, w)] || '') + name(w)).join(', '));
     const pn = Object.keys(info.parts);
     if (pn.length) L.push('   ' + ['r', 'w'].filter(k => info.parts[k]).map(k => (k === 'r' ? 'rano ' : 'wieczór ') + info.parts[k].length).join(' · '));
     info.extras.forEach(x => L.push('➕ osobno — ' + x.label + ': ' + x.who.length + ' os.'));
@@ -870,15 +894,11 @@ function helperDayText_(s, st, d, ctx) {
     if (info.poll.wrong) L.push('⚠️ daty w pytaniu ankiety nie pasują do tygodnia');
   }
   if (info.gone.length) L.push('➖ wypisali się: ' + info.gone.map(g => name(g.w) + ' (' + helperWhen_(g.at) + ')').join(', '));
-  const names = info.voters.map(name);
-  const purple = helperRoleSet_(s.purple), rookies = helperRoleSet_(s.rookies);
-  if (info.poll && purple.length && n) {
-    const p = names.filter(x => helperHasRole_(purple, x));
-    L.push(p.length ? '🟣 fioletowi: ' + p.join(', ') : '🟣 brak fioletowego ⚠️');
-  }
-  if (info.poll && rookies.length && n) {
-    const r = names.filter(x => helperHasRole_(rookies, x));
-    if (r.length) L.push(r.length === n ? '🌱 same nowe osoby ⚠️ (' + r.join(', ') + ')' : '🌱 nowi: ' + r.join(', '));
+  const roles = helperSquadRoles_(st, info.voters);
+  if (info.poll && n && roles.known && !roles.p.length) L.push('🟣 brak fioletowego ⚠️');
+  if (info.poll && roles.k.length) {
+    L.push(roles.p.length ? '🌱 kandydaci: ' + roles.k.map(name).join(', ') + ' — z fioletowym ✓'
+      : '🌱 kandydat bez fioletowego ⚠️ (' + roles.k.map(name).join(', ') + ') — kandydat nie może być sam');
   }
   if (info.abs.length) L.push('🚫 zapowiedziana nieobecność: ' + info.abs.map(a => name(a.w)).filter((x, i, a) => a.indexOf(x) === i).join(', '));
   if (info.notes.length) {
@@ -954,8 +974,10 @@ function helperWeekText_(s, st) {
   const L = ['*Przegląd tygodnia* (' + helperShortLabel_(days[0].d).slice(-5) + '–' + days[6].d.slice(8) + '.' + days[6].d.slice(5, 7) + ')'];
   days.forEach(i => {
     const extra = i.extras.map(x => x.label + ' ' + x.who.length).join(', ');
+    const r = i.poll ? helperSquadRoles_(st, i.voters) : null;
+    const roleNote = !r || !i.voters.length ? '' : r.k.length && !r.p.length ? ' · 🌱 kandydat bez 🟣 ⚠️' : r.known && !r.p.length ? ' · bez 🟣' : '';
     L.push(helperShortLabel_(i.d) + ' — ' + (!i.poll ? 'nie widzę ankiety'
-      : (i.poll.partial ? '≥ ' : '') + i.voters.length + ' os.' + (i.voters.length < s.min ? ' ⚠️' : '')) + (extra ? ' (osobno: ' + extra + ')' : ''));
+      : (i.poll.partial ? '≥ ' : '') + i.voters.length + ' os.' + (i.voters.length < s.min ? ' ⚠️' : '')) + roleNote + (extra ? ' (osobno: ' + extra + ')' : ''));
   });
   if (days.some(i => i.poll && i.poll.partial)) L.push('ℹ️ ≥ — ankieta sprzed włączenia powiadomień: znam tylko część głosów');
   const withPoll = days.filter(i => i.poll);
@@ -1189,6 +1211,75 @@ function helperStatusText_(s, st) {
     + ' · skład grupy: ' + (st.members ? st.members.ids.length : '—');
 }
 
+/* ---------- członkowie (panel) ---------- */
+
+/**
+ * „Pobierz członków" (PIN): skład grupy `chatId` z bramki (getGroupData; domyślnie „Grafik" z ustawień — dla całej
+ * społeczności jej grupa ogłoszeń) z imionami: kontakty telefonu bota (getContacts: zapisane imię, inaczej nazwa
+ * z WhatsAppa), wiadomości z „Grafiku", imiona z panelu. Zapisany skład (`helperRoster`) panel pokazuje do kolejnego
+ * pobrania, a klasy (`helperRoles`) zostają przy osobie także wtedy, gdy wypadnie z listy.
+ */
+function getHelperMembers(pin, chatId) {
+  requirePin_(pin);
+  const s = helperSettings_();
+  const group = String(chatId || s.chatId || '').trim();
+  if (!HELPER_GROUP.test(group)) throw new Error('Wybierz grupę z listy („Pobierz grupy")');
+  const g = greenCall_('getGroupData', { groupId: group });
+  const ids = (g && Array.isArray(g.participants) ? g.participants : []).map(p => String(p && p.id || '')).filter(Boolean);
+  if (!ids.length) throw new Error('Bramka nie podała składu tej grupy (bot musi do niej należeć)');
+  const known = {};
+  try {
+    const contacts = greenCall_('getContacts');
+    (Array.isArray(contacts) ? contacts : []).forEach(c => {
+      if (c && c.type !== 'group' && c.id) known[String(c.id)] = helperShort_(c.contactName || c.name || '');
+    });
+  } catch (e) { /* bez imion z kontaktów — zostają wiadomości i panel */ }
+  const st = helperLoad_();
+  const named = helperNameMap_(s.names);
+  const nameOf = id => {
+    const digits = id.split('@')[0], own = Object.keys(named).filter(k => digits.slice(-k.length) === k)[0];
+    return own ? named[own] : known[id] || (st.people[id] && st.people[id].n) || '';
+  };
+  const list = ids.slice(0, HELPER_LIMITS.ROSTER).map(id => [id, nameOf(id).slice(0, 30)]);
+  const roster = { at: Date.now(), chatId: group, chatName: clean_(String(g.subject || (group === s.chatId ? s.chatName : '') || ''), 60), list };
+  let json = JSON.stringify(roster);
+  while (diagBytes_(json) > HELPER_BYTES && roster.list.length > 1) { roster.list.pop(); json = JSON.stringify(roster); }
+  withLock_(() => setProp_(PROP_HELPER_ROSTER, json));
+  return helperRosterPanel_(helperLoad_(), s);
+}
+
+/**
+ * Klasa osoby z panelu (PIN): `role` 'p' fioletowy, 'o' pomarańczowy, 'k' kandydat, '' — bez klasy. Osoba po kluczu
+ * z ostatniego pobrania listy (numer telefonu nie przychodzi z przeglądarki). Idempotentne — w RETRIABLE.
+ */
+function setHelperRole(key, role, pin) {
+  requirePin_(pin);
+  const r = String(role == null ? '' : role);
+  if (r && HELPER_ROLES.indexOf(r) < 0) throw new Error('Nieznana klasa');
+  return withLock_(() => {
+    const st = helperLoad_();
+    const hit = (st.roster ? st.roster.list : []).filter(x => helperKey_(x[0]) === String(key))[0];
+    if (!hit) throw new Error('Tej osoby nie ma na liście — pobierz członków jeszcze raz');
+    const roles = st.roles;
+    if (r) roles[hit[0]] = r; else delete roles[hit[0]];
+    setProp_(PROP_HELPER_ROLES, JSON.stringify(roles));
+    return { key: String(key), role: r };
+  });
+}
+
+/** Lista członków do panelu: klucz, imię (albo końcówka numeru), klasa, czy jest w „Grafiku"; liczniki klas. */
+function helperRosterPanel_(st, s) {
+  const r = st.roster;
+  if (!r) return null;
+  const inGrafik = st.members && r.chatId !== s.chatId ? st.members.ids : null;
+  const list = r.list.map(x => ({ key: helperKey_(x[0]), name: x[1] || helperName_(s, st, x[0]), named: !!x[1],
+                                  role: st.roles[x[0]] || '', grafik: inGrafik ? inGrafik.indexOf(x[0]) >= 0 : null }))
+    .sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || a.name.localeCompare(b.name, 'pl'));
+  const counts = { all: list.length, none: 0, p: 0, o: 0, k: 0 };
+  list.forEach(x => { counts[x.role || 'none']++; });
+  return { at: r.at, chatId: r.chatId, chatName: r.chatName || '', grafikList: r.chatId === s.chatId, list, counts };
+}
+
 /* ---------- panel ---------- */
 
 /** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik. Bez numerów telefonów. */
@@ -1205,6 +1296,7 @@ function helperPanel_() {
         + Object.keys(p.v).filter(w => p.v[w].indexOf(i) >= 0).length : '').filter(Boolean).join(' · ') })),
     people: Object.keys(st.people).length, notes: st.notes.length, abs: st.abs.length,
     members: st.members ? st.members.ids.length : null,
+    roster: helperRosterPanel_(st, s),
   };
 }
 

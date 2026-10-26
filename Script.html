@@ -67,6 +67,8 @@
     helperBusy:'',         // przycisk pomocnika w toku: 'run' | 'gate' | 'preview' | 'send' | ''
     helperGate:null,       // „Sprawdź bramkę": [{key, label, ok}] albo {error}
     helperPreview:null,    // podgląd wiadomości: {kind, text}
+    rosterChat:'',         // grupa, z której „Pobierz członków" bierze listę ('' = z ostatniej listy albo „Grafik")
+    rosterFilter:'all',    // widok listy członków: all | none | p | o | k
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
@@ -490,7 +492,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -1855,7 +1857,7 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}${d && d.helper ? renderHelperBox(d.helper) : ''}` : '';
+      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}${d && d.helper ? renderHelperBox(d.helper) + renderRosterBox(d.helper) : ''}` : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -2286,7 +2288,6 @@
      i kontakt z tych samych list co ankieta i lista dnia („Pobierz grupy", „Pobierz kontakty"). „Sprawdź teraz",
      „Sprawdź bramkę" i podgląd idą wprost (nie przez kolejkę): przebieg potrafi trwać ponad 2 minuty. */
   const HELPER_MIN_MAX = 10;                        // tyle, ile HELPER_LIMITS.MIN_MAX w Config.gs (S145 pilnuje)
-  const HELPER_NAMES_MAX = 300;                     // HELPER_LIMITS.NAMES
   const HELPER_NAME_MAP_MAX = 600;                  // HELPER_LIMITS.NAME_MAP
   const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;        // jak na serwerze: tylko prywatny czat
   const HELPER_FEATURES = [
@@ -2306,7 +2307,7 @@
     HELPER_FEATURES.forEach(([k]) => { features[k] = f[k] !== false; });
     return {chatId: s.chatId || '', chatName: s.chatName || '', toId: s.toId || '', toName: s.toName || '',
             min: Number(s.min) || 3, evening: Number(s.evening) || 0, morning: Number(s.morning) || 0,
-            weekDays: (s.weekDays || []).map(Number).sort(), purple: s.purple || '', rookies: s.rookies || '', names: s.names || '',
+            weekDays: (s.weekDays || []).map(Number).sort(), names: s.names || '',
             features, enabled: !!s.enabled};
   }
   function helperForm(){ return state.helperDraft || helperSaved(); }
@@ -2315,8 +2316,6 @@
   function helperProblem(f, configured){
     if(f.toId && !HELPER_PRIVATE.test(f.toId)) return 'Na czas testów pomocnik pisze tylko prywatnie — wybierz kontakt z listy';
     if(!(f.min >= 1 && f.min <= HELPER_MIN_MAX)) return 'Minimum osób: od 1 do ' + HELPER_MIN_MAX;
-    if(String(f.purple).trim().length > HELPER_NAMES_MAX) return 'Fioletowi — najwyżej ' + HELPER_NAMES_MAX + ' znaków';
-    if(String(f.rookies).trim().length > HELPER_NAMES_MAX) return 'Nowi — najwyżej ' + HELPER_NAMES_MAX + ' znaków';
     if(String(f.names).replace(/\r\n?/g, '\n').trim().length > HELPER_NAME_MAP_MAX) return 'Imiona — najwyżej ' + HELPER_NAME_MAP_MAX + ' znaków';
     if(f.enabled && !f.chatId) return 'Wybierz grupę „Grafik", zanim włączysz pomocnika';
     if(f.enabled && !f.toId) return 'Wybierz kontakt, do którego pomocnik ma pisać';
@@ -2335,7 +2334,7 @@
     const txt = id => { const x = el(id); return x ? x.value : ''; };
     return {chatId: chat.id, chatName: chat.name, toId: to.id, toName: to.name, min: num('helperMin', 3),
             evening: num('helperEvening', 20), morning: num('helperMorning', 7), weekDays,
-            purple: txt('helperPurple'), rookies: txt('helperRookies'), names: txt('helperNames'), features,
+            names: txt('helperNames'), features,
             enabled: !!(el('helperEnabled') && el('helperEnabled').checked)};
   }
   function showHelperDirty(){
@@ -2401,10 +2400,6 @@
           <label for="helperMorning">rano o</label><select id="helperMorning">${hourOptions(f.morning)}</select></div>
         <div class="mailfl">Przegląd tygodnia (wieczorem) w</div>
         <div class="pollchecks days">${days}</div>
-        <label class="mailfl" for="helperPurple">Fioletowi — imiona jak w WhatsAppie, po przecinku</label>
-        <input id="helperPurple" class="mailfield" type="text" maxlength="${HELPER_NAMES_MAX}" value="${esc(f.purple)}">
-        <label class="mailfl" for="helperRookies">Nowi (nie mogą być sami)</label>
-        <input id="helperRookies" class="mailfield" type="text" maxlength="${HELPER_NAMES_MAX}" value="${esc(f.rookies)}">
         <label class="mailfl" for="helperNames">Imiona dla numerów bez nazwy — „…123 = Ania", każde w linijce</label>
         <textarea id="helperNames" class="mailtpl" rows="3" maxlength="${HELPER_NAME_MAP_MAX}">${esc(f.names)}</textarea>
         <div class="mailfl">Co wysyła</div>
@@ -2427,6 +2422,48 @@
   function applyHelperPanel(panel){
     if(!panel || !state.diag || state.diag.failed) return;
     state.diag.helper = panel;
+  }
+
+  /* ---------- członkowie: fioletowy / pomarańczowy / kandydat (pomocnik Grafiku) ----------
+     Lista ze składu grupy z bramki („Pobierz członków" — getHelperMembers, wprost), stuknięcie w klasę zapisuje ją od
+     razu (setHelperRole przez kolejkę, RETRIABLE; nieudany zapis wraca do poprzedniej klasy), drugie stuknięcie zdejmuje.
+     Z serwera przychodzi tylko klucz osoby, nie numer telefonu. */
+  const ROLE_BTNS = [['p', 'fioletowy'], ['o', 'pomarańczowy'], ['k', 'kandydat']];
+  const ROSTER_FILTERS = [['all', 'wszyscy'], ['none', 'bez klasy'], ['p', '🟣 fioletowi'], ['o', '🟠 pomarańczowi'], ['k', '🌱 kandydaci']];
+  function rosterCounts(r){
+    r.counts = {all: r.list.length, none: 0, p: 0, o: 0, k: 0};
+    r.list.forEach(x => { r.counts[x.role || 'none']++; });
+  }
+  function renderRosterBox(h){
+    const r = h.roster, s = h.settings || {}, busy = state.helperBusy;
+    const sel = state.rosterChat || (r && r.chatId) || s.chatId || '';
+    const chats = (state.pollChats || []).slice();
+    if(sel && !chats.some(c => c.id === sel)) chats.unshift({id: sel, name: (r && r.chatId === sel && r.chatName) || (sel === s.chatId && s.chatName) || sel});
+    const chatOpts = (sel ? '' : `<option value="">— wybierz grupę —</option>`)
+      + chats.map(c => `<option value="${esc(c.id)}"${c.id===sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const head = `
+        <label class="mailfl" for="rosterChat">Z grupy — „Grafik" albo grupa ogłoszeń społeczności (wtedy cała społeczność)</label>
+        <div class="pollchat"><select id="rosterChat">${chatOpts}</select>
+          <button class="btn outline" data-act="rosterLoad"${busy ? ' disabled' : ''}>${busy === 'roster' ? 'Pobieram…' : 'Pobierz członków'}</button></div>`;
+    let body = `<div class="hint">Lista jeszcze nie pobrana — wybierz grupę i stuknij „Pobierz członków".</div>`;
+    if(r){
+      const f = state.rosterFilter || 'all';
+      const chips = ROSTER_FILTERS.map(([k, label]) => `<button class="rchip${f===k ? ' on' : ''}" data-act="rosterFilter" data-f="${k}">${label} ${r.counts[k] || 0}</button>`).join('');
+      const rows = r.list.filter(x => f === 'all' || (f === 'none' ? !x.role : x.role === f)).map(x => `
+          <li class="rrow"><span class="rname${x.named ? '' : ' unnamed'}">${esc(x.name)}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
+            <span class="rroles">${ROLE_BTNS.map(([k, label]) => `<button class="rrole r${k}${x.role===k ? ' on' : ''}" data-act="rosterRole" data-key="${esc(x.key)}" data-role="${k}" aria-pressed="${x.role===k}">${label}</button>`).join('')}</span></li>`).join('')
+        || `<li class="rrow"><span class="rname unnamed">Nikogo w tym widoku.</span></li>`;
+      body = `<div class="hint">„${esc(r.chatName || r.chatId)}" — ${r.counts.all} os., pobrane ${esc(diagWhen(r.at))}.</div>
+        <div class="rchips">${chips}</div><ul class="roster">${rows}</ul>`;
+    }
+    return `
+      <div class="panelbox">
+        <h3>Członkowie — fioletowy / pomarańczowy / kandydat</h3>
+        ${head}${body}
+        <div class="hint">Stuknięcie w klasę zapisuje ją od razu, drugie — zdejmuje. Skład dnia od pomocnika ma przy imionach 🟣 🟠 🌱
+        i ostrzega o kandydacie bez fioletowego (kandydat nie może być sam). Imię z kontaktów telefonu bota albo z WhatsAppa;
+        bez imienia — końcówka numeru (imię wpiszesz wyżej, w „Imiona"). Klasa zostaje przy osobie także po ponownym pobraniu.</div>
+      </div>`;
   }
   /**
    * Wywołanie pomocnika wprost (nie przez kolejkę — przebieg trwa do kilku minut, a kolejka po 12 s uznałaby go
@@ -3123,6 +3160,8 @@
   const keepHelper = e => { if(!/^helper/.test(e.target.id || '') || !state.diag || !state.diag.helper) return; state.helperDraft = readHelperForm(); showHelperDirty(); };
   viewEl.addEventListener('input', keepHelper);
   viewEl.addEventListener('change', keepHelper);
+  // grupa listy członków — wybór trzymany w stanie (przerysowanie panelu go nie gubi)
+  viewEl.addEventListener('change', e => { if(e.target.id === 'rosterChat'){ state.rosterChat = e.target.value; invalidateHtml(); } });
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -3332,6 +3371,33 @@
     if(act==='helperPreview'){
       const kind = btn.dataset.kind;
       helperCall('preview', 'helperPreview', [state.pin, kind], res => { state.helperPreview = {kind, text: String(res && res.text || '')}; });
+    }
+    if(act==='rosterLoad'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      const chat = (viewEl.querySelector('#rosterChat') || {}).value || state.rosterChat || h.settings.chatId;
+      if(!chat){ toast('Wybierz grupę („Pobierz grupy" wyżej)'); return; }
+      helperCall('roster', 'getHelperMembers', [state.pin, chat], res => {
+        if(state.diag && state.diag.helper) state.diag.helper.roster = res;
+        toast('Lista członków: ' + (res && res.counts ? res.counts.all : 0) + ' os.', 'ok');
+      });
+    }
+    if(act==='rosterFilter'){ state.rosterFilter = btn.dataset.f; render('nav'); }
+    if(act==='rosterRole'){
+      const cur = () => state.diag && state.diag.helper && state.diag.helper.roster;
+      const r = cur(), key = btn.dataset.key;
+      const x = r && r.list.find(y => y.key === key);
+      if(!x) return;
+      const prev = x.role, role = prev === btn.dataset.role ? '' : btn.dataset.role;
+      x.role = role; rosterCounts(r);                // od razu na ekranie
+      render('nav');
+      enqueue('setHelperRole', [key, role, state.pin], {key: 'role:' + key,
+        reconcile: res => { const y = cur() && cur().list.find(z => z.key === key); if(y && res && typeof res.role === 'string'){ y.role = res.role; rosterCounts(cur()); } },
+        fail: () => {                                // nie zapisało się — wraca poprzednia klasa (komunikat daje kolejka)
+          const y = cur() && cur().list.find(z => z.key === key);
+          if(y && y.role === role){ y.role = prev; rosterCounts(cur()); }
+          if(state.view==='diag') render('nav');
+        }});
     }
     if(act==='helperSendPreview'){
       const h = state.diag && state.diag.helper, pv = state.helperPreview;

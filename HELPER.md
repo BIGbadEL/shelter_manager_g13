@@ -21,7 +21,7 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 | „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **„Z czatu"** w składzie dnia: wiadomości, które dotyczą tego dnia |
 | „Dopisałam się", a głosu nie ma; „wypisuję się", a głos dalej jest; nowa osoba „nie mam dostępu do grafiku" | kilka razy w miesiącu | **rozjazd czatu i ankiety** w składzie dnia, **nowa osoba w grupie** |
 | „Nie ma mnie 13–17 sierpnia", „W poniższych terminach będę nieobecny: …" | kilka razy w miesiącu | **zapowiedziane nieobecności** w przeglądzie tygodnia i w dniu |
-| „potrzebny fioletowy wolo", „świeżak nie może być sam" | kilka razy w miesiącu | **fioletowi / nowi** — lista imion w panelu, ostrzeżenie w składzie dnia |
+| „potrzebny fioletowy wolo", „świeżak nie może być sam", „tylko fiolet może opiekować się kandydatem" | kilka razy w miesiącu | **klasy członków** (fioletowy / pomarańczowy / kandydat) z listy w panelu, ostrzeżenie w składzie dnia |
 | „Kto przyjdzie do Evera?", psy dla wyznaczonych osób | co tydzień | **psy „tylko wyznaczone osoby"** w składzie dnia: kto z nimi ostatnio chodził (Historia) |
 | ankieta z pomylonymi datami („Grafik 05-11.11" zamiast 10; tydzień wcześniej niż trzeba) | 2× w próbce | **nowa ankieta** — sprawdzenie, czy daty pasują do najbliższego tygodnia, przypomnienie o przypięciu |
 | upały → ankiety „rano / wieczór" | lato | **pogoda** w składzie dnia (Open-Meteo, bez klucza) |
@@ -30,11 +30,11 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 
 1. **Skład na jutro** (`evening`) — codziennie o godzinie „wieczorem" (domyślnie 20): kto jest w ankiecie na
    jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani od wczoraj, „Z czatu", rozjazd czatu
-   i ankiety, nieobecności, fioletowi/nowi, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
+   i ankiety, nieobecności, klasy przy imionach (🟣 🟠 🌱) i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
    wyznaczonych osób), pogoda. W niedzielę na górze: czy jest ankieta na nowy tydzień.
    `eveningAlways` — wysyłaj codziennie (na czas testów); wyłączone = tylko, gdy jest problem.
 2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, **tylko gdy jest problem**
-   (mniej niż minimum, brak fioletowego, same nowe osoby, brak ankiety).
+   (mniej niż minimum, brak fioletowego, kandydat bez fioletowego, brak ankiety).
 3. **Przegląd tygodnia** (`week`) — w wybrane dni (domyślnie niedziela i środa) o godzinie „wieczorem":
    7 najbliższych dni — liczba osób, ⚠️ słabe dni, dni bez ankiety, podpowiedź „ktoś z niedzieli (6) na
    sobotę (2)?", nieobecności.
@@ -51,7 +51,16 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
    dzień tygodnia (`sobota`), data (`31.10`), `tydzień`, `nieobecni`, `nieaktywni`, `ludzie`, `stan`,
    `pomoc`. Bot odpowiada przy najbliższym przebiegu (do 10 min). Inne czaty — nic.
 
-Fioletowi i nowi: dwa pola w panelu, imiona po przecinku (tak jak widać je w WhatsAppie; wystarczy imię).
+**Członkowie i ich klasy** (od 26.10, zamiast pól „fioletowi" / „nowi"; B83, S146). Panel → „Członkowie": „Pobierz
+członków" bierze skład wybranej grupy z bramki (`getGroupData`) — „Grafik" albo **grupę ogłoszeń społeczności, czyli całą
+społeczność** (bot jest jej członkiem; skład samej społeczności-rodzica bramka może podawać niepełny) — z imionami
+z kontaktów telefonu bota (`getContacts`: zapisane imię, inaczej nazwa z WhatsAppa), z wiadomości z „Grafiku" i z pola
+„Imiona"; bez imienia — końcówka numeru. Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
+(`setHelperRole`, RETRIABLE), drugie zdejmuje; filtr „bez klasy" pokazuje, kogo jeszcze nie przypisano. Klasa zostaje przy
+osobie także po ponownym pobraniu. Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. W składzie
+dnia: 🟣 🟠 🌱 przy imionach, **„brak fioletowego"** (tylko gdy ktokolwiek jest fioletowy) i **„kandydat bez fioletowego"**
+(z czatu: „tylko fiolet może opiekować się kandydatem", „świeżak nie może być sam") — oba to też powód porannego alarmu;
+przegląd tygodnia — „bez 🟣" / „kandydat bez 🟣". Pomarańczowy na razie tylko oznaczenie.
 
 **Usunięte: „zmiany w ankiecie"** (osobna wiadomość o każdym dopisaniu i wypisaniu, po kwadransie ciszy) — 26.10.2026,
 decyzja właściciela po pierwszym dniu testu: męczące, a cały sens bota to, żeby takich powiadomień nie dostawać;

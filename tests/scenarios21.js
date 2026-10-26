@@ -64,7 +64,7 @@ function S144(){
 const GRAFIK = '120363000000000001@g.us', OWNER = '48600111222@c.us';
 const FEATS = {evening:true, eveningAlways:true, morning:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
 const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toId:'', toName:'', min:3, evening:20, morning:7,
-    weekDays:[0,3], purple:'', rookies:'', names:'', features: Object.assign({}, FEATS)}, s),
+    weekDays:[0,3], names:'', features: Object.assign({}, FEATS)}, s),
   configured: true, env: 'test', trigger: false, stat: null, log: [], polls: [], people: 0, notes: 0, abs: 0, members: null}, o);
 const POLL = {settings: {question:'Grafik [TYDZIEŃ]', options:['Pon','Wt'], multi:true, day:0, hour:12, enabled:false, chatId:'', chatName:''},
   configured: true, state: null, last: null, next: {day:'2026-10-25', label:'26.10-01.11'}, now: {label:'26.10-01.11', question:'Grafik 26.10-01.11', status:'', at:''}};
@@ -93,8 +93,9 @@ function S145(){
   fill(app, {'#helperEnabled': true});
   app.click('[data-act="helperSave"]');
   check('włączenie bez grupy — komunikat, nic nie idzie', /Wybierz grupę/.test(toastOf(app)) && !calls(app, 'setHelperSettings').length, toastOf(app));
-  fill(app, {'#helperChat': GRAFIK, '#helperTo': OWNER, '#helperMin': '4', '#helperPurple': 'Gosia, Janek', '#helperF_weather': false, '#helperWd3': false, '#helperWd5': true,
+  fill(app, {'#helperChat': GRAFIK, '#helperTo': OWNER, '#helperMin': '4', '#helperF_weather': false, '#helperWd3': false, '#helperWd5': true,
              '#helperNames': '123 = Ania'});
+  check('pól „Fioletowi" i „Nowi" już nie ma (klasy z listy członków)', !doc(app).getElementById('helperPurple') && !doc(app).getElementById('helperRookies'));
   check('„Niezapisane zmiany" przy pomocniku, nie przy ankiecie', !hidden(app, '.helperdirty') && hidden(app, '.polldirty'));
   app.window.eval('fetchDiag()');                       // panel się przerysowuje (odświeżenie) — szkic zostaje
   respondTo(app, 'getDiagnostics', DIAG(HELPER()));
@@ -104,7 +105,7 @@ function S145(){
   app.click('[data-act="helperSave"]');
   const save = lastCall(app, 'setHelperSettings');
   const want = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', min: 4, evening: 20, morning: 7, weekDays: [0, 5],
-    purple: 'Gosia, Janek', rookies: '', names: '123 = Ania', features: Object.assign({}, FEATS, {weather: false}), enabled: true};
+    names: '123 = Ania', features: Object.assign({}, FEATS, {weather: false}), enabled: true};
   check('zapis: grupa, kontakt (nazwa bez numeru), minimum, dni, imiona, włączniki, PIN', !!save && JSON.stringify(save.args) === JSON.stringify([want, '1234']),
     save && JSON.stringify(save.args));
   respondTo(app, 'setHelperSettings', HELPER({trigger: true}, Object.assign({}, want, {features: want.features})));
@@ -163,17 +164,17 @@ function S145b(){
   const env = makeContext({ props: { pin: '1234', greenApiUrl: 'https://7103.api.greenapi.com', greenApiInstance: '7103123456', greenApiToken: 't' } });
   const L = env.conf.HELPER_LIMITS;
   const num = name => Number((src.match(new RegExp('const ' + name + ' = (\\d+)')) || [])[1]);
-  check('limity: minimum osób, „fioletowi/nowi", „imiona"', num('HELPER_MIN_MAX') === L.MIN_MAX && num('HELPER_NAMES_MAX') === L.NAMES && num('HELPER_NAME_MAP_MAX') === L.NAME_MAP,
-    [num('HELPER_MIN_MAX'), num('HELPER_NAMES_MAX'), num('HELPER_NAME_MAP_MAX')].join());
+  check('limity: minimum osób, „imiona"', num('HELPER_MIN_MAX') === L.MIN_MAX && num('HELPER_NAME_MAP_MAX') === L.NAME_MAP,
+    [num('HELPER_MIN_MAX'), num('HELPER_NAME_MAP_MAX')].join());
   const keys = Object.keys(env.conf.DEFAULT_HELPER.features);
   const client = (src.match(/const HELPER_FEATURES = \[([\s\S]*?)\n  \];/) || [])[1] || '';
   check('włączniki w panelu = funkcje serwera (' + keys.length + ')', keys.every(k => client.indexOf("['" + k + "'") >= 0) && (client.match(/\['/g) || []).length === keys.length);
   const app = buildApp();
   app.seed(base());
-  const ok = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'G', min: 3, evening: 20, morning: 7, weekDays: [0], purple: '', rookies: '', names: '',
+  const ok = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'G', min: 3, evening: 20, morning: 7, weekDays: [0], names: '',
     features: Object.assign({}, FEATS), enabled: true};
   const cases = [ok, Object.assign({}, ok, {toId: GRAFIK}), Object.assign({}, ok, {min: 0}), Object.assign({}, ok, {min: L.MIN_MAX + 1}),
-    Object.assign({}, ok, {purple: 'x'.repeat(L.NAMES + 1)}), Object.assign({}, ok, {rookies: 'x'.repeat(L.NAMES)}), Object.assign({}, ok, {names: 'x'.repeat(L.NAME_MAP + 1)}),
+    Object.assign({}, ok, {names: 'x'.repeat(L.NAME_MAP)}), Object.assign({}, ok, {names: 'x'.repeat(L.NAME_MAP + 1)}),
     Object.assign({}, ok, {chatId: ''}), Object.assign({}, ok, {toId: ''}), Object.assign({}, ok, {chatId: '', enabled: false})];
   const diff = cases.map((c, i) => {
     const browser = !!app.window.helperProblem(c, true);
@@ -201,6 +202,45 @@ function S145d(){
   check('bez błędów', off.errors.length === 0 && ok.errors.length === 0, off.errors.concat(ok.errors).join('; '));
 }
 
+/* ---------- S146: członkowie i klasy w panelu ---------- */
+function S146(){
+  console.log('S146: członkowie — lista z grupy, klasa jednym stuknięciem (od razu na ekranie, zapis przez kolejkę), drugie zdejmuje, filtr, bez numerów');
+  const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
+  const ROSTER = () => ({at: Date.parse('2026-10-26T12:00:00+01:00'), chatId: GRAFIK, chatName: 'Grafik', grafikList: true,
+    list: [{key: 'ma1', name: 'Ania Kowalska', named: true, role: 'p', grafik: null}, {key: 'mb2', name: 'Basia', named: true, role: '', grafik: null},
+           {key: 'mc3', name: '…003', named: false, role: 'k', grafik: null}], counts: {all: 3, none: 1, p: 1, o: 0, k: 1}});
+  const empty = openPanel(HELPER({trigger: true}, on));
+  check('bez pobranej listy — podpowiedź i „Pobierz członków"', /Lista jeszcze nie pobrana/.test(empty.html()) && !!doc(empty).querySelector('[data-act="rosterLoad"]'));
+  empty.click('[data-act="rosterLoad"]');
+  check('„Pobierz członków" — wprost do serwera, z PIN-em i grupą (domyślnie „Grafik")', JSON.stringify(lastCall(empty, 'getHelperMembers').args) === JSON.stringify(['1234', GRAFIK]));
+  respondTo(empty, 'getHelperMembers', ROSTER());
+  check('...lista na ekranie i komunikat', doc(empty).querySelectorAll('.roster .rrow').length === 3 && /Lista członków: 3 os\./.test(toastOf(empty)), toastOf(empty));
+
+  const app = openPanel(HELPER({trigger: true, roster: ROSTER()}, on));
+  const row = name => [...doc(app).querySelectorAll('.roster .rrow')].find(li => txt(li.querySelector('.rname')) === name);
+  const active = name => { const li = row(name); const b = li && li.querySelector('.rrole.on'); return b ? b.dataset.role : ''; };
+  check('lista: imiona, klasy zaznaczone, liczniki w filtrze', !!row('Ania Kowalska') && active('Ania Kowalska') === 'p' && active('Basia') === '' && active('…003') === 'k'
+    && /wszyscy 3/.test(txt(doc(app).querySelector('.rchips'))) && /🟣 fioletowi 1/.test(txt(doc(app).querySelector('.rchips'))));
+  check('w panelu żadnych numerów telefonu — tylko klucze', !/4860|@c\.us|@lid/.test(doc(app).querySelector('.roster').innerHTML));
+  row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
+  check('stuknięcie „pomarańczowy": od razu na ekranie, zapis (klucz, klasa, PIN)', active('Basia') === 'o'
+    && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', 'o', '1234']));
+  respondTo(app, 'setHelperRole', {key: 'mb2', role: 'o'});
+  row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
+  check('drugie stuknięcie w tę samą klasę — zdejmuje', active('Basia') === '' && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', '', '1234']));
+  respondTo(app, 'setHelperRole', {key: 'mb2', role: ''});
+  row('…003').querySelector('[data-role="p"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
+  check('zmiana klasy: kandydat → fioletowy', active('…003') === 'p');
+  const sent = app.shipped.filter(f => f === 'setHelperRole').length;
+  failTo(app, 'setHelperRole', 'Przekroczono limit czasu');
+  check('zapis bez odpowiedzi — powtórzony raz (RETRIABLE)', app.shipped.filter(f => f === 'setHelperRole').length === sent + 1);
+  failTo(app, 'setHelperRole', 'Tej osoby nie ma na liście — pobierz członków jeszcze raz');
+  check('nieudany zapis — wraca poprzednia klasa i komunikat', active('…003') === 'k' && /pobierz członków/.test(toastOf(app)), toastOf(app));
+  app.click('[data-act="rosterFilter"][data-f="none"]');
+  check('filtr „bez klasy" — tylko osoby bez klasy', doc(app).querySelectorAll('.roster .rrow').length === 1 && !!row('Basia'));
+  check('bez błędów', app.errors.length === 0 && empty.errors.length === 0, app.errors.concat(empty.errors).join('; '));
+}
+
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */
 async function S145c(){
   console.log('S145c: pomocnik — odpowiedź nie przyszła (google.script.run nie oddzwonił): po T.helperWait przyciski wracają');
@@ -214,7 +254,7 @@ async function S145c(){
 }
 
 (async () => {
-  for(const s of [S144, S145, S145b, S145d, S145c]){
+  for(const s of [S144, S145, S145b, S145d, S146, S145c]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

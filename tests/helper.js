@@ -16,7 +16,9 @@ const GRAFIK = '120363000000000001@g.us';
 const OWNER = '48600111222@c.us';
 const BOT = '48799000111@c.us';
 const ANIA = '48601000001@c.us', BASIA = '48601000002@c.us', CELINA = '48601000003@c.us',
-      DAWID = '48601000004@c.us', EWA = '48601000005@c.us', KASIA = '48601000006@c.us';
+      DAWID = '48601000004@c.us', EWA = '48601000005@c.us', KASIA = '48601000006@c.us', GOSIA = '48601000007@c.us';
+/** Klucz osoby z listy członków po imieniu (numer telefonu do panelu nie idzie). */
+const keyOf = (roster, name) => { const x = roster.list.filter(y => y.name === name)[0]; if (!x) throw new Error('brak na liście: ' + name); return x.key; };
 const OPTS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela', 'Nie mogę'];
 const Q = 'Grafik 26.10-01.11';
 
@@ -50,7 +52,7 @@ function build(o){
     props: Object.assign({ pin: TEST_PIN, walksImported: '2026-01-01' }, o.gateway === false ? {} : GREEN, o.props),
   });
   const gw = { queue: [], receipt: 0, deleted: [], sent: [], received: 0, members: [ANIA, BASIA], weather: null, fail: null,
-               history: [], historyCalls: [],
+               history: [], historyCalls: [], contacts: [],
                settings: { incomingWebhook: 'yes', pollMessageWebhook: 'yes', outgoingAPIMessageWebhook: 'yes', outgoingMessageWebhook: 'yes', webhookUrl: '' } };
   env.http.handler = (url, opts) => {
     if(gw.fail){ const r = gw.fail(url, opts); if(r) return r; }
@@ -71,7 +73,8 @@ function build(o){
       gw.sent.push(p); ALL_SENT.push(p);
       return { code: 200, body: JSON.stringify({ idMessage: 'OUT' + gw.sent.length }) };
     }
-    if(/\/getGroupData\//.test(url)) return { code: 200, body: JSON.stringify({ groupId: GRAFIK, participants: gw.members.map(id => ({ id })) }) };
+    if(/\/getGroupData\//.test(url)) return { code: 200, body: JSON.stringify({ groupId: GRAFIK, subject: 'Grafik', participants: gw.members.map(id => ({ id })) }) };
+    if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(gw.contacts) };
     // historia czatu jak getChatHistory: od najnowszej, `count` ostatnich
     if(/\/getChatHistory\//.test(url)){
       gw.historyCalls.push(JSON.parse(opts.payload));
@@ -127,7 +130,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('minimum osób 1–10, godziny 0–23, dni tygodnia 0–6', /Minimum/.test(throws(() => env.api.setHelperSettings(Object.assign({}, base, { min: 0 }), TEST_PIN)))
     && /0–23/.test(throws(() => env.api.setHelperSettings(Object.assign({}, base, { evening: 24 }), TEST_PIN)))
     && /dzień/.test(throws(() => env.api.setHelperSettings(Object.assign({}, base, { weekDays: [7] }), TEST_PIN))));
-  check('pole „fioletowi" z limitem', /Fioletowi/.test(throws(() => env.api.setHelperSettings(Object.assign({}, base, { purple: 'x'.repeat(env.conf.HELPER_LIMITS.NAMES + 1) }), TEST_PIN))));
+  check('pole „Imiona" z limitem', /Imiona/.test(throws(() => env.api.setHelperSettings(Object.assign({}, base, { names: 'x'.repeat(env.conf.HELPER_LIMITS.NAME_MAP + 1) }), TEST_PIN))));
   const noGw = build({ gateway: false });
   check('włączenie bez bramki — odmowa z opisem właściwości', /greenApiUrl/.test(throws(() => on(noGw))));
 
@@ -320,7 +323,11 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
 (()=>{
   console.log('B78: pomocnik — skład na jutro wieczorem (raz), dziś rano przy problemie, miniony tydzień w poniedziałek');
   const env = build({ now: '2026-10-25T10:20:00+02:00' });
-  on(env, { min: 4, purple: 'Gosia, Janek', evening: 20, morning: 7, weekDays: [] });
+  on(env, { min: 4, evening: 20, morning: 7, weekDays: [] });
+  // fioletowa jest Gosia — w ankiecie na poniedziałek jej nie ma
+  env.gw.members = [ANIA, BASIA, GOSIA];
+  env.gw.contacts = [{ id: GOSIA, name: 'Gosia K', contactName: 'Gosia', type: 'user' }];
+  env.api.setHelperRole(keyOf(env.api.getHelperMembers(TEST_PIN), 'Gosia'), 'p', TEST_PIN);
   env.gw.weather = { daily: { time: ['2026-10-26'], temperature_2m_min: [4.2], temperature_2m_max: [11.4], precipitation_probability_max: [30] } };
   env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
            vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
@@ -338,7 +345,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('wieczorem: skład na jutro — 3 os. przy minimum 4 ⚠️, kto jest', /Jutro — poniedziałek 26\.10\*: 3 os\. ⚠️ \(minimum 4\)/.test(ev)
     && /👥 Ania, Dawid, Basia|👥 .*Ania.*Basia.*Dawid/.test(ev), ev);
   check('...wypisani: Celina (z godziną)', /➖ wypisali się: Celina \(nd 15:28\)/.test(ev), ev);
-  check('...brak fioletowego (Gosia, Janek)', /🟣 brak fioletowego ⚠️/.test(ev));
+  check('...brak fioletowego (fioletowa Gosia nie głosowała)', /🟣 brak fioletowego ⚠️/.test(ev));
   check('...z czatu: cytaty z godziną, pytanie z liczbą osób w chwili pytania', /Kasia \(nd 16:00\): „Dopisałam się na poniedziałek/.test(ev)
     && /❓ Ewa \(nd 18:00, wtedy 3 os\.\): „Kto dołączy w poniedziałek\?"/.test(ev), ev);
   check('...rozjazd: Kasia pisze, że będzie, a nie ma jej w ankiecie; Basia pisze, że nie da rady, a dalej jest',
@@ -561,6 +568,78 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('408 z kolejki (bramka nie doczekała się powiadomienia) — pusta kolejka, bez błędu', r && !r.err && !env.st().log.some(l => /408/.test(l.m)), r && r.err);
   env.gw.fail = null;
   check('ankiety w dwóch właściwościach (stan rośnie z czasem głosów)', !!env.props.helperPolls && env.props.helperPolls2 !== undefined);
+})();
+
+/* ---------- B83: członkowie i klasy ---------- */
+(()=>{
+  console.log('B83: pomocnik — członkowie z grupy (imiona z kontaktów bota, wiadomości, panelu), klasy fioletowy/pomarańczowy/kandydat, ostrzeżenia w składzie');
+  const ZOSIA = '48601000099@c.us', LID = '157000000000777@lid';
+  const env = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(env, { min: 1, weekDays: [1], names: '099 = Zosia', features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.gw.members = [ANIA, BASIA, CELINA, GOSIA, KASIA, ZOSIA];
+  env.gw.contacts = [{ id: GOSIA, name: 'Gosia K', contactName: 'Gosia', type: 'user' }, { id: ANIA, name: 'Ania Kowalska Schronisko G13', type: 'user' },
+                     { id: KASIA, name: 'Kasia', type: 'user' }, { id: GRAFIK, name: 'Grafik', type: 'group' }];
+  env.push(text(BASIA, 'Basia', 'Hej', '2026-10-26T11:00:00+02:00'));
+  env.tick();
+  check('lista członków: PIN, tylko grupa', /PIN/.test(throws(() => env.api.getHelperMembers('0000'))) && /grupę/.test(throws(() => env.api.getHelperMembers(TEST_PIN, OWNER))));
+  const r = env.api.getHelperMembers(TEST_PIN);
+  const names = r.list.map(x => x.name);
+  check('imiona: zapisane w telefonie bota, z WhatsAppa (bez dopisku grupy), z wiadomości, z panelu; bez imienia — końcówka numeru, na końcu',
+    JSON.stringify(names) === JSON.stringify(['Ania Kowalska', 'Basia', 'Gosia', 'Kasia', 'Zosia', '…003']) && r.counts.all === 6 && r.counts.none === 6 && r.chatName === 'Grafik',
+    JSON.stringify(names));
+  check('do przeglądarki tylko klucze, żadnego numeru telefonu', !/4860|157000/.test(JSON.stringify(r)) && r.list.every(x => /^m[0-9a-z]+$/.test(x.key)), JSON.stringify(r.list[0]));
+  const k = n => keyOf(env.api.getHelperMembers(TEST_PIN), n);
+  check('klasa: PIN, znana klasa, osoba z listy', /PIN/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'p', '0000')))
+    && /klasa/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'x', TEST_PIN))) && /pobierz członków/.test(throws(() => env.api.setHelperRole('mzzz', 'p', TEST_PIN))));
+  env.api.setHelperRole(k('Gosia'), 'p', TEST_PIN);
+  env.api.setHelperRole(k('Basia'), 'o', TEST_PIN);
+  env.api.setHelperRole(k('Kasia'), 'k', TEST_PIN);
+  const again = env.api.setHelperRole(k('Kasia'), 'k', TEST_PIN);
+  env.api.setHelperRole(k('Zosia'), 'k', TEST_PIN);
+  env.api.setHelperRole(k('Zosia'), '', TEST_PIN);
+  const c = env.api.helperPanel_().roster.counts;
+  check('fioletowy, pomarańczowy, kandydat; powtórka nic nie zmienia; pusta klasa zdejmuje', again.role === 'k' && c.p === 1 && c.o === 1 && c.k === 1 && c.none === 3,
+    JSON.stringify(c));
+  env.api.getHelperMembers(TEST_PIN);
+  check('klasy zostają po ponownym pobraniu listy', JSON.stringify(env.api.helperPanel_().roster.counts) === JSON.stringify(c));
+
+  // ankieta: we wtorek kandydatka Kasia i pomarańczowa Basia — bez fioletowego
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', KASIA, ['Wtorek'], '2026-10-26T12:10:00+02:00', { name: 'Kasia' }),
+           vote('P1', BASIA, ['Wtorek'], '2026-10-26T12:11:00+02:00', { name: 'Basia' }));
+  env.tick('2026-10-26T12:20:00+02:00');
+  const t1 = env.api.helperPreview(TEST_PIN, 'jutro').text;
+  check('skład: klasy przy imionach, „kandydat bez fioletowego" i „brak fioletowego"', /👥 .*🌱Kasia/.test(t1) && /🟠Basia/.test(t1)
+    && /🌱 kandydat bez fioletowego ⚠️ \(Kasia\)/.test(t1) && /🟣 brak fioletowego ⚠️/.test(t1), t1);
+  check('przegląd tygodnia: przy wtorku „kandydat bez 🟣"', /wt 27\.10 — 2 os\. · 🌱 kandydat bez 🟣 ⚠️/.test(env.api.helperPreview(TEST_PIN, 'tydzien').text));
+  env.setNow('2026-10-27T07:10:00+02:00');
+  env.tick();
+  check('rano: kandydat bez fioletowego to problem — skład na dziś idzie (choć osób jest dość)', env.msgs().some(m => /Dziś — wtorek 27\.10/.test(m) && /kandydat bez fioletowego/.test(m)),
+    env.msgs().join(' | '));
+  // Gosia głosuje — numer w ankiecie w innym formacie (@lid) niż na liście; powiązanie z nadawcą daje klasę
+  env.push(vote('P1', GOSIA, ['Wtorek'], '2026-10-27T07:15:00+02:00', { name: 'Gosia', voter: LID }));
+  env.tick('2026-10-27T07:20:00+02:00');
+  const t2 = env.api.helperPreview(TEST_PIN, 'dzis').text;
+  check('z fioletową: „kandydaci: Kasia — z fioletowym ✓", bez „brak fioletowego"; klasa też przy numerze @lid', /🟣Gosia/.test(t2)
+    && /🌱 kandydaci: Kasia — z fioletowym ✓/.test(t2) && !/brak fioletowego|bez fioletowego/.test(t2), t2);
+  // bez nikogo sklasyfikowanego jako fioletowy — „brak fioletowego" nic by nie znaczyło
+  const plain = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(plain, { min: 1, weekDays: [], features: { newPoll: false, members: false, weather: false, lastWeek: false } });
+  plain.gw.members = [ANIA, BASIA];
+  plain.gw.contacts = [{ id: ANIA, name: 'Ania', type: 'user' }, { id: BASIA, name: 'Basia', type: 'user' }];
+  plain.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Wtorek'], '2026-10-26T12:10:00+02:00', { name: 'Ania' }),
+             vote('P1', BASIA, ['Środa'], '2026-10-26T12:11:00+02:00', { name: 'Basia' }));
+  plain.tick();
+  check('nikt nie ma klasy — bez „brak fioletowego"', !/fioletow/.test(plain.api.helperPreview(TEST_PIN, 'jutro').text));
+  // sama kandydatka (nikt nie jest fioletowy na liście): ostrzeżenie idzie z reguły o kandydacie, nie z „brak fioletowego"
+  plain.api.setHelperRole(keyOf(plain.api.getHelperMembers(TEST_PIN), 'Basia'), 'k', TEST_PIN);
+  plain.setNow('2026-10-27T07:10:00+02:00');                  // wtorek rano — Ania (bez klasy), nic nie grozi
+  plain.tick();
+  plain.setNow('2026-10-28T07:10:00+02:00');                  // środa rano — sama kandydatka Basia
+  plain.tick();
+  const mo = plain.msgs().filter(m => /Dziś —/.test(m));
+  check('rano: tylko dzień z samą kandydatką jest problemem („kandydat bez fioletowego", bez „brak fioletowego")', mo.length === 1
+    && /Dziś — środa 28\.10/.test(mo[0]) && /kandydat bez fioletowego/.test(mo[0]) && !/brak fioletowego/.test(mo[0]), mo.join(' | '));
 })();
 
 /* ---------- B74 (ciąg dalszy): w żadnym scenariuszu nic nie poszło do grupy ---------- */

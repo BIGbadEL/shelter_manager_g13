@@ -573,7 +573,7 @@ pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decy
 2. **Tylko w jednym środowisku** (na czas testów — na teście): kolejka powiadomień jest jedna na instancję,
    a test i produkcja dzielą instancję — dwa czytające zjadałyby sobie powiadomienia.
 3. Panel → „Pomocnik Grafiku (test)": „Pobierz grupy" → „Grafik", „Pobierz kontakty" → do kogo pisać
-   (w fazie testów: właściciel), minimum osób, godziny, „fioletowi" i „nowi", włączniki funkcji, „włączony",
+   (w fazie testów: właściciel), minimum osób, godziny, włączniki funkcji, „włączony",
    „Zapisz". Wyzwalacz `helperTick` (co 10 min) zakłada się sam; `installTriggers()` też go przywraca.
 4. Pełny obraz głosów — od pierwszej ankiety wysłanej po włączeniu powiadomień w bramce: bramka nie oddaje
    wyniku ankiety, tylko głosy oddane przy włączonych powiadomieniach. Ankieta sprzed włączenia jest niepełna
@@ -666,6 +666,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   a ankietę sprzed włączenia oznacza jako niepełną („co najmniej"). 408 z kolejki to pusta kolejka (B81, B82, S145d).
 - **Bez osobnych wiadomości o każdym dopisaniu i wypisaniu z ankiety** (26.10, decyzja właściciela: męczące) — funkcja
   „zmiany w ankiecie" usunięta; zostają podsumowania wieczorem i rano, wypisania są w nich jako „wypisali się" (B79).
+- **Członkowie i klasy** (26.10): panel → „Członkowie" — skład „Grafiku" albo całej społeczności (grupa ogłoszeń) z bramki,
+  z imionami z kontaktów bota; stuknięcie w fioletowy / pomarańczowy / kandydat zapisuje klasę. Skład dnia ma 🟣 🟠 🌱
+  przy imionach i ostrzega o kandydacie bez fioletowego. Zastępuje pola „Fioletowi" i „Nowi" (B83, S146; `HELPER.md`).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 
