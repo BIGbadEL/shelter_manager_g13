@@ -3,7 +3,7 @@
  *
  * Bot czyta grupę „Grafik" — ankietę tygodniową i to, co ludzie piszą — z kolejki powiadomień bramki
  * Green API i składa z tego, razem z danymi aplikacji (psy, Historia, rezerwacje), krótkie wiadomości:
- * skład na jutro, dziś rano przy problemie, zmiany w ankiecie, przegląd tygodnia, nowa ankieta, nowe osoby
+ * skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa ankieta, nowe osoby
  * w grupie, miniony tydzień; do tego odpowiada na pytania w prywatnym czacie. Każda funkcja ma włącznik
  * w panelu — te, które się nie sprawdzą, wyłącza się pojedynczo (decyzja właściciela 24.10.2026).
  *
@@ -11,7 +11,7 @@
  * ustawień (helperValid_), odczyt (helperSettings_) i każda wysyłka (helperSend_) — B74.
  *
  * Przebieg (helperRun_) co HELPER_TICK_MIN minut z wyzwalacza helperTick: kolejka bramki (helperIntake_) →
- * wiadomości o swoich porach i zmiany (helperSchedule_) → zapis stanu. Jeden przebieg naraz (helperClaim_).
+ * wiadomości o swoich porach (helperSchedule_) → zapis stanu. Jeden przebieg naraz (helperClaim_).
  * Pomocnik nie pisze do arkusza i nie trzyma blokady aplikacji w czasie wywołań bramki. Błąd bramki zostaje
  * w dzienniku pomocnika (panel), nie wychodzi z wyzwalacza — inaczej Google słałby maila co 10 minut.
  * Stan we właściwościach skryptu, każda z sufitem HELPER_BYTES (limit 9 KB na wartość).
@@ -221,7 +221,7 @@ function helperLoad_() {
   return {
     polls, people: obj(people.p), alias: obj(people.a),
     notes: arr(notes.n), abs: arr(notes.b), gone: arr(notes.g),
-    rep: obj(x.rep), marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
+    marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
     seen: arr(x.seen), sent: obj(x.sent), stat: x.stat || null, queue: arr(x.queue), cmds: arr(x.cmds),
     since: Number(x.since) || 0, gate: x.gate && typeof x.gate === 'object' ? x.gate : null,
     histAt: Number(x.histAt) || 0, catchUp: !!x.catchUp, log: arr(log),
@@ -275,7 +275,7 @@ function helperSave_(st) {
   put(PROP_HELPER_POLLS2, () => parts[1], () => false);
   put(PROP_HELPER_PEOPLE, () => ({ p: st.people, a: st.alias }), oldestPerson);
   put(PROP_HELPER_NOTES, () => ({ n: st.notes, b: st.abs, g: st.gone }), () => !!(st.notes.shift() || st.gone.shift() || st.abs.shift()));
-  put(PROP_HELPER_STATE, () => ({ rep: st.rep, marks: st.marks, members: st.members, seen: st.seen, sent: st.sent,
+  put(PROP_HELPER_STATE, () => ({ marks: st.marks, members: st.members, seen: st.seen, sent: st.sent,
                                   stat: st.stat, queue: st.queue, cmds: st.cmds, since: st.since, gate: st.gate,
                                   histAt: st.histAt, catchUp: st.catchUp }),
       () => !!st.seen.shift());
@@ -1043,7 +1043,11 @@ function helperOnce_(st, key, run, fn) {
 
 /* ---------- harmonogram ---------- */
 
-/** Po kolejce: odpowiedzi na pytania, nowe ankiety, zmiany, a o swoich porach — rano i wieczorem. */
+/**
+ * Po kolejce: odpowiedzi na pytania, nowe ankiety, a o swoich porach — rano i wieczorem. Osobnych wiadomości o każdym
+ * dopisaniu i wypisaniu z ankiety nie ma (usunięte 26.10.2026 — decyzja właściciela: męczące, cały sens bota to mniej
+ * powiadomień; wypisania widać w wieczornym i porannym składzie, „wypisali się").
+ */
 function helperSchedule_(s, st, run) {
   const f = s.features, ctx = helperCtx_(s);
   const T = today_(), hour = helperHour_(), wd = weekdayOf_(T);
@@ -1080,11 +1084,6 @@ function helperSchedule_(s, st, run) {
     if (p) helperOnce_(st, 'poll|' + id, run, () => { helperSend_(s, st, helperPollText_(st, p), run); });
   });
 
-  if (f.changes) {
-    try { helperChanges_(s, st, run); }
-    catch (e) { helperLog_(st, 'err', 'zmiany: ' + (e && e.message || e)); }
-  }
-
   if (f.morning && inWin(s.morning)) helperOnce_(st, 'mo|' + T, run, () => {
     const info = helperDay_(s, st, T);
     if (helperProblems_(s, st, info).length) helperSend_(s, st, helperDayText_(s, st, T, ctx), run);
@@ -1103,49 +1102,6 @@ function helperSchedule_(s, st, run) {
     helperSend_(s, st, helperWeekText_(s, st), run);
   });
   if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => { helperMembers_(s, st, run, true); });
-}
-
-/**
- * Zmiany w ankiecie na dziś, jutro i pojutrze — zbiorczo, netto i po ciszy: wiadomość idzie, gdy przez
- * HELPER_QUIET_MIN minut nic się nie zmieniło (odkliknięcie i ponowne kliknięcie się znosi). Punkt odniesienia
- * (rep.days) to stan z ostatniej wiadomości; dzień widziany pierwszy raz — punkt odniesienia bez wiadomości.
- * Do tego nowe wiadomości z czatu „nie dam rady" / nieobecności na te dni.
- */
-function helperChanges_(s, st, run) {
-  const T = today_(), rep = st.rep;
-  rep.days = rep.days && typeof rep.days === 'object' ? rep.days : {};
-  Object.keys(rep.days).forEach(d => { if (d < T) delete rep.days[d]; });
-  const days = [];
-  for (let k = 0; k < HELPER_CHANGE_DAYS; k++) days.push(addDays_(T, k));
-  const changes = [], cur = {};
-  days.forEach(d => {
-    const p = helperPollFor_(st, d);
-    if (!p) return;
-    cur[d] = helperVotersOn_(p, d);
-    if (!rep.days[d]) { rep.days[d] = cur[d]; return; }
-    const before = rep.days[d];
-    cur[d].filter(w => before.indexOf(w) < 0).forEach(w => changes.push({ d, w, plus: true }));
-    before.filter(w => cur[d].indexOf(w) < 0).forEach(w => changes.push({ d, w, plus: false }));
-  });
-  const fresh = st.notes.filter(n => n.at > (rep.noteAt || 0) && (n.k === 'out' || n.k === 'abs')
-    && (n.d || []).some(d => days.indexOf(d) >= 0));
-  if (!changes.length && !fresh.length) { rep.sig = ''; rep.pend = 0; return; }
-  const sig = JSON.stringify([changes, fresh.map(n => n.id)]);
-  if (sig !== rep.sig) { rep.sig = sig; rep.pend = Date.now(); return; }
-  if (Date.now() - rep.pend < HELPER_QUIET_MIN * 60000) return;
-  const L = ['*Zmiany w Grafiku*'];
-  const late = d => helperDaysBetween_(T, d) === 0 || (helperDaysBetween_(T, d) === 1 && helperHour_() >= 10);
-  changes.forEach(c => {
-    const n = cur[c.d].length;
-    L.push((c.plus ? '➕ ' : '➖ ') + helperName_(s, st, c.w) + ' — ' + helperTitle_(c.d).toLowerCase()
-      + (!c.plus && late(c.d) ? ' ⏰ mniej niż dobę przed' : '') + ' → ' + n + ' os.' + (n < s.min ? ' ⚠️' : ''));
-  });
-  fresh.forEach(n => L.push('💬 ' + helperName_(s, st, n.w) + ': „' + n.x + '"'));
-  helperSend_(s, st, L.join('\n'), run);
-  Object.keys(cur).forEach(d => { rep.days[d] = cur[d]; });
-  rep.noteAt = Math.max(rep.noteAt || 0, ...fresh.map(n => n.at));
-  rep.sig = '';
-  rep.pend = 0;
 }
 
 /**

@@ -200,7 +200,7 @@ const POLL_WINDOW_H = 3;
 
 /**
  * Pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) — bot czyta grupę „Grafik" (ankieta i czat)
- * i pisze PRYWATNIE do właściciela: skład dnia, zmiany w ankiecie, przegląd tygodnia… Wyłączony, dopóki
+ * i pisze PRYWATNIE do właściciela: skład dnia, przegląd tygodnia… Wyłączony, dopóki
  * prowadząca go nie włączy. `features` — włącznik każdej funkcji (panel). min — ilu osób trzeba na dzień
  * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
  * weekDays — dni przeglądu tygodnia (0 = niedziela), purple / rookies — imiona fioletowych i nowych,
@@ -209,7 +209,7 @@ const POLL_WINDOW_H = 3;
 const DEFAULT_HELPER = {
   enabled: false, chatId: '', chatName: '', toId: '', toName: '',
   min: 3, evening: 20, morning: 7, weekDays: [0, 3], purple: '', rookies: '', names: '',
-  features: { evening: true, eveningAlways: true, morning: true, changes: true, week: true, newPoll: true,
+  features: { evening: true, eveningAlways: true, morning: true, week: true, newPoll: true,
               members: true, lastWeek: true, weather: true, commands: true },
 };
 const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
@@ -225,8 +225,6 @@ const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps
 const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)
 const HELPER_MAX_EVENTS = 40;        // powiadomień na przebieg
 const HELPER_INTAKE_MS = 150000;     // najdłużej tyle czytamy kolejkę w jednym przebiegu
-const HELPER_QUIET_MIN = 15;         // zmiany w ankiecie idą, gdy przez tyle minut nic się nie zmieniło
-const HELPER_CHANGE_DAYS = 3;        // zmiany: dziś, jutro, pojutrze
 const HELPER_WINDOW_H = 3;           // wiadomość o swojej porze najpóźniej tyle godzin po niej
 const HELPER_SEND_MAX = 6;           // wiadomości na przebieg
 const HELPER_DAY_MAX = 25;           // wiadomości na dzień

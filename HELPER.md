@@ -16,7 +16,7 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 | sytuacja w czacie | jak często | co robi pomocnik |
 |---|---|---|
 | „Kto dołączy jutro?", „W czwartek potrzebne jeszcze 2 osoby", „3 osoby/dzień są potrzebne" — prowadząca liczy głosy ręcznie | prawie codziennie | **skład na jutro** wieczorem, **dziś** rano, gdy mało osób |
-| „W czwartek były 3 osoby, ktoś się wypisał?", „chyba mi się odkliknęło", „Nie widać Cię w grafiku" | co tydzień | **zmiany w ankiecie** — kto się dopisał / wypisał, z kwadransem ciszy (odkliknięcie i ponowne kliknięcie się znosi) |
+| „W czwartek były 3 osoby, ktoś się wypisał?", „chyba mi się odkliknęło", „Nie widać Cię w grafiku" | co tydzień | **„wypisali się"** w składzie dnia (wieczorem i rano) — bez osobnych wiadomości o każdej zmianie (niżej) |
 | „Czy ktoś z niedzieli może się przepisać na sobotę?" | co tydzień | **przegląd tygodnia** z najsłabszymi dniami i podpowiedzią „z X na Y" |
 | „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **„Z czatu"** w składzie dnia: wiadomości, które dotyczą tego dnia |
 | „Dopisałam się", a głosu nie ma; „wypisuję się", a głos dalej jest; nowa osoba „nie mam dostępu do grafiku" | kilka razy w miesiącu | **rozjazd czatu i ankiety** w składzie dnia, **nowa osoba w grupie** |
@@ -35,27 +35,28 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
    `eveningAlways` — wysyłaj codziennie (na czas testów); wyłączone = tylko, gdy jest problem.
 2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, **tylko gdy jest problem**
    (mniej niż minimum, brak fioletowego, same nowe osoby, brak ankiety).
-3. **Zmiany w ankiecie** (`changes`) — dopisania i wypisania na dziś, jutro i pojutrze, zbiorczo: wiadomość
-   idzie, gdy przez `HELPER_QUIET_MIN` (15 min) nic się nie zmieniło, i pokazuje zmianę netto (wypisanie
-   i ponowne zapisanie = nic). Wypisanie mniej niż dobę przed — ⏰. Do tego nowe wiadomości z czatu typu
-   „nie dam rady jutro" i nieobecności na te dni.
-4. **Przegląd tygodnia** (`week`) — w wybrane dni (domyślnie niedziela i środa) o godzinie „wieczorem":
+3. **Przegląd tygodnia** (`week`) — w wybrane dni (domyślnie niedziela i środa) o godzinie „wieczorem":
    7 najbliższych dni — liczba osób, ⚠️ słabe dni, dni bez ankiety, podpowiedź „ktoś z niedzieli (6) na
    sobotę (2)?", nieobecności.
-5. **Nowa ankieta** (`newPoll`) — gdy w „Grafiku" pojawi się ankieta (bota albo czyjaś): pytanie, dni, czy
+4. **Nowa ankieta** (`newPoll`) — gdy w „Grafiku" pojawi się ankieta (bota albo czyjaś): pytanie, dni, czy
    daty pasują do najbliższego tygodnia, przypomnienie o przypięciu.
-6. **Nowe osoby i odejścia** (`members`) — raz dziennie (wieczorem) skład grupy z bramki (`getGroupData`)
+5. **Nowe osoby i odejścia** (`members`) — raz dziennie (wieczorem) skład grupy z bramki (`getGroupData`)
    porównany z poprzednim. Nowa osoba nie widzi ankiety wysłanej przed jej dołączeniem (WhatsApp nie
    pokazuje historii) — pomocnik o tym przypomina.
-7. **Miniony tydzień** (`lastWeek`) — w poniedziałek rano: dzień po dniu ilu było w ankiecie, ilu wyszło
+6. **Miniony tydzień** (`lastWeek`) — w poniedziałek rano: dzień po dniu ilu było w ankiecie, ilu wyszło
    z psami (Historia aplikacji) i ile spacerów; psy z najmniejszą liczbą spacerów.
-8. **Pogoda** (`weather`) — linijka w składzie dnia: temperatura i deszcz (Open-Meteo, okolice schroniska),
+7. **Pogoda** (`weather`) — linijka w składzie dnia: temperatura i deszcz (Open-Meteo, okolice schroniska),
    ⚠️ upał od 28°C.
-9. **Pytania w prywatnym czacie** (`commands`) — właściciel pisze do bota: `jutro`, `dziś`, `pojutrze`,
+8. **Pytania w prywatnym czacie** (`commands`) — właściciel pisze do bota: `jutro`, `dziś`, `pojutrze`,
    dzień tygodnia (`sobota`), data (`31.10`), `tydzień`, `nieobecni`, `nieaktywni`, `ludzie`, `stan`,
    `pomoc`. Bot odpowiada przy najbliższym przebiegu (do 10 min). Inne czaty — nic.
 
 Fioletowi i nowi: dwa pola w panelu, imiona po przecinku (tak jak widać je w WhatsAppie; wystarczy imię).
+
+**Usunięte: „zmiany w ankiecie"** (osobna wiadomość o każdym dopisaniu i wypisaniu, po kwadransie ciszy) — 26.10.2026,
+decyzja właściciela po pierwszym dniu testu: męczące, a cały sens bota to, żeby takich powiadomień nie dostawać;
+wystarczą podsumowania wieczorem i rano (wypisania są w nich jako „wypisali się", wiadomości z czatu — w „Z czatu").
+B79 pilnuje, że w ciągu dnia nic nie idzie. Nie przywracać bez decyzji właściciela.
 
 ## Jak bot widzi „Grafik" — bramka Green API
 

@@ -564,7 +564,7 @@ numer, to czwarty czat. Stan licznika: konsola Green API.
 ### Pomocnik Grafiku (od 1.5 — faza testów)
 
 Bot czyta grupę „Grafik" (ankietę tygodniową i czat) i pisze **tylko prywatnie** do wybranej osoby: skład
-na jutro, zmiany w ankiecie, przegląd tygodnia, nowa ankieta, nowe osoby, miniony tydzień, odpowiedzi na
+na jutro (wieczorem), dziś rano (gdy coś nie gra), przegląd tygodnia, nowa ankieta, nowe osoby, miniony tydzień, odpowiedzi na
 pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decyzje: **`HELPER.md`**. Włączenie (raz):
 
 1. **Konsola Green API → instancja → ustawienia**: włącz powiadomienia o wiadomościach przychodzących,
@@ -664,6 +664,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   wyłączone, więc nic do niego nie dochodziło, a on brał pustkę za brak ankiety. Teraz sprawdza ustawienia bramki
   i bez powiadomień wysyła tylko ostrzeżenie; po włączeniu czyta historię czatu (ankieta bota jest tam zawsze),
   a ankietę sprzed włączenia oznacza jako niepełną („co najmniej"). 408 z kolejki to pusta kolejka (B81, B82, S145d).
+- **Bez osobnych wiadomości o każdym dopisaniu i wypisaniu z ankiety** (26.10, decyzja właściciela: męczące) — funkcja
+  „zmiany w ankiecie" usunięta; zostają podsumowania wieczorem i rano, wypisania są w nich jako „wypisali się" (B79).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 

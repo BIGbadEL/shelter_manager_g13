@@ -298,9 +298,11 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 - **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B80, S145; decyzja właściciela 24.10.2026:
   „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
   bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
-  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, zmiany w ankiecie (netto,
-  po `HELPER_QUIET_MIN` ciszy), przegląd tygodnia, nowa ankieta, nowe osoby, miniony tydzień, pogoda, odpowiedzi na
-  pytania w prywatnym czacie. Każda funkcja ma włącznik (`features`). **Na czas testów pisze TYLKO prywatnie** — adres
+  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa
+  ankieta, nowe osoby, miniony tydzień, pogoda, odpowiedzi na pytania w prywatnym czacie. Każda funkcja ma włącznik
+  (`features`). **Osobnych wiadomości o dopisaniach i wypisaniach z ankiety nie ma** — funkcja „zmiany w ankiecie"
+  usunięta 26.10 (decyzja właściciela: męcząca, sens bota to mniej powiadomień; wystarczą podsumowania wieczorem i rano,
+  B79 pilnuje ciszy w ciągu dnia) — nie przywracać bez pytania. **Na czas testów pisze TYLKO prywatnie** — adres
   grupy jako odbiorcę odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`) i wysyłka (`helperSend_`, B74);
   **nie dokładaj wysyłki do grupy bez decyzji właściciela**. `helperTick` jest publiczne (wyzwalacz), więc nic nie
   przyjmuje; raporty mają znaczniki „wysłany" (`helperOnce_`), sufity `HELPER_SEND_MAX` / `HELPER_DAY_MAX`, jeden
@@ -587,7 +589,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1877 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1873 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -758,7 +760,8 @@ nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, a
 B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
 ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
 B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, czat i nieobecności,
-skład dnia wieczorem i rano, zmiany w ankiecie po ciszy, przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
+skład dnia wieczorem i rano, B79 — dopisania i wypisania w ciągu dnia bez osobnych wiadomości, tylko w składzie wieczorem,
+przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
 bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu
 powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejka,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)

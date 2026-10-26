@@ -62,7 +62,7 @@ function S144(){
 
 /* ---------- S145: panel pomocnika Grafiku ---------- */
 const GRAFIK = '120363000000000001@g.us', OWNER = '48600111222@c.us';
-const FEATS = {evening:true, eveningAlways:true, morning:true, changes:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
+const FEATS = {evening:true, eveningAlways:true, morning:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
 const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toId:'', toName:'', min:3, evening:20, morning:7,
     weekDays:[0,3], purple:'', rookies:'', names:'', features: Object.assign({}, FEATS)}, s),
   configured: true, env: 'test', trigger: false, stat: null, log: [], polls: [], people: 0, notes: 0, abs: 0, members: null}, o);

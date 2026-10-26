@@ -384,45 +384,29 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('rano bez problemu — nic', calm.msgs().filter(m => /Dziś/.test(m)).length === 0);
 })();
 
-/* ---------- B79: zmiany w ankiecie ---------- */
+/* ---------- B79: dopisania i wypisania nie idą osobnymi wiadomościami ---------- */
+// Do 26.10 była funkcja „zmiany w ankiecie" (wiadomość o każdym dopisaniu i wypisaniu po kwadransie ciszy) — usunięta
+// na prośbę właściciela: męcząca, a cały sens bota to mniej powiadomień; wystarczą skład wieczorem i rano.
 (()=>{
-  console.log('B79: pomocnik — zmiany w ankiecie zbiorczo, netto, po 15 min ciszy; „nie dam rady" z czatu');
+  console.log('B79: pomocnik — dopisania, wypisania i „nie dam rady" w ciągu dnia NIE idą osobno (decyzja właściciela 26.10) — widać je w składzie wieczorem');
   const env = build({ now: '2026-10-26T12:00:00+02:00' });
-  on(env, { weekDays: [], features: { newPoll: false, morning: false, evening: false, members: false, lastWeek: false } });
+  on(env, { weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
   env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
            vote('P1', ANIA, ['Wtorek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
            vote('P1', BASIA, ['Wtorek'], '2026-10-25T10:16:00+02:00', { name: 'Basia' }),
            vote('P1', CELINA, ['Wtorek'], '2026-10-25T10:17:00+02:00', { name: 'Celina' }));
   env.tick();
-  check('pierwszy przebieg: punkt odniesienia, bez wiadomości', env.msgs().length === 0, env.msgs().join(' | '));
-  env.push(vote('P1', BASIA, [], '2026-10-26T12:08:00+02:00'));
-  env.tick('2026-10-26T12:10:00+02:00');
-  env.tick('2026-10-26T12:20:00+02:00');
-  check('wypisanie: przez kwadrans ciszy nic', env.msgs().length === 0);
-  env.tick('2026-10-26T12:30:00+02:00');
-  const m = env.last();
-  check('po kwadransie: „➖ Basia — jutro — wtorek 27.10 ⏰ mniej niż dobę przed → 2 os. ⚠️"', /Zmiany w Grafiku/.test(m)
-    && /➖ Basia — jutro — wtorek 27\.10 ⏰ mniej niż dobę przed → 2 os\. ⚠️/.test(m), m);
-  env.tick('2026-10-26T13:00:00+02:00');
-  check('ta sama zmiana nie idzie drugi raz', env.msgs().length === 1);
-
-  env.push(vote('P1', CELINA, [], '2026-10-26T13:05:00+02:00'), vote('P1', CELINA, ['Wtorek'], '2026-10-26T13:06:00+02:00'));
-  env.tick('2026-10-26T13:10:00+02:00');
-  env.push(vote('P1', DAWID, ['Środa'], '2026-10-26T13:12:00+02:00', { name: 'Dawid' }), vote('P1', DAWID, [], '2026-10-26T13:20:00+02:00'));
-  env.tick('2026-10-26T13:20:00+02:00');
-  env.tick('2026-10-26T13:40:00+02:00');
-  env.tick('2026-10-26T14:00:00+02:00');
-  check('odkliknięcie i ponowne kliknięcie (netto zero) — bez wiadomości', env.msgs().length === 1, env.msgs().join(' | '));
-
-  env.push(text(ANIA, 'Ania', 'Muszę się wypisać z jutra, rozchorowałam się', '2026-10-26T14:05:00+02:00'),
-           vote('P1', KASIA, ['Wtorek'], '2026-10-26T14:06:00+02:00', { name: 'Kasia' }));
-  env.tick('2026-10-26T14:10:00+02:00');
-  env.tick('2026-10-26T14:30:00+02:00');
-  const m2 = env.last();
-  check('dopisanie i „wypisuję się z jutra" z czatu w jednej wiadomości', env.msgs().length === 2 && /➕ Kasia — jutro — wtorek 27\.10 → 3 os\./.test(m2)
-    && /💬 Ania: „Muszę się wypisać z jutra/.test(m2), m2);
-  env.tick('2026-10-26T15:00:00+02:00');
-  check('...i nie wraca', env.msgs().length === 2);
+  env.push(vote('P1', BASIA, [], '2026-10-26T12:08:00+02:00'),
+           vote('P1', KASIA, ['Wtorek'], '2026-10-26T12:30:00+02:00', { name: 'Kasia' }),
+           text(ANIA, 'Ania', 'Muszę się wypisać z jutra, rozchorowałam się', '2026-10-26T13:00:00+02:00'));
+  ['12:10', '12:30', '12:50', '13:10', '13:40', '14:00', '16:00', '18:00'].forEach(t => env.tick('2026-10-26T' + t + ':00+02:00'));
+  check('w ciągu dnia, poza porami wiadomości — ani jednej wiadomości mimo dopisania, wypisania i „nie dam rady"', env.msgs().length === 0,
+    env.msgs().join(' | '));
+  check('włącznika „zmiany w ankiecie" już nie ma', env.conf.HELPER_FEATURES.indexOf('changes') < 0, env.conf.HELPER_FEATURES.join());
+  env.tick('2026-10-26T20:05:00+02:00');
+  const ev = env.msgs().filter(m => /Jutro — wtorek 27\.10/.test(m))[0] || '';
+  check('wieczorem jeden skład z tym wszystkim: kto jest, kto się wypisał, co napisał', env.msgs().length === 1 && /👥 .*Kasia/.test(ev)
+    && /➖ wypisali się: Basia \(pn 12:08\)/.test(ev) && /Ania \(pn 13:00\): „Muszę się wypisać z jutra/.test(ev), ev);
 })();
 
 /* ---------- B80: przegląd tygodnia, skład grupy, pytania, sufity, panel ---------- */
@@ -547,7 +531,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
 (()=>{
   console.log('B82: pomocnik — historia czatu (te same reguły co kolejka, powtarzalnie), starszy głos nie nadpisuje nowszego, 408 to pusta kolejka');
   const env = build({ now: '2026-10-26T12:00:00+02:00' });
-  on(env, { weekDays: [], features: { newPoll: false, changes: false, members: false } });
+  on(env, { weekDays: [], features: { newPoll: false, members: false } });
   const H = (o) => Object.assign({ type: 'incoming', chatId: GRAFIK, typeMessage: 'pollUpdateMessage' }, o);
   const upd = (who, picked, iso, id) => H({ idMessage: id, timestamp: ts(iso), senderId: who, senderName: who === ANIA ? 'Ania' : 'Basia',
     pollMessageData: { stanzaId: 'P1', name: Q, votes: OPTS.map(o => ({ optionName: o, optionVoters: picked.indexOf(o) >= 0 ? [who] : [] })) } });
