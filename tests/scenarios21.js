@@ -137,7 +137,8 @@ function S145(){
   const view = txt(doc(app).getElementById('view'));
   check('wynik przebiegu: komunikat, ostatni przebieg, ankiety (niepełna), dziennik', /Przebieg: powiadomień 3, wiadomości 1/.test(toastOf(app))
     && /powiadomień 3 \(z Grafiku 2\), wiadomości 1\./.test(view) && /„Grafik 19-25\.10" — głosujących 5 \(niepełna/.test(view)
-    && /wysłane\s*\*Jutro — niedziela 25\.10/.test(view) && /skład grupy 30 os\./.test(view), view.slice(view.indexOf('Ankiety, które zna')));
+    && /wysłane\s*\*Jutro — niedziela 25\.10/.test(view) && /skład grupy 30 os\./.test(view)
+    && !/nieobecności|wiadomości o najbliższych dniach/.test(view), view.slice(view.indexOf('Wie o')));
 
   app.click('[data-act="helperGate"]');
   respondTo(app, 'getHelperGateway', [{key: 'incomingWebhook', label: 'powiadomienia o wiadomościach przychodzących', ok: true},

@@ -1,7 +1,8 @@
 /**
  * G13 Spacery — POMOCNIK GRAFIKU (1.5, faza testów; projekt, źródła i decyzje: HELPER.md).
  *
- * Bot czyta grupę „Grafik" — ankietę tygodniową i to, co ludzie piszą — z kolejki powiadomień bramki
+ * Bot czyta z grupy „Grafik" ankietę tygodniową — JEDYNE źródło prawdy o tym, kto przychodzi (decyzja właściciela
+ * 27.10.2026: treści wiadomości z czatu nie analizuje, z czatu bierze tylko nazwę nadawcy) — z kolejki powiadomień bramki
  * Green API i składa z tego, razem z danymi aplikacji (psy, Historia, rezerwacje), krótkie wiadomości:
  * skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa ankieta, nowe osoby
  * w grupie, miniony tydzień; do tego odpowiada na pytania w prywatnym czacie. Każda funkcja ma włącznik
@@ -24,7 +25,7 @@
  * może być włączony tylko w jednym środowisku — dwa czytające zjadałyby sobie powiadomienia (HELPER.md).
  */
 
-/* ---------- słowa: dni, pory, miesiące (tekst po volNorm_: małe litery, bez ogonków) ---------- */
+/* ---------- słowa: dni i pory — odpowiedzi ankiety i pytania właściciela (tekst po volNorm_: małe litery, bez ogonków) ---------- */
 
 const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;      // prywatny czat — jedyny dozwolony odbiorca w fazie testów
 const HELPER_GROUP = /^\d+(-\d+)?@g\.us$/;
@@ -48,15 +49,6 @@ const HELPER_WEEKDAY_WORDS = (function () {
 })();
 const HELPER_REL = { dzis: 0, dzisiaj: 0, dzisiejszy: 0, jutro: 1, jutra: 1, jutrze: 1, jutrzejszy: 1, pojutrze: 2 };
 const HELPER_PARTS = { rano: 'r', rana: 'r', poranek: 'r', wieczor: 'w', wieczorem: 'w', wieczorny: 'w', popoludnie: 'w', popoludniu: 'w' };
-const HELPER_MONTHS = { stycznia: 1, styczen: 1, lutego: 2, luty: 2, marca: 3, marzec: 3, kwietnia: 4, kwiecien: 4, maja: 5, maj: 5,
-  czerwca: 6, czerwiec: 6, lipca: 7, lipiec: 7, sierpnia: 8, sierpien: 8, wrzesnia: 9, wrzesien: 9, pazdziernika: 10,
-  pazdziernik: 10, listopada: 11, listopad: 11, grudnia: 12, grudzien: 12 };
-
-/* Rodzaj wiadomości z czatu (po volNorm_). Kolejność ma znaczenie: „nie będę" zawiera „będę". „Nie mogę się
-   wpisać w grafik" (nowa osoba bez dostępu do ankiety) i „nie dam rady wcześniej" to nie odwołanie. */
-const HELPER_ABSENT = /(nie ma mnie|nie bedzie mnie|nieobecn|wyjezdzam|wyjade|wracam|wroce|urlop|poza warszaw)/;
-const HELPER_OUT = /(nie dam rady(?! (wczesniej|dluzej))|nie bede|nie moge(?! (sie )?(wpisac|zaznaczyc|dopisac|edytowac))|wypis|odpada|odpuszcz|nie przyjde|nie przyjade|nie dojade|rozchorowal|rozlozyl|\bchora\b|\bchory\b|wypadam|nie zdaze)/;
-const HELPER_IN = /(\bbede\b|przyjad|przyjde|dolacz|dopisal|dopisze|wpisal|wpisze|moge byc|moge przyjsc|moge wpasc|wpadne|dojade|w drodze|zostane|\bjestem\b)/;
 
 /* ---------- daty i nazwy ---------- */
 
@@ -120,17 +112,6 @@ function helperNameOnly_(s, st, id) {
   const p = same.filter(x => st.people[x] && st.people[x].n)[0];
   return p ? st.people[p].n : '';
 }
-/**
- * Cytat z czatu bez numerów telefonów: oznaczenie osoby („@48600111222" — tak WhatsApp zapisuje wzmiankę) → „@Ania" albo
- * „@#17", nieznana — „@…"; inne ciągi cyfr jak numer telefonu → „…" (noPhones_). Numery nie opuszczają serwera (27.10).
- */
-function helperMentions_(s, st, text) {
-  const out = String(text == null ? '' : text).replace(/@(\d{6,15})\b/g, (m, d) => {
-    const n = helperName_(s, st, d + '@c.us');
-    return '@' + (n === 'bez nazwy' ? '…' : n);
-  });
-  return noPhones_(out);
-}
 /** „#17 = Ania" (numer osoby) albo „123 = Ania" (końcówka numeru telefonu), w linijkach albo po przecinku → {'#17': 'Ania', '123': 'Ania'}. */
 function helperNameMap_(text) {
   const out = {};
@@ -181,14 +162,14 @@ function helperLinks_(list) {
   (list || []).forEach(x => { if (Array.isArray(x) && x[2]) { out[x[0]] = x[2]; out[x[2]] = x[0]; } });
   return out;
 }
-/** Wszyscy, o kim pomocnik może napisać: lista członków, nadawcy, głosujący, skład „Grafiku", notatki. */
+/** Wszyscy, o kim pomocnik może napisać: lista członków, nadawcy, głosujący, skład „Grafiku", wypisani z ankiety. */
 function helperKnownIds_(st) {
   const ids = {};
   (st.roster ? st.roster.list : []).forEach(x => { ids[x[0]] = 1; });
   Object.keys(st.people).forEach(k => { ids[k] = 1; });
   st.polls.forEach(p => Object.keys(p.v).forEach(w => { ids[w] = 1; }));
   (st.members ? st.members.ids : []).forEach(w => { ids[w] = 1; });
-  st.notes.concat(st.abs, st.gone).forEach(x => { if (x && x.w) ids[x.w] = 1; });
+  st.gone.forEach(x => { if (x && x.w) ids[x.w] = 1; });
   return Object.keys(ids);
 }
 /**
@@ -336,7 +317,7 @@ function helperJson_(k, def) {
 
 function helperLoad_() {
   const people = helperJson_(PROP_HELPER_PEOPLE, {});
-  const notes = helperJson_(PROP_HELPER_NOTES, {});
+  const notes = helperJson_(PROP_HELPER_NOTES, {});      // wypisani z ankiety (g); notatki i nieobecności z czatu — do 27.10, już nie
   const x = helperJson_(PROP_HELPER_STATE, {});
   const log = helperJson_(PROP_HELPER_LOG, []);
   const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
@@ -355,7 +336,7 @@ function helperLoad_() {
     roles: obj(helperJson_(PROP_HELPER_ROLES, {})), roster: roster && typeof roster === 'object' ? Object.assign({}, roster, { list }) : null, rosterNames,
     links: helperLinks_(list), nrs: obj(nrs.m),
     polls, people: obj(people.p), alias: obj(people.a),
-    notes: arr(notes.n), abs: arr(notes.b), gone: arr(notes.g),
+    gone: arr(notes.g),
     marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
     seen: arr(x.seen), sent: obj(x.sent), stat: x.stat || null, queue: arr(x.queue), cmds: arr(x.cmds),
     since: Number(x.since) || 0, gate: x.gate && typeof x.gate === 'object' ? x.gate : null,
@@ -366,9 +347,7 @@ function helperLoad_() {
 /** Porządki przed zapisem: minione dni znikają, listy mają swoje sufity. */
 function helperPrune_(st) {
   const T = today_(), y = addDays_(T, -1);
-  st.notes = st.notes.filter(n => (n.d || []).some(d => d >= y)).slice(-HELPER_LIMITS.NOTES);
   st.gone = st.gone.filter(g => g.d >= y).slice(-HELPER_LIMITS.GONE);
-  st.abs = st.abs.filter(a => (a.iv || []).some(iv => iv[1] >= T)).slice(-HELPER_LIMITS.ABS);
   st.seen = st.seen.slice(-HELPER_LIMITS.SEEN);
   st.queue = st.queue.slice(-10);
   st.cmds = st.cmds.slice(-10);
@@ -409,7 +388,7 @@ function helperSave_(st) {
   put(PROP_HELPER_POLLS, () => parts[0], () => false);
   put(PROP_HELPER_POLLS2, () => parts[1], () => false);
   put(PROP_HELPER_PEOPLE, () => ({ p: st.people, a: st.alias }), oldestPerson);
-  put(PROP_HELPER_NOTES, () => ({ n: st.notes, b: st.abs, g: st.gone }), () => !!(st.notes.shift() || st.gone.shift() || st.abs.shift()));
+  put(PROP_HELPER_NOTES, () => ({ g: st.gone }), () => !!st.gone.shift());   // zapis zdejmuje stare notatki z czatu (n, b)
   put(PROP_HELPER_STATE, () => ({ marks: st.marks, members: st.members, seen: st.seen, sent: st.sent,
                                   stat: st.stat, queue: st.queue, cmds: st.cmds, since: st.since, gate: st.gate,
                                   histAt: st.histAt, catchUp: st.catchUp }),
@@ -533,9 +512,9 @@ function helperText_(md) {
 
 /**
  * Jedno zdarzenie: powiadomienie z kolejki (`src` 'queue') albo wiadomość z historii czatu (`src` 'history',
- * helperCatchUp_). Z „Grafiku": ankiety, głosy, wiadomości; z prywatnego czatu (tylko z kolejki): pytania właściciela.
- * Wszystko jest powtarzalne bez skutków ubocznych — ta sama wiadomość z historii i z kolejki to jedna notatka
- * (po `id`), głos to stan osoby z czasem (`vt` w helperApplyVotes_), ankieta po identyfikatorze.
+ * helperCatchUp_). Z „Grafiku": ankiety, głosy, nazwy nadawców (treści wiadomości nie — 27.10); z prywatnego czatu
+ * (tylko z kolejki): pytania właściciela. Wszystko jest powtarzalne bez skutków ubocznych — głos to stan osoby z czasem
+ * (`vt` w helperApplyVotes_), ankieta po identyfikatorze, nazwa nadawcy po prostu nadpisana.
  */
 function helperEvent_(s, st, b, run, src) {
   if (!b || typeof b !== 'object') return;
@@ -572,10 +551,8 @@ function helperEvent_(s, st, b, run, src) {
       if (!known) helperLog_(st, 'in', (queue ? 'nowa ankieta' : 'ankieta z historii czatu') + ': „' + String(pd.name || '').slice(0, 60) + '"');
     } else if (tm === 'pollUpdateMessage') {
       helperApplyVotes_(st, sender, md.pollMessageData || {}, at);
-    } else if (incoming) {
-      const text = helperText_(md);
-      if (text) helperNote_(st, id, sender, text, at);
     }
+    // zwykłe wiadomości z „Grafiku" — tylko nazwa nadawcy (wyżej); treści nie czytamy: o obecności mówi ankieta (27.10)
   } else if (chat === s.toId && incoming && queue) {
     const cards = helperCards_(tm, md);
     if (cards.length) { st.cmds.push({ c: cards, at }); return; }
@@ -818,117 +795,11 @@ function helperVotersOn_(poll, d) {
   return Object.keys(poll.v).filter(w => helperDatesOf_(poll, poll.v[w]).indexOf(d) >= 0).sort();
 }
 
-/* ---------- czat ---------- */
-
-/** Wyrazy po volNorm_ (małe litery, bez ogonków). */
-function helperWords_(text) { return volNorm_(text).split(/[^a-z0-9]+/).filter(Boolean); }
-
-/**
- * Dni, o których mówi wiadomość z dnia `msgDate` (najwyżej 2 tygodnie naprzód): „dziś", „jutro", „pojutrze",
- * dni tygodnia (najbliższy, dziś włącznie), „weekend", daty „16.10". „Jutro" napisane po północy (do 4:00)
- * to jeszcze ten dzień, który się zaczął — ludzie piszą przed snem („Czy jest ktoś jutro do Evera?" o 0:31).
- */
-function helperDayRefs_(text, msgDate, hour) {
-  const out = {};
-  const add = d => { if (d && d >= msgDate && helperDaysBetween_(msgDate, d) <= 13) out[d] = true; };
-  const base = hour < 4 ? addDays_(msgDate, -1) : msgDate;
-  helperWords_(text).forEach(w => {
-    if (HELPER_REL[w] != null) add(addDays_(base, HELPER_REL[w]));
-    const n = HELPER_WEEKDAY_WORDS[w];
-    if (n != null) [].concat(n).forEach(k => add(addDays_(msgDate, (k - weekdayOf_(msgDate) + 7) % 7)));
-  });
-  const t = volNorm_(text), re = /(^|[^0-9.:])(\d{1,2})\.(\d{1,2})(?![0-9])/g;
-  let m;
-  while ((m = re.exec(t))) {
-    if (/(^|\s)(o|okolo|kolo|od|do|na|po|przed)\s*$/.test(t.slice(0, m.index + m[1].length))) continue;   // godzina: „o 10.30", „do 12.15"
-    add(helperYmd_(+m[2], +m[3], msgDate));
-  }
-  return Object.keys(out).sort();
-}
-
-/** Rodzaj wiadomości: 'ask' (pytanie do grupy), 'abs' (nieobecność), 'out' (nie będzie), 'in' (będzie), 'info'. */
-function helperKind_(text) {
-  const t = volNorm_(text);
-  if (/\?/.test(text) && /\b(kto|ktos|czy)\b/.test(t)) return 'ask';
-  if (HELPER_ABSENT.test(t)) return 'abs';
-  if (HELPER_OUT.test(t)) return 'out';
-  if (HELPER_IN.test(t)) return 'in';
-  return 'info';
-}
-
-/**
- * Nieobecność z wiadomości: przedziały dat [od, do]. „13-17 sierpnia", „30 kwietnia - 3 maja", „od 15 października
- * do 1 listopada", „do 16 sierpnia" (od dziś), „wrócę 16 lipca" (do dnia przed), „16.10", wyliczanka „1, 17, 22
- * i 31 października". Bez dat — dni z wiadomości („w czwartek i w weekend"). Lata — najbliższe dniu wiadomości.
- */
-function helperAbsence_(text, msgDate, hour) {
-  const t = volNorm_(text).replace(/[–—]/g, '-');
-  const toks = [];
-  const re = /(\d{1,2})\.(\d{1,2})(?:\.\d{2,4})?|\d{1,2}|[a-z]+|-/g;
-  let m;
-  while ((m = re.exec(t))) {
-    if (m[1]) toks.push({ k: 'date', d: helperYmd_(+m[1], +m[2], msgDate) });
-    else if (/^\d+$/.test(m[0])) toks.push({ k: 'num', n: +m[0] });
-    else if (m[0] === '-') toks.push({ k: 'sep' });
-    else if (HELPER_MONTHS[m[0]]) toks.push({ k: 'month', m: HELPER_MONTHS[m[0]] });
-    else if (m[0] === 'do') toks.push({ k: 'sep' });
-    else if (m[0] === 'i' || m[0] === 'od') toks.push({ k: 'skip' });
-    else if (m[0] === 'dzis' || m[0] === 'dzisiaj') toks.push({ k: 'date', d: msgDate });
-    else if (m[0] === 'wroce' || m[0] === 'wracam') toks.push({ k: 'back' });
-    else toks.push({ k: 'word' });
-  }
-  // liczby przed nazwą miesiąca dostają ten miesiąc („13-17 sierpnia", „1, 17 i 31 października")
-  let pending = [];
-  toks.forEach(x => {
-    if (x.k === 'num') pending.push(x);
-    else if (x.k === 'month') { pending.forEach(p => { p.k = 'date'; p.d = helperYmd_(p.n, x.m, msgDate); }); pending = []; x.k = 'skip'; }
-    else if (x.k === 'word' || x.k === 'back') pending = [];
-  });
-  // „wrócę 16 lipca" — nie ma od dziś do dnia przed powrotem
-  const back = toks.findIndex(x => x.k === 'back');
-  const ret = back >= 0 ? toks.slice(back).filter(x => x.k === 'date' && x.d)[0] : null;
-  if (ret && ret.d > msgDate && helperDaysBetween_(msgDate, ret.d) <= 121) return [[msgDate, addDays_(ret.d, -1)]];
-  const seq = toks.filter(x => (x.k === 'date' && x.d) || x.k === 'sep');
-  const iv = [];
-  for (let i = 0; i < seq.length; i++) {
-    if (seq[i].k !== 'date') continue;
-    let a = seq[i].d, b = a;
-    if (seq[i + 1] && seq[i + 1].k === 'sep' && seq[i + 2] && seq[i + 2].k === 'date') { b = seq[i + 2].d; i += 2; }
-    else if (i > 0 && seq[i - 1].k === 'sep' && !iv.length) a = msgDate;          // „do 16 sierpnia" — od dziś
-    if (b < a) b = helperYmd_(+b.slice(8), +b.slice(5, 7), addDays_(a, 180));    // „28.12-3.01" — rok dalej
-    if (b >= a && helperDaysBetween_(a, b) <= 120) iv.push([a, b]);
-  }
-  if (!iv.length) helperDayRefs_(text, msgDate, hour).forEach(d => iv.push([d, d]));
-  return iv.filter(x => x[1] >= msgDate);
-}
-
-/**
- * Notatka z czatu — tylko taka, która dotyczy konkretnych dni (albo nieobecność): kto, kiedy, o których dniach, jakiego
- * rodzaju — bez treści (cytatów w składzie dnia nie ma od 27.10). Treść zostaje tylko przy nieobecności („nieobecni").
- */
-function helperNote_(st, id, sender, text, at) {
-  if (id && (st.notes.some(n => n.id === id) || st.abs.some(a => a.id === id))) return;   // ta sama z historii i z kolejki
-  const day = helperDate_(at), hour = Number(helperTime_(at).split(':')[0]);
-  const k = helperKind_(text);
-  if (k === 'abs') {
-    const iv = helperAbsence_(text, day, hour);
-    if (iv.length) {
-      const quote = text.replace(/\s*\n+\s*/g, ' / ').replace(/\s+/g, ' ').trim();
-      st.abs.push({ id, w: sender, at, iv, x: quote.length > HELPER_LIMITS.TEXT ? quote.slice(0, HELPER_LIMITS.TEXT - 1) + '…' : quote });
-      const d = [];                                       // nieobecność przy każdym dniu z najbliższych dwóch tygodni (🚫 w składzie)
-      iv.forEach(r => {
-        for (let a = r[0]; a <= r[1] && d.length < 14; a = addDays_(a, 1)) {
-          if (a >= day && helperDaysBetween_(day, a) <= 13 && d.indexOf(a) < 0) d.push(a);
-        }
-      });
-      if (d.length) st.notes.push({ id, w: sender, at, d: d.sort(), k });
-      return;
-    }
-  }
-  const d = helperDayRefs_(text, day, hour);
-  if (!d.length) return;
-  st.notes.push({ id, w: sender, at, d, k: k === 'abs' ? 'out' : k });
-}
+/* ---------- czat ----------
+   Treści wiadomości z „Grafiku" pomocnik nie analizuje (27.10.2026, decyzja właściciela: „jedynym i świętym źródłem prawdy
+   jest ankieta — tam, gdzie ktoś jest zaznaczony, tam ma być"). Do 27.10 rozpoznawał z czatu dni, nieobecności i „będę /
+   nie dam rady" (🔀, 🚫, „nieobecni", cytaty „Z czatu") — heurystyka myliła się („nie wpadnę" jako „będzie"), a i tak
+   tylko powtarzała albo podważała ankietę. Z czatu zostaje nazwa nadawcy (helperPerson_). Nie przywracać bez pytania. */
 
 /* ---------- dane aplikacji (leniwie — przebieg bez raportu nie czyta arkusza) ---------- */
 
@@ -963,7 +834,7 @@ function helperWeather_() {
 
 /* ---------- skład dnia ---------- */
 
-/** Wszystko o dniu `d`: ankieta, kto, pory, dopiski, wypisani, czat, nieobecni. */
+/** Wszystko o dniu `d` — z ankiety: kto, pory, dopiski, wypisani. */
 function helperDay_(s, st, d) {
   const poll = helperPollFor_(st, d);
   const voters = poll ? helperVotersOn_(poll, d) : [];
@@ -978,9 +849,7 @@ function helperDay_(s, st, d) {
   }
   const gone = [];
   st.gone.forEach(g => { if (g.d === d && voters.indexOf(g.w) < 0 && !gone.some(x => x.w === g.w)) gone.push(g); });
-  const notes = st.notes.filter(n => (n.d || []).indexOf(d) >= 0);
-  const abs = st.abs.filter(a => (a.iv || []).some(iv => iv[0] <= d && d <= iv[1]));
-  return { d, poll, voters, parts, extras, gone, notes, abs };
+  return { d, poll, voters, parts, extras, gone };
 }
 
 /** Co jest nie tak z dniem — pusta lista = w porządku. */
@@ -1032,21 +901,8 @@ function helperDayText_(s, st, d, ctx) {
     L.push(roles.p.length ? '🌱 kandydaci: ' + roles.k.map(name).join(', ') + ' — z fioletowym ✓'
       : '🌱 kandydat bez fioletowego ⚠️ (' + roles.k.map(name).join(', ') + ') — kandydat nie może być sam');
   }
-  if (info.abs.length) L.push('🚫 zapowiedziana nieobecność: ' + info.abs.map(a => name(a.w)).filter((x, i, a) => a.indexOf(x) === i).join(', '));
-  // cytatów z czatu tu nie ma (27.10.2026, decyzja właściciela): wiadomość ma docelowo iść do „Grafiku", a cytowanie
-  // czatu w ten sam czat to wklejanie tego samego w to samo. Z czatu zostaje to, czego w nim wprost nie ma: 🚫 i 🔀
-  if (info.poll) {
-    // rozjazd czatu i ankiety: „dopisałam się na wtorek", a głosu nie ma (albo nowa osoba bez dostępu do ankiety);
-    // „wypisuję się z jutra", a głos dalej jest — numer nadawcy bywa w innym formacie niż numer głosującego (alias)
-    const saysIn = [], saysOut = [];
-    info.notes.forEach(x => {
-      const there = info.voters.indexOf(st.alias[x.w] || x.w) >= 0;
-      if (x.k === 'in' && !there && saysIn.indexOf(x.w) < 0) saysIn.push(x.w);
-      if ((x.k === 'out' || x.k === 'abs') && there && saysOut.indexOf(x.w) < 0) saysOut.push(x.w);
-    });
-    if (saysIn.length) L.push('🔀 pisze, że będzie, a nie ma w ankiecie: ' + saysIn.map(name).join(', '));
-    if (saysOut.length) L.push('🔀 pisze, że nie da rady, a dalej w ankiecie: ' + saysOut.map(name).join(', '));
-  }
+  // nic z czatu (27.10.2026, decyzja właściciela): o obecności mówi tylko ankieta — bez cytatów, „🔀 pisze, że…"
+  // i „🚫 zapowiedziana nieobecność"; wiadomość ma też docelowo iść do „Grafiku", gdzie czat i tak jest
   L.push.apply(L, helperDogLines_(s, st, d, info, ctx));
   const w = ctx.weather();
   const f = w && w[d];
@@ -1093,7 +949,7 @@ function helperDogLines_(s, st, d, info, ctx) {
   return L;
 }
 
-/** Przegląd 7 dni od jutra: liczby, słabe dni, dni bez ankiety, podpowiedź przepisania, nieobecności. */
+/** Przegląd 7 dni od jutra (z ankiety): liczby, słabe dni, dni bez ankiety, podpowiedź przepisania. */
 function helperWeekText_(s, st) {
   const T = today_(), days = [];
   for (let k = 1; k <= 7; k++) days.push(helperDay_(s, st, addDays_(T, k)));
@@ -1111,8 +967,6 @@ function helperWeekText_(s, st) {
   const strong = withPoll.filter(i => i.voters.length > s.min).sort((a, b) => b.voters.length - a.voters.length)[0];
   if (weak && strong) L.push('↔️ może ktoś z dnia ' + helperShortLabel_(strong.d) + ' (' + strong.voters.length + ') przepisze się na '
     + helperShortLabel_(weak.d) + ' (' + weak.voters.length + ')?');
-  const abs = st.abs.filter(a => (a.iv || []).some(iv => iv[1] >= days[0].d && iv[0] <= days[6].d));
-  if (abs.length) L.push('🚫 nieobecności: ' + abs.map(a => helperName_(s, st, a.w) + ' ' + a.iv.map(iv => helperSpan_(iv)).join(', ')).join('; '));
   return L.join('\n');
 }
 function helperSpan_(iv) {
@@ -1307,7 +1161,7 @@ function helperMembers_(s, st, run, send) {
 /* ---------- pytania w prywatnym czacie ---------- */
 
 const HELPER_HELP = 'Napisz jedno słowo: *jutro* · *dziś* · *pojutrze* · dzień tygodnia (*sobota*) · data (*31.10*) · *tydzień* · '
-  + '*miniony* · *nieobecni* · *nieaktywni* · *ludzie* · *stan* · *kto 17* (karta kontaktu osoby #17). '
+  + '*miniony* · *nieaktywni* · *ludzie* · *stan* · *kto 17* (karta kontaktu osoby #17). '
   + 'Udostępnij mi kontakt z telefonu — odpiszę, kto to na liście członków.';
 
 /** „kto 17", „kto #17", „#17", „17" → 17 (numer osoby); inaczej 0. */
@@ -1344,12 +1198,6 @@ function helperCommand_(s, st, text, ctx) {
   if (dm) { const d = helperYmd_(+dm[1], +dm[2], T); if (d) return helperDayText_(s, st, d, ctx); }
   if (/^tydz/.test(w)) return helperWeekText_(s, st);
   if (/^(miniony|zeszly|ubiegly)/.test(w)) return helperLastWeekText_(s, st, ctx);
-  if (/^nieobec/.test(w)) {
-    const T2 = today_();
-    const list = st.abs.filter(a => a.iv.some(iv => iv[1] >= T2));
-    return list.length ? '*Zapowiedziane nieobecności*\n' + list.map(a => '🚫 ' + helperName_(s, st, a.w) + ': ' + a.iv.map(helperSpan_).join(', ')
-      + '\n   „' + helperMentions_(s, st, a.x) + '"').join('\n') : 'Nikt nie zapowiedział nieobecności.';
-  }
   if (/^nieaktyw/.test(w)) return helperInactiveText_(s, st);
   if (/^(ludzie|osoby)/.test(w)) return helperPeopleText_(s, st);
   if (/^(stan|status)/.test(w)) return helperStatusText_(s, st);
@@ -1388,7 +1236,7 @@ function helperStatusText_(s, st) {
       : 'wyłączone — ' + g.missing.join(', ')) + '\n'
     + 'ostatni przebieg: ' + (x ? helperDate_(x.at).slice(5).split('-').reverse().join('.') + ' ' + helperTime_(x.at) + ', powiadomień ' + x.events + ' (Grafik ' + x.grafik + ')' : '—') + '\n'
     + 'ankiety: ' + (st.polls.map(p => '„' + p.q + '" — ' + Object.keys(p.v).length + ' głosujących' + (p.partial ? ' (niepełna)' : '')).join('; ') || '—') + '\n'
-    + 'osoby: ' + Object.keys(st.people).length + ' · notatki: ' + st.notes.length + ' · nieobecności: ' + st.abs.length
+    + 'osoby: ' + Object.keys(st.people).length
     + ' · skład grupy: ' + (st.members ? st.members.ids.length : '—');
 }
 
@@ -1519,7 +1367,7 @@ function helperPanel_() {
     polls: st.polls.slice().reverse().map(p => ({ q: p.q, at: p.t, voters: Object.keys(p.v).length, partial: !!p.partial, wrong: !!p.wrong,
       days: p.days.map((o, i) => o.d && !o.x && !o.no ? helperShortLabel_(o.d) + (o.p ? (o.p === 'r' ? ' rano' : ' wiecz.') : '') + ' '
         + Object.keys(p.v).filter(w => p.v[w].indexOf(i) >= 0).length : '').filter(Boolean).join(' · ') })),
-    people: Object.keys(st.people).length, notes: st.notes.length, abs: st.abs.length,
+    people: Object.keys(st.people).length,
     members: st.members ? st.members.ids.length : null,
     roster: helperRosterPanel_(st, s),
   };

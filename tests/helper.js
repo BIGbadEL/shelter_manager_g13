@@ -200,7 +200,9 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('5 powiadomień przeczytanych, każde zdjęte metodą DELETE z własnym numerem', run.events === 5 && env.gw.deleted.length === 5
     && env.gw.deleted.every(d => d.method === 'delete') && env.gw.queue.length === 0, JSON.stringify(env.gw.deleted));
   const st = env.st();
-  check('ta sama wiadomość dwa razy (powtórka po awarii) — jedna notatka', st.notes.length === 1 && st.notes[0].d.join() === '2026-10-26', JSON.stringify(st.notes));
+  check('ta sama wiadomość dwa razy (powtórka po awarii) — przetworzona raz', st.seen.filter(x => x === 'DUP1').length === 1, JSON.stringify(st.seen));
+  check('treści wiadomości z czatu pomocnik nie trzyma (o obecności mówi tylko ankieta — 27.10)', !('notes' in st) && !('abs' in st)
+    && !/Będę jutro/.test(JSON.stringify(Object.keys(env.props).filter(k => /^helper/.test(k)).map(k => env.props[k]))));
   check('nazwa z WhatsAppa bez dopisku grupy', st.people[ANIA].n === 'Ania Kowalska', JSON.stringify(st.people));
   check('limit planu (quotaExceeded) — wpis w dzienniku', st.log.some(l => /limit planu/.test(l.m)));
   check('przebieg bez raportu nie czyta arkusza', !env.calls.bySheet['Psy'] && !env.calls.bySheet['Historia'], JSON.stringify(env.calls.bySheet));
@@ -305,62 +307,33 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('bez dat w pytaniu („Weekend bez AW") — najbliższy tydzień', O('Sobota', 'Weekend bez AW', '2026-04-24').d === '2026-04-25');
 })();
 
-/* ---------- B77: czat ---------- */
+/* ---------- B77: o obecności mówi tylko ankieta ---------- */
+// Do 27.10 pomocnik rozpoznawał z czatu dni, „będę / nie dam rady" i nieobecności (🔀, 🚫, „nieobecni", cytaty „Z czatu").
+// Decyzja właściciela 27.10: „jedynym i świętym źródłem prawdy jest ankieta — tam, gdzie ktoś jest zaznaczony, tam ma być".
+// Wiadomości z prawdziwego „Grafiku" z 27.10 (imiona i numery zmyślone): heurystyka brała „nie wpadnę" za „będzie".
 (()=>{
-  console.log('B77: pomocnik — czat: o które dni chodzi, rodzaj wiadomości, nieobecności z datami');
-  const env = build();
-  const D = (t, d, h) => env.api.helperDayRefs_(t, d, h == null ? 12 : h).join(',');
-  check('„Będę jutro 10-12" (piątek) → sobota', D('Będę jutro 10-12', '2026-10-23') === '2026-10-24');
-  check('„W czwartek będę koło 11" (poniedziałek) → ten czwartek', D('W czwartek będę koło 11', '2026-10-19') === '2026-10-22');
-  check('„W środę" w środę → dziś', D('W środę potrzebna pomoc', '2026-10-21') === '2026-10-21');
-  check('„koło 11.30", „o 10.30" — godzina, nie data', D('Hej ja jutro będę w schronie koło 11.30', '2026-04-22') === '2026-04-23' && D('będę o 10.10', '2026-10-01') === '');
-  check('„Czy jest ktoś jutro do Evera?" o 0:31 — to już ten dzień', D('Czy jest ktos jutro do Evera?', '2026-04-23', 0) === '2026-04-23');
-  check('„w weekend" → sobota i niedziela', D('ja w weekend też nie dam rady', '2026-10-18') === '2026-10-18,2026-10-24');
-  check('„z jutra", „na piątek", „środowej grupy"', D('Muszę się wypisać z jutra', '2026-09-17') === '2026-09-18'
-    && D('Kto może się dopisać na piątek?', '2026-10-21') === '2026-10-23' && D('wsparcia grupy środowej', '2026-10-13') === '2026-10-14');
-  check('data „16.10"', D('Nie ma mnie w piątek 16.10. Proszę o wsparcie', '2026-10-12') === '2026-10-16');
-  check('„środek", „środowisko" — to nie środa', D('w środku dnia, środowisko testowe', '2026-10-12') === '');
-  const K = t => env.api.helperKind_(t);
-  check('rodzaje: pytanie, nie będzie, będzie, nieobecność, inne', K('Kto dołączy jutro?') === 'ask' && K('Muszę się wypisać z jutra, rozchorowałam się') === 'out'
-    && K('Będę jutro 10-12') === 'in' && K('Nie ma mnie 13-17 sierpnia') === 'abs' && K('Imbir o 14:30 jedzie sprawdzić czy lubi koty') === 'info'
-    && K('Ja jutro niestety nie będę') === 'out' && K('Dopisałam się na sobotę') === 'in', [K('Kto dołączy jutro?'), K('Ja jutro niestety nie będę')].join());
-  const A = (t, d) => JSON.stringify(env.api.helperAbsence_(t, d, 12));
-  check('„Nie ma mnie 13-17 sierpnia"', A('Nie ma mnie 13-17 sierpnia', '2026-08-09') === '[["2026-08-13","2026-08-17"]]', A('Nie ma mnie 13-17 sierpnia', '2026-08-09'));
-  check('„W dniach 30 kwietnia - 3 maja nie będzie mnie w Warszawie"', A('‼️\nW dniach 30 kwietnia - 3 maja nie będzie mnie w Warszawie.', '2026-04-22') === '[["2026-04-30","2026-05-03"]]',
-    A('W dniach 30 kwietnia - 3 maja nie będzie mnie w Warszawie.', '2026-04-22'));
-  check('„od 15 października do 1 listopada"', A('Przypominam, że będę nieobecny 26 września i 1 października, a także w okresie od 15 października do 1 listopada.', '2026-09-20')
-    === '[["2026-09-26","2026-09-26"],["2026-10-01","2026-10-01"],["2026-10-15","2026-11-01"]]',
-    A('Przypominam, że będę nieobecny 26 września i 1 października, a także w okresie od 15 października do 1 listopada.', '2026-09-20'));
-  const list = env.api.helperAbsence_('*Chciałbym z wyprzedzeniem poinformować, że w poniższych terminach będę nieobecny:*\n29 sierpnia\n5 września\n1, 17, 22, 24, 29 i 31 października', '2026-08-20', 19);
-  check('wyliczanka dat („29 sierpnia / 5 września / 1, 17, 22, 24, 29 i 31 października") — 8 dni', list.length === 8
-    && list[0][0] === '2026-08-29' && list[7][0] === '2026-10-31' && list.every(x => x[0] === x[1]), JSON.stringify(list));
-  check('„Nie ma mnie od dziś do 16 sierpnia" — od dziś', A('Nie ma mnie od dzis do 16 sierpnia i w zależności od sytuacji', '2026-08-02') === '[["2026-08-02","2026-08-16"]]',
-    A('Nie ma mnie od dzis do 16 sierpnia', '2026-08-02'));
-  check('„Od teraz podróżuję i wrócę 16 lipca" — do dnia przed powrotem', A('Od teraz podróżuję i wrócę 16 lipca.', '2026-06-25') === '[["2026-06-25","2026-07-15"]]',
-    A('Od teraz podróżuję i wrócę 16 lipca.', '2026-06-25'));
-  check('„nie ma mnie 10-22 sierpnia"', A('nie ma mnie 10-22 sierpnia', '2026-08-10') === '[["2026-08-10","2026-08-22"]]');
-  check('bez dat — dni z wiadomości („ani w czwartek, ani w weekend")', A('Nie będzie mnie w przyszłym tygodniu, ani w czwartek, ani w weekend', '2026-05-15')
-    === '[["2026-05-16","2026-05-16"],["2026-05-17","2026-05-17"],["2026-05-21","2026-05-21"]]', A('Nie będzie mnie w przyszłym tygodniu, ani w czwartek, ani w weekend', '2026-05-15'));
-
-  on(env);
-  env.push(text(ANIA, 'Ania', 'Super teraz ta ankieta jest czytelna!!!', '2026-10-25T10:00:00+02:00'),
-           text(BASIA, 'Basia', 'Nie ma mnie 26-28 października', '2026-10-25T10:01:00+02:00'));
+  console.log('B77: pomocnik — o obecności mówi tylko ankieta: wiadomości z czatu nic nie zmieniają w składzie, przeglądzie ani odpowiedziach');
+  const env = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', ANIA, ['Wtorek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           text(ANIA, 'Ania', 'Chociaż nie wpadnę jutro, muszę się wypisać, rozchorowałam się', '2026-10-26T11:00:00+02:00'),
+           text(BASIA, 'Basia', 'Będę jutro 10-12', '2026-10-26T11:01:00+02:00'),
+           text(CELINA, 'Celina', 'Nie ma mnie 26-28 października', '2026-10-26T11:02:00+02:00'),
+           text(DAWID, 'Dawid', '@48601000007 przypomnij jutro, jak chodzić z Bysiem', '2026-10-26T11:03:00+02:00'));
   env.tick();
+  const day = env.api.helperPreview(TEST_PIN, 'jutro').text, week = env.api.helperPreview(TEST_PIN, 'tydzien').text;
+  check('skład na jutro tylko z ankiety: Ania jest (zaznaczona), Basia nie (pisze „będę", ale nie głosowała)', /👥 Ania$/m.test(day) && !/Basia/.test(day), day);
+  check('...bez niczego z czatu: 🔀, 🚫, cytatów, numerów z oznaczeń', !/🔀|🚫|💬|Z czatu|nieobecn|wpadnę|rozchorowałam|Bysiem|przypomnij|Celina|4860/.test(day), day);
+  check('przegląd tygodnia — bez nieobecności z czatu', !/🚫|nieobecn|Celina/.test(week) && /wt 27\.10 — 1 os\./.test(week), week);
+  env.push(text(OWNER, 'Grzesiek', 'nieobecni', '2026-10-26T12:05:00+02:00', OWNER));
+  env.tick('2026-10-26T12:10:00+02:00');
+  check('„nieobecni" — już nie ma (lista pytań bez niego)', /Nie rozumiem „nieobecni"/.test(env.last()) && !/\*nieobecni\*/.test(env.last()), env.last());
   const st = env.st();
-  check('wiadomość bez dnia — bez notatki; nieobecność — zapamiętana z przedziałem i przy każdym dniu', st.notes.length === 1 && st.notes[0].k === 'abs'
-    && st.notes[0].d.join() === '2026-10-26,2026-10-27,2026-10-28' && JSON.stringify(st.abs[0].iv) === '[["2026-10-26","2026-10-28"]]', JSON.stringify(st.notes));
-  check('notatka bez treści wiadomości (cytatów w składzie nie ma — 27.10); treść tylko przy nieobecności', !('x' in st.notes[0]) && /Nie ma mnie/.test(st.abs[0].x),
-    JSON.stringify(st.notes[0]));
-
-  // „nieobecni": cytat z czatu — oznaczenie osoby (WhatsApp zapisuje je numerem) imieniem, nieznanej „@…", numer w treści „…"
-  env.push(text(GOSIA, 'Gosia', 'Hej wszystkim', '2026-10-25T10:02:00+02:00'),
-           text(DAWID, 'Dawid', 'Nie będzie mnie 26-27 października, @48601000007 przejmiesz Draco? @48609999999 dzwoń 600 111 222', '2026-10-25T10:03:00+02:00'));
-  env.tick();
-  env.push(text(OWNER, 'Grzesiek', 'nieobecni', '2026-10-25T10:04:00+02:00', OWNER));
-  env.tick('2026-10-25T10:10:00+02:00');
-  const ab = env.last();
-  check('„nieobecni": znana osoba — „@Gosia", nieznana — „@…", numer w treści — „…"', /🚫 Dawid: /.test(ab)
-    && /„Nie będzie mnie 26-27 października, @Gosia przejmiesz Draco\? @… dzwoń …"/.test(ab) && !/4860|600 111 222/.test(ab), ab);
+  const stored = JSON.stringify(Object.keys(env.props).filter(k => /^helper/.test(k)).map(k => env.props[k]));
+  check('stan bez treści czatu (notatek i nieobecności nie ma, właściwości bez tekstu wiadomości)', !('notes' in st) && !('abs' in st)
+    && !/wpadnę|Będę jutro|Nie ma mnie|Bysiem/.test(stored), stored.slice(0, 300));
+  check('z czatu zostaje nazwa nadawcy', st.people[BASIA] && st.people[BASIA].n === 'Basia' && st.people[CELINA].n === 'Celina', JSON.stringify(st.people));
 })();
 
 /* ---------- B78: skład dnia — wieczorem, rano ---------- */
@@ -391,13 +364,8 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && /👥 Ania, Dawid, Basia|👥 .*Ania.*Basia.*Dawid/.test(ev), ev);
   check('...wypisani: Celina (z godziną)', /➖ wypisali się: Celina \(nd 15:28\)/.test(ev), ev);
   check('...brak fioletowego (fioletowa Gosia nie głosowała)', /🟣 brak fioletowego ⚠️/.test(ev));
-  check('...bez cytatów z czatu (27.10: wiadomość ma docelowo iść do „Grafiku" — to byłby ten sam tekst w tym samym czacie), bez numerów z oznaczeń',
-    !/Z czatu|💬|Dopisałam się|Kto dołączy|przypomnij|Bysiem|48601000007/.test(ev), ev);
-  const notes = env.st().notes;
-  check('...notatki z czatu (będzie, nie będzie, pytanie, inne) bez treści — pomocnik jej już nie trzyma', notes.length >= 4
-    && notes.every(n => !('x' in n)) && !/Dopisałam|Bysiem/.test(JSON.stringify(notes)), JSON.stringify(notes));
-  check('...rozjazd: Kasia pisze, że będzie, a nie ma jej w ankiecie; Basia pisze, że nie da rady, a dalej jest',
-    /pisze, że będzie, a nie ma w ankiecie: Kasia/.test(ev) && /pisze, że nie da rady, a dalej w ankiecie: Basia/.test(ev), ev);
+  check('...nic z czatu (27.10: o obecności mówi tylko ankieta): bez cytatów, bez 🔀 — Basia w składzie mimo „nie dam rady", Kasii nie ma mimo „dopisałam się"',
+    !/Z czatu|💬|🔀|🚫|Dopisałam się|Kto dołączy|przypomnij|Bysiem|48601000007|Kasia/.test(ev) && /👥 .*Basia/.test(ev), ev);
   check('...psy: 4 naszych, 5 spacerów (Hańcza na dwa), najdłużej bez spaceru: Draco', /🐕 4 psów, 5 spacerów \(~2 na osobę\)/.test(ev)
     && /⏳ najdłużej bez spaceru: Draco 5 dni, Barwik 3 dni/.test(ev), ev);
   check('...Draco (tylko wyznaczone osoby): kto ostatnio z nim chodził — i że jest w składzie', /🔴 Draco \(tylko wyznaczone osoby\) — ostatnio: Dawid 12\.10, Ilona 09\.10 · w składzie: Dawid ✓/.test(ev), ev);
@@ -460,9 +428,9 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('włącznika „zmiany w ankiecie" już nie ma', env.conf.HELPER_FEATURES.indexOf('changes') < 0, env.conf.HELPER_FEATURES.join());
   env.tick('2026-10-26T20:05:00+02:00');
   const ev = env.msgs().filter(m => /Jutro — wtorek 27\.10/.test(m))[0] || '';
-  check('wieczorem jeden skład z tym wszystkim: kto jest, kto się wypisał, kto pisze, że nie da rady (bez cytatu — 27.10)', env.msgs().length === 1
-    && /👥 .*Kasia/.test(ev) && /➖ wypisali się: Basia \(pn 12:08\)/.test(ev) && /🔀 pisze, że nie da rady, a dalej w ankiecie: Ania/.test(ev)
-    && !/Muszę się wypisać/.test(ev), ev);
+  check('wieczorem jeden skład z tym wszystkim: kto jest, kto się wypisał z ankiety; „nie dam rady" z czatu nic nie zmienia — Ania dalej w składzie (27.10)',
+    env.msgs().length === 1 && /👥 .*Kasia/.test(ev) && /👥 .*Ania/.test(ev) && /➖ wypisali się: Basia \(pn 12:08\)/.test(ev)
+    && !/🔀|Muszę się wypisać/.test(ev), ev);
 })();
 
 /* ---------- B80: przegląd tygodnia, skład grupy, pytania, sufity, panel ---------- */
@@ -599,10 +567,10 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     H({ idMessage: 'H4', timestamp: ts('2026-10-25T14:00:00+02:00'), typeMessage: 'textMessage', senderId: BASIA, senderName: 'Basia', textMessage: 'Będę we wtorek 10-12' }));
   env.api.helperRunNow(TEST_PIN);                         // „Sprawdź teraz" — zawsze z historią
   const st1 = env.st();
-  check('historia: ankieta, głosy w kolejności czasu (Ania: wt i śr), wiadomość z czatu', votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join()
-    && votersOn(env, 'P1', '2026-10-28').join() === ANIA && st1.notes.length === 1, JSON.stringify(pollOf(env, 'P1').v));
+  check('historia: ankieta, głosy w kolejności czasu (Ania: wt i śr), z wiadomości tylko nazwa nadawcy', votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join()
+    && votersOn(env, 'P1', '2026-10-28').join() === ANIA && st1.people[BASIA].n === 'Basia' && !('notes' in st1), JSON.stringify(pollOf(env, 'P1').v));
   env.api.helperRunNow(TEST_PIN);
-  check('druga historia — ten sam stan (bez podwójnych notatek)', env.st().notes.length === 1 && votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join());
+  check('druga historia — ten sam stan', JSON.stringify(env.st().polls) === JSON.stringify(st1.polls) && votersOn(env, 'P1', '2026-10-27').join() === [ANIA, BASIA].join());
   // kolejka podaje starszy głos Ani (z 11:00) po nowszym z historii — nie nadpisuje
   env.push(Object.assign(vote('P1', ANIA, ['Wtorek'], '2026-10-25T11:00:00+02:00'), { idMessage: 'H1' }));
   env.tick('2026-10-26T12:10:00+02:00');

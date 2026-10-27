@@ -1,13 +1,14 @@
 # Pomocnik Grafiku (1.5 — faza testów)
 
-Bot czyta grupę **„Grafik"** (ankieta tygodniowa + to, co ludzie piszą) i składa z tego, razem z danymi
-aplikacji, krótkie wiadomości dla prowadzących. **Na czas testów każda wiadomość idzie wyłącznie prywatnie
+Bot czyta z grupy **„Grafik"** ankietę tygodniową — **jedyne źródło prawdy o tym, kto przychodzi** (decyzja właściciela
+27.10.2026: „tam, gdzie ktoś jest zaznaczony, tam ma być"; treści wiadomości z czatu bot nie analizuje, bierze z nich tylko
+nazwę nadawcy) — i składa z tego, razem z danymi aplikacji, krótkie wiadomości dla prowadzących. **Na czas testów każda wiadomość idzie wyłącznie prywatnie
 do właściciela** (kontakt wybrany w panelu) — nigdy do grupy. Kod tego pilnuje: adres odbiorcy musi być
 prywatnym czatem (`…@c.us`), adres grupy (`…@g.us`) jest odrzucany przy zapisie ustawień i drugi raz przy
 każdej wysyłce (B74). Funkcje, które się nie sprawdzą, wyłącza się pojedynczo w panelu — „lepiej więcej niż
 mniej" (decyzja właściciela 24.10.2026).
 
-Kod: `Helper.gs`. Panel: „Pomocnik Grafiku (test)". Testy: B74–B82 (`tests/helper.js`), S145–S145d (`tests/scenarios21.js`).
+Kod: `Helper.gs`. Panel: „Pomocnik Grafiku (test)". Testy: B74–B84 (`tests/helper.js`), S145–S146 (`tests/scenarios21.js`).
 
 ## Skąd ten pomysł — co się dzieje w „Grafiku"
 
@@ -18,9 +19,9 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 | „Kto dołączy jutro?", „W czwartek potrzebne jeszcze 2 osoby", „3 osoby/dzień są potrzebne" — prowadząca liczy głosy ręcznie | prawie codziennie | **skład na jutro** wieczorem, **dziś** rano, gdy mało osób |
 | „W czwartek były 3 osoby, ktoś się wypisał?", „chyba mi się odkliknęło", „Nie widać Cię w grafiku" | co tydzień | **„wypisali się"** w składzie dnia (wieczorem i rano) — bez osobnych wiadomości o każdej zmianie (niżej) |
 | „Czy ktoś z niedzieli może się przepisać na sobotę?" | co tydzień | **przegląd tygodnia** z najsłabszymi dniami i podpowiedzią „z X na Y" |
-| „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **bez cytowania** (27.10 — decyzja właściciela: wiadomość ma docelowo iść do „Grafiku", więc cytat to ten sam tekst w tym samym czacie); z takich wiadomości bierze się **rozjazd czatu i ankiety** (niżej) |
-| „Dopisałam się", a głosu nie ma; „wypisuję się", a głos dalej jest; nowa osoba „nie mam dostępu do grafiku" | kilka razy w miesiącu | **rozjazd czatu i ankiety** w składzie dnia, **nowa osoba w grupie** |
-| „Nie ma mnie 13–17 sierpnia", „W poniższych terminach będę nieobecny: …" | kilka razy w miesiącu | **zapowiedziane nieobecności** w przeglądzie tygodnia i w dniu |
+| „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **nic** — o obecności mówi tylko ankieta (27.10, decyzja właściciela; do 27.10: cytaty i „🔀 pisze, że…") |
+| „Dopisałam się", a głosu nie ma; nowa osoba „nie mam dostępu do grafiku" | kilka razy w miesiącu | **nowa osoba w grupie** (skład grupy z bramki, przypomnienie, że nie widzi starszej ankiety); rozjazdu czatu i ankiety — nie (liczy się ankieta) |
+| „Nie ma mnie 13–17 sierpnia", „W poniższych terminach będę nieobecny: …" | kilka razy w miesiącu | **nic** — kogo nie będzie, ten nie zaznacza dnia w ankiecie (do 27.10: „🚫 nieobecności", „nieobecni") |
 | „potrzebny fioletowy wolo", „świeżak nie może być sam", „tylko fiolet może opiekować się kandydatem" | kilka razy w miesiącu | **klasy członków** (fioletowy / pomarańczowy / kandydat) z listy w panelu, ostrzeżenie w składzie dnia |
 | „Kto przyjdzie do Evera?", psy dla wyznaczonych osób | co tydzień | **psy „tylko wyznaczone osoby"** w składzie dnia: kto z nimi ostatnio chodził (Historia) |
 | ankieta z pomylonymi datami („Grafik 05-11.11" zamiast 10; tydzień wcześniej niż trzeba) | 2× w próbce | **nowa ankieta** — sprawdzenie, czy daty pasują do najbliższego tygodnia, przypomnienie o przypięciu |
@@ -29,15 +30,15 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 ## Funkcje (każda z osobnym włącznikiem w panelu)
 
 1. **Skład na jutro** (`evening`) — codziennie o godzinie „wieczorem" (domyślnie 20): kto jest w ankiecie na
-   jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani od wczoraj, rozjazd czatu i ankiety (🔀),
-   nieobecności (🚫), klasy przy imionach (🟣 🟠 🌱) i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
+   jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani z ankiety od wczoraj, klasy przy imionach (🟣 🟠 🌱)
+   i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
    wyznaczonych osób), pogoda. W niedzielę na górze: czy jest ankieta na nowy tydzień.
    `eveningAlways` — wysyłaj codziennie (na czas testów); wyłączone = tylko, gdy jest problem.
 2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, **tylko gdy jest problem**
    (mniej niż minimum, brak fioletowego, kandydat bez fioletowego, brak ankiety).
 3. **Przegląd tygodnia** (`week`) — w wybrane dni (domyślnie niedziela i środa) o godzinie „wieczorem":
    7 najbliższych dni — liczba osób, ⚠️ słabe dni, dni bez ankiety, podpowiedź „ktoś z niedzieli (6) na
-   sobotę (2)?", nieobecności.
+   sobotę (2)?".
 4. **Nowa ankieta** (`newPoll`) — gdy w „Grafiku" pojawi się ankieta (bota albo czyjaś): pytanie, dni, czy
    daty pasują do najbliższego tygodnia, przypomnienie o przypięciu.
 5. **Nowe osoby i odejścia** (`members`) — raz dziennie (wieczorem) skład grupy z bramki (`getGroupData`)
@@ -48,7 +49,7 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 7. **Pogoda** (`weather`) — linijka w składzie dnia: temperatura i deszcz (Open-Meteo, okolice schroniska),
    ⚠️ upał od 28°C.
 8. **Pytania w prywatnym czacie** (`commands`) — właściciel pisze do bota: `jutro`, `dziś`, `pojutrze`,
-   dzień tygodnia (`sobota`), data (`31.10`), `tydzień`, `nieobecni`, `nieaktywni`, `ludzie`, `stan`,
+   dzień tygodnia (`sobota`), data (`31.10`), `tydzień`, `nieaktywni`, `ludzie`, `stan`,
    `pomoc`, **`kto 17`** (też `#17`, `17`) — karta kontaktu osoby #17; **udostępniony botowi kontakt** (jeden albo kilka
    naraz) — odpowiedź, kto to na liście: „📇 Gośka = #3 („Gosia") · 🟣 fioletowy", „nie znam tej osoby", „spoza listy
    członków". Bot odpowiada przy najbliższym przebiegu (do 10 min). Inne czaty — nic.
@@ -57,7 +58,7 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 członków" bierze skład wybranej grupy z bramki (`getGroupData`) — „Grafik" albo **grupę ogłoszeń społeczności, czyli całą
 społeczność** (bot jest jej członkiem; skład samej społeczności-rodzica bramka może podawać niepełny) — z imionami
 z kontaktów telefonu bota (`getContacts`: nazwa kontaktu, inaczej nazwa z WhatsAppa — po dodaniu nowych kontaktów
-„Pobierz członków" jeszcze raz), z wiadomości z „Grafiku" i z pola „Imiona". Przy każdej osobie **numer osoby w nawiasie:
+„Pobierz członków" jeszcze raz), z nazw nadawców w „Grafiku" i z pola „Imiona". Przy każdej osobie **numer osoby w nawiasie:
 „Ania Kowalska (#17)"**, bez imienia — sam „#17". Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
 (`setHelperRole(nr, role, pin)`, RETRIABLE), drugie zdejmuje; filtr „bez klasy" pokazuje, kogo jeszcze nie przypisano. Klasa
 i numer zostają przy osobie także po ponownym pobraniu.
@@ -80,16 +81,17 @@ przegląd tygodnia — „bez 🟣" / „kandydat bez 🟣". Pomarańczowy na ra
 
 **Usunięte: „zmiany w ankiecie"** (osobna wiadomość o każdym dopisaniu i wypisaniu, po kwadransie ciszy) — 26.10.2026,
 decyzja właściciela po pierwszym dniu testu: męczące, a cały sens bota to, żeby takich powiadomień nie dostawać;
-wystarczą podsumowania wieczorem i rano (wypisania są w nich jako „wypisali się", z czatu — 🔀 i 🚫).
+wystarczą podsumowania wieczorem i rano (wypisania z ankiety są w nich jako „wypisali się"). B79 pilnuje, że w ciągu dnia
+nic nie idzie. Nie przywracać bez decyzji właściciela.
 
-**Usunięte: „Z czatu"** (cytaty wiadomości o danym dniu w składzie) — 27.10.2026, decyzja właściciela: wiadomość ma docelowo iść
-do „Grafiku", więc cytowanie czatu byłoby wklejaniem tego samego w to samo. Zostaje to, czego w czacie wprost nie ma: **🔀** (pisze,
-że będzie, a nie ma w ankiecie / pisze, że nie da rady, a dalej jest) i **🚫** (zapowiedziana nieobecność). Notatki z czatu nie
-trzymają już treści (tylko kto, kiedy, o których dniach, jaki rodzaj); treść zostaje tylko przy nieobecności — dla „nieobecni",
-gdzie oznaczenia osób („@48600111222") idą jako imię albo numer osoby (`helperMentions_`). Skutek: **pomyłka rodzaju wiadomości
-(`helperKind_`) ukrywa teraz informację** — wcześniej cytat i tak był w składzie. Przykład z 27.10: „Chociaż nie wpadnę w środę
-i czwartek" rozpoznane jako „będzie" (brak „nie wpadnę" w regułach), więc 🔀 nie powie, że osoba z ankiety nie przyjdzie.
-B79 pilnuje, że w ciągu dnia nic nie idzie. Nie przywracać bez decyzji właściciela.
+**Usunięte: wszystko, co bot wyczytywał z treści czatu** — 27.10.2026, dwie decyzje właściciela tego samego dnia. Najpierw
+cytaty „💬 Z czatu" w składzie: wiadomość ma docelowo iść do „Grafiku", więc to byłoby wklejanie tego samego w to samo (do tego
+oznaczenia osób w cytatach — „@48502539220" — to pełne numery telefonów). Potem reszta: **„jedynym i świętym źródłem prawdy jest
+ankieta — tam, gdzie ktoś jest zaznaczony, tam ma być"** — znikły „🔀 pisze, że będzie, a nie ma w ankiecie" / „…nie da rady,
+a dalej w ankiecie", „🚫 zapowiedziana nieobecność" (dzień i przegląd tygodnia) i pytanie „nieobecni"; pomocnik nie rozpoznaje
+już w czacie dni, rodzaju wiadomości ani nieobecności (heurystyka myliła się — 27.10 „Chociaż nie wpadnę w środę i czwartek"
+wzięła za „będzie") i nie trzyma treści wiadomości. Z czatu zostaje nazwa nadawcy. Testy: B77 (wiadomości z czatu nic nie
+zmieniają), B78, B79, B82. **Nie przywracać bez decyzji właściciela.**
 
 ## Jak bot widzi „Grafik" — bramka Green API
 
@@ -134,9 +136,9 @@ B79 pilnuje, że w ciągu dnia nic nie idzie. Nie przywracać bez decyzji właś
 ## Dane i prywatność
 
 Wszystko we właściwościach skryptu (limit 9 KB na wartość — każda ma sufit `HELPER_BYTES`): ankiety (najwyżej
-`HELPER_POLLS_KEEP`), osoby (numer → nazwa z WhatsAppa, najwyżej `HELPER_PEOPLE_MAX`), notatki z czatu na
-najbliższe dni (najwyżej `HELPER_NOTES_MAX`, po minionym dniu znikają), nieobecności, znaczniki wysłanych
-raportów, dziennik pomocnika do panelu, numery osób (`helperIds`). **Numery telefonów nie opuszczają serwera** (decyzja
+`HELPER_POLLS_KEEP`), osoby (numer → nazwa z WhatsAppa, najwyżej `HELPER_PEOPLE_MAX`), wypisania z ankiety na
+najbliższe dni, znaczniki wysłanych raportów, dziennik pomocnika do panelu, numery osób (`helperIds`). **Treści wiadomości
+z czatu pomocnik nie trzyma** (od 27.10; pierwszy zapis stanu po wdrożeniu zdejmuje dawne notatki i nieobecności). **Numery telefonów nie opuszczają serwera** (decyzja
 właściciela 27.10): nie idą do `getData`, do panelu (PIN) ani do tekstu wiadomości — panel i wiadomości pokazują nazwy
 i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na WhatsAppa właściciela. **Wybór kontaktu w panelu**
 (lista dnia i pomocnik — `getDayReportContacts`) też bez numeru (27.10, decyzja właściciela): pozycja to nazwa, a wartość — klucz

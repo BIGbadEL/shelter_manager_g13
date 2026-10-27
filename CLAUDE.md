@@ -338,11 +338,11 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   dziennie (B81); po włączeniu i przed raportem bez ankiety — **historia czatu** (`helperCatchUp_`, getChatHistory, te same
   reguły co kolejka). Ankieta `partial` (poznana z głosu albo z historii sprzed włączenia powiadomień — `gate.from`):
   „co najmniej N os.", „≥". Ankiety w dwóch właściwościach (`helperPolls`, `helperPolls2`). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
-  („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. Czat (`helperDayRefs_`, `helperKind_`, `helperAbsence_`)
-  to heurystyka na eksporcie z 16.03–24.10. **Cytatów z czatu w składzie dnia nie ma** (27.10, decyzja właściciela: wiadomość ma
-  docelowo iść do „Grafiku" — cytat to ten sam tekst w tym samym czacie; B78, B79): zostają 🔀 (rozjazd czatu i ankiety) i 🚫
-  (nieobecność), notatki nie trzymają treści; treść tylko przy nieobecności („nieobecni", oznaczenia osób jako imię — `helperMentions_`,
-  B77). **Nie przywracać bez pytania.** Skutek: pomyłka rodzaju (`helperKind_`) ukrywa teraz informację — wcześniej cytat i tak był.
+  („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. **O obecności mówi WYŁĄCZNIE ankieta** (27.10, decyzja właściciela:
+  „jedynym i świętym źródłem prawdy jest ankieta — tam, gdzie ktoś jest zaznaczony, tam ma być"): treści wiadomości z „Grafiku"
+  pomocnik nie analizuje ani nie trzyma — z czatu bierze tylko nazwę nadawcy (B77). Do 27.10 rozpoznawał w czacie dni, „będę /
+  nie dam rady" i nieobecności (cytaty „Z czatu", 🔀, 🚫, „nieobecni") — usunięte tego dnia, razem z heurystyką (`helperKind_`,
+  `helperDayRefs_`, `helperAbsence_`), która myliła się („nie wpadnę" jako „będzie"). **Nie przywracać bez pytania.**
 - **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
   katalogu z grupą (`team` w `getData`, kolumna `grupa_psa`). `addDog(data…)` i `updateDog(id, data…)`
   przyjmują `data.team`; **brak pola (karta sprzed 1.3) = grupa zostaje, jaka była** — inaczej stara karta
@@ -612,7 +612,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1936 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1920 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -790,7 +790,8 @@ bez arkusza (stan z pamięci bez ani jednego wywołania arkusza; zapis, zapis w 
 nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, awarie, wpis ponad 100 KB),
 B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
 ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
-B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, czat i nieobecności,
+B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, B77 — o obecności mówi
+tylko ankieta: wiadomości z czatu nic nie zmieniają w składzie, przeglądzie ani odpowiedziach, stan bez ich treści,
 skład dnia wieczorem i rano, B79 — dopisania i wypisania w ciągu dnia bez osobnych wiadomości, tylko w składzie wieczorem,
 przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
 bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu

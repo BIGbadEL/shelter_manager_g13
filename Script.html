@@ -2374,7 +2374,7 @@
           : g ? `<div class="hint">Powiadomienia w bramce włączone (od ${esc(diagWhen(g.from))}).</div>` : '');
     const last = st ? `<div class="hint">Ostatni przebieg: ${esc(diagWhen(st.at))} — powiadomień ${st.events} (z Grafiku ${st.grafik}), wiadomości ${st.sent}${st.err ? '' : '.'}</div>`
       + (st.err ? `<div class="hint pollerr">Błąd: ${esc(st.err)}</div>` : '') : '';
-    const knows = `<div class="hint">Wie o: ankiet ${h.polls.length}, osób ${h.people}, wiadomości o najbliższych dniach ${h.notes}, nieobecności ${h.abs}, skład grupy ${h.members == null ? '—' : h.members + ' os.'}</div>`;
+    const knows = `<div class="hint">Wie o: ankiet ${h.polls.length}, osób ${h.people}, skład grupy ${h.members == null ? '—' : h.members + ' os.'}</div>`;
     const gate = !state.helperGate ? ''
       : state.helperGate.error ? `<div class="hint pollerr">Bramka: ${esc(state.helperGate.error)}</div>`
       : `<div class="helpergate">${state.helperGate.map(g => `<div class="${g.ok ? 'gateok' : 'gatebad'}">${g.ok ? '✓' : '✗'} ${esc(g.label)}</div>`).join('')}</div>`
@@ -2390,7 +2390,8 @@
     return `
       <div class="panelbox">
         <h3>Pomocnik Grafiku (test)</h3>
-        <div class="hint">Bot czyta „Grafik" — ankietę i czat — i pisze <b>tylko prywatnie</b> do wybranej osoby: skład na jutro,
+        <div class="hint">Bot czyta z „Grafiku" ankietę — o tym, kto przychodzi, mówi tylko ona; treści czatu nie analizuje — i pisze
+        <b>tylko prywatnie</b> do wybranej osoby: skład na jutro,
         przegląd tygodnia… Włącz go tylko w jednym środowisku: test i produkcja dzielą kolejkę bramki.</div>
         ${status}${last}${knows}
         <label class="mailfl" for="helperChat">Grupa „Grafik"</label>
