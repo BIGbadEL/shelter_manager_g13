@@ -1100,7 +1100,7 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   **26–27.10:** zmiany w ankiecie usunięte (@43), członkowie i klasy (@44), pełne numery telefonów w panelu (@45) — cofnięte
   27.10, w ich miejsce numer osoby „#17" i karta kontaktu (@46, Konwencje); wybór kontaktu w panelu (lista dnia, pomocnik)
   też bez numerów — klucz kontaktu (@47, decyzja właściciela 27.10); skład dnia bez cytatów z czatu (@48, 27.10 — Konwencje,
-  „Pomocnik Grafiku"). Do wiadomości: stare grupy WhatsAppa mają w adresie
+  „Pomocnik Grafiku"); o obecności mówi tylko ankieta — bez 🔀, 🚫 i „nieobecni", treści czatu bot nie czyta (@49, 27.10). Do wiadomości: stare grupy WhatsAppa mają w adresie
   numer twórcy („48600111222-1600000000@g.us") — lista grup („Pobierz grupy") pokazuje adresy grup; grupy społeczności
   („120363…@g.us") numeru nie mają.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
