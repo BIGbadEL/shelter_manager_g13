@@ -61,9 +61,10 @@ function S144(){
 }
 
 /* ---------- S145: panel pomocnika Grafiku ---------- */
-const GRAFIK = '120363000000000001@g.us', OWNER = '48600111222@c.us';
+// kontakt (odbiorca) to klucz z serwera (contactKey_), nie adres z numerem — numery nie opuszczają serwera (27.10)
+const GRAFIK = '120363000000000001@g.us', OWNER = 'kGrzesiek00000001';
 const FEATS = {evening:true, eveningAlways:true, morning:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
-const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toId:'', toName:'', min:3, evening:20, morning:7,
+const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toKey:'', toName:'', min:3, evening:20, morning:7,
     weekDays:[0,3], names:'', features: Object.assign({}, FEATS)}, s),
   configured: true, env: 'test', trigger: false, stat: null, log: [], polls: [], people: 0, notes: 0, abs: 0, members: null}, o);
 const POLL = {settings: {question:'Grafik [TYDZIEŃ]', options:['Pon','Wt'], multi:true, day:0, hour:12, enabled:false, chatId:'', chatName:''},
@@ -87,9 +88,9 @@ function S145(){
   app.click('[data-act="pollChats"]');
   respondTo(app, 'getPollChats', [{id: GRAFIK, name: 'Grafik'}, {id: '120363000000000002@g.us', name: 'Grupa próbna'}]);
   app.click('[data-act="reportContacts"]');
-  respondTo(app, 'getDayReportContacts', [{id: OWNER, name: 'Grzesiek', phone: '+48600111222'}]);
-  check('grupa z listy grup bota, kontakt z kontaktów telefonu bota', opts(app, '#helperChat') === '=— wybierz grupę —|' + GRAFIK + '=Grafik|120363000000000002@g.us=Grupa próbna'
-    && opts(app, '#helperTo') === '=— wybierz kontakt —|' + OWNER + '=Grzesiek (+48600111222)', opts(app, '#helperChat') + ' / ' + opts(app, '#helperTo'));
+  respondTo(app, 'getDayReportContacts', [{key: OWNER, name: 'Grzesiek'}]);
+  check('grupa z listy grup bota, kontakt z kontaktów telefonu bota — po nazwie, bez numeru', opts(app, '#helperChat') === '=— wybierz grupę —|' + GRAFIK + '=Grafik|120363000000000002@g.us=Grupa próbna'
+    && opts(app, '#helperTo') === '=— wybierz kontakt —|' + OWNER + '=Grzesiek' && !/4860|@c\.us/.test(app.html()), opts(app, '#helperChat') + ' / ' + opts(app, '#helperTo'));
   fill(app, {'#helperEnabled': true});
   app.click('[data-act="helperSave"]');
   check('włączenie bez grupy — komunikat, nic nie idzie', /Wybierz grupę/.test(toastOf(app)) && !calls(app, 'setHelperSettings').length, toastOf(app));
@@ -104,9 +105,9 @@ function S145(){
     && !doc(app).getElementById('helperF_weather').checked && doc(app).getElementById('helperWd5').checked);
   app.click('[data-act="helperSave"]');
   const save = lastCall(app, 'setHelperSettings');
-  const want = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', min: 4, evening: 20, morning: 7, weekDays: [0, 5],
+  const want = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', min: 4, evening: 20, morning: 7, weekDays: [0, 5],
     names: '123 = Ania', features: Object.assign({}, FEATS, {weather: false}), enabled: true};
-  check('zapis: grupa, kontakt (nazwa bez numeru), minimum, dni, imiona, włączniki, PIN', !!save && JSON.stringify(save.args) === JSON.stringify([want, '1234']),
+  check('zapis: grupa, kontakt (klucz i nazwa), minimum, dni, imiona, włączniki, PIN', !!save && JSON.stringify(save.args) === JSON.stringify([want, '1234']),
     save && JSON.stringify(save.args));
   respondTo(app, 'setHelperSettings', HELPER({trigger: true}, Object.assign({}, want, {features: want.features})));
   check('po zapisie: komunikat, bez „Niezapisane", włączony z wyzwalaczem', /zapisany i włączony/.test(toastOf(app)) && hidden(app, '.helperdirty')
@@ -171,11 +172,14 @@ function S145b(){
   check('włączniki w panelu = funkcje serwera (' + keys.length + ')', keys.every(k => client.indexOf("['" + k + "'") >= 0) && (client.match(/\['/g) || []).length === keys.length);
   const app = buildApp();
   app.seed(base());
-  const ok = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'G', min: 3, evening: 20, morning: 7, weekDays: [0], names: '',
+  // kontakt jak z „Pobierz kontakty": klucz, który serwer zna. Nieznany klucz sprawdza tylko serwer — przeglądarka adresów nie zna
+  env.http.handler = url => /\/getContacts\//.test(url) ? { code: 200, body: JSON.stringify([{ id: '48600111222@c.us', contactName: 'G', type: 'user' }]) } : { code: 404, body: '' };
+  const KEY = env.api.getDayReportContacts('1234')[0].key;
+  const ok = {chatId: GRAFIK, chatName: 'Grafik', toKey: KEY, toName: 'G', min: 3, evening: 20, morning: 7, weekDays: [0], names: '',
     features: Object.assign({}, FEATS), enabled: true};
-  const cases = [ok, Object.assign({}, ok, {toId: GRAFIK}), Object.assign({}, ok, {min: 0}), Object.assign({}, ok, {min: L.MIN_MAX + 1}),
+  const cases = [ok, Object.assign({}, ok, {min: 0}), Object.assign({}, ok, {min: L.MIN_MAX + 1}),
     Object.assign({}, ok, {names: 'x'.repeat(L.NAME_MAP)}), Object.assign({}, ok, {names: 'x'.repeat(L.NAME_MAP + 1)}),
-    Object.assign({}, ok, {chatId: ''}), Object.assign({}, ok, {toId: ''}), Object.assign({}, ok, {chatId: '', enabled: false})];
+    Object.assign({}, ok, {chatId: ''}), Object.assign({}, ok, {toKey: ''}), Object.assign({}, ok, {chatId: '', enabled: false})];
   const diff = cases.map((c, i) => {
     const browser = !!app.window.helperProblem(c, true);
     let server = false;
@@ -188,7 +192,7 @@ function S145b(){
 /* ---------- S145d: panel mówi wprost, że pomocnik nic nie widzi ---------- */
 function S145d(){
   console.log('S145d: pomocnik — w bramce wyłączone powiadomienia (test 24–25.10): panel mówi, czego brakuje; po włączeniu — od kiedy widzi');
-  const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
+  const on = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true};
   const off = openPanel(HELPER({trigger: true, gate: {ok: false, at: Date.now(), from: 0,
     missing: ['powiadomienia o wiadomościach przychodzących', 'powiadomienia o ankietach']}}, on));
   const box = [...doc(off).querySelectorAll('.panelbox')].find(b => /Pomocnik Grafiku/.test(b.textContent));
@@ -205,7 +209,7 @@ function S145d(){
 /* ---------- S146: członkowie i klasy w panelu ---------- */
 function S146(){
   console.log('S146: członkowie — imię z numerem osoby „(#2)", bez imienia sam „#3"; 📲 karta kontaktu wprost; klasa jednym stuknięciem po numerze osoby (kolejka), drugie zdejmuje, filtr; bez numerów telefonu');
-  const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
+  const on = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true};
   const ROSTER = () => ({at: Date.parse('2026-10-26T12:00:00+01:00'), chatId: GRAFIK, chatName: 'Grafik', grafikList: true,
     list: [{nr: 1, name: 'Ania Kowalska', role: 'p', grafik: null, card: true}, {nr: 2, name: 'Basia', role: '', grafik: null, card: true},
            {nr: 3, name: '', role: 'k', grafik: null, card: true}, {nr: 4, name: '', role: '', grafik: null, card: false}],
@@ -263,7 +267,7 @@ function S146(){
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */
 async function S145c(){
   console.log('S145c: pomocnik — odpowiedź nie przyszła (google.script.run nie oddzwonił): po T.helperWait przyciski wracają');
-  const app = openPanel(HELPER({}, {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true}), {timing: {helperWait: 60}});
+  const app = openPanel(HELPER({}, {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true}), {timing: {helperWait: 60}});
   app.click('[data-act="helperRun"]');
   check('przebieg w toku — przyciski wstrzymane', doc(app).querySelector('[data-act="helperGate"]').disabled);
   await new Promise(r => setTimeout(r, 120));

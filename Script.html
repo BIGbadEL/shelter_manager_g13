@@ -60,8 +60,8 @@
     pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
     pollChats:null,        // grupy konta bota z bramki („Pobierz grupy"): [{id, name}]; null = jeszcze nie pobrane
     pollChatsLoading:false,
-    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatId, chatName, enabled}
-    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{id, name, phone}]; null = jeszcze nie pobrane
+    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatKey, chatName, enabled}
+    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{key, name}] — bez numerów; null = jeszcze nie pobrane
     dayReportContactsLoading:false,
     helperDraft:null,      // pomocnik Grafiku (1.5), niezapisany — kształt jak helperSaved()
     helperBusy:'',         // przycisk pomocnika w toku: 'run' | 'gate' | 'preview' | 'send' | ''
@@ -2197,25 +2197,27 @@
   /* ---------- lista dnia do prowadzącej na WhatsAppie (1.3) ----------
      Po nocnym czyszczeniu bot wysyła prowadzącej treść „📋 Skopiuj treść" każdego domkniętego dnia ze
      spacerami (serwer: dayReportText_ — ta sama reguła co mailText, S139). Ustawienia jak ankieta: szkic
-     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty"). */
+     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty").
+     Kontakt to klucz i nazwa (`chatKey` — contactKey_ w Poll.gs): numer telefonu nie opuszcza serwera (decyzja
+     właściciela 27.10), więc przeglądarka go nie zna i nie pokazuje. */
   const DAY_REPORT_FIELDS = ['reportChat','reportEnabled'];
   function dayReportSaved(){
     const s = (state.diag && state.diag.dayReport && state.diag.dayReport.settings) || {};
-    return {chatId: s.chatId || '', chatName: s.chatName || '', enabled: !!s.enabled};
+    return {chatKey: s.chatKey || '', chatName: s.chatName || '', enabled: !!s.enabled};
   }
   function dayReportForm(){ return state.dayReportDraft || dayReportSaved(); }
   function dayReportDirty(){ return !!state.dayReportDraft && JSON.stringify(state.dayReportDraft) !== JSON.stringify(dayReportSaved()); }
   /** Te same reguły co setDayReportSettings na serwerze — komunikat od razu. '' = w porządku. */
   function dayReportProblem(f, configured){
-    if(f.enabled && !f.chatId) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
+    if(f.enabled && !f.chatKey) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
     if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
     return '';
   }
-  /** Pola panelu -> szkic. Nazwa kontaktu z wybranej pozycji (bez numeru — numer jest w opisie pozycji). */
+  /** Pola panelu -> szkic: klucz kontaktu i nazwa z wybranej pozycji. */
   function readDayReportForm(){
     const chat = viewEl.querySelector('#reportChat'), en = viewEl.querySelector('#reportEnabled');
     const opt = chat && chat.selectedIndex >= 0 ? chat.options[chat.selectedIndex] : null;
-    return {chatId: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
+    return {chatKey: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
   }
   function showDayReportDirty(){
     const d = dayReportDirty();
@@ -2225,11 +2227,11 @@
   function renderDayReportBox(r){
     const f = dayReportForm(), s = r.settings;
     const list = (state.dayReportContacts || []).slice();
-    if(f.chatId && !list.some(c => c.id === f.chatId)) list.unshift({id: f.chatId, name: f.chatName || f.chatId, phone: '+' + f.chatId.split('@')[0]});
-    const opts = (f.chatId ? '' : `<option value="">— wybierz kontakt —</option>`)
-      + list.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    if(f.chatKey && !list.some(c => c.key === f.chatKey)) list.unshift({key: f.chatKey, name: f.chatName || 'zapisany kontakt'});
+    const opts = (f.chatKey ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + list.map(c => `<option value="${esc(c.key)}" data-name="${esc(c.name)}"${c.key===f.chatKey ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const dirty = dayReportDirty();
-    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || s.chatId)}.`
+    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || 'wybranego kontaktu')}.`
       : 'Wysyłanie po czyszczeniu jest wyłączone.';
     const L = r.last;
     const last = !L ? ''
@@ -2256,7 +2258,8 @@
         ${sendBtn}
         <div class="hint">Treść to dokładnie to, co kopiuje „📋 Skopiuj treść" w minionym dniu (szablon maila wyżej, z datą i listą
         psów). Każdy dzień idzie najwyżej raz; dzień bez spacerów — nic. Czyszczenie nie czeka na bota — gdy bramka zawiedzie,
-        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota.</div>
+        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota,
+        po nazwie — numery telefonów nie wychodzą z serwera.</div>
       </div>`;
   }
   /** „Pobierz kontakty": kontakty z telefonu bota z bramki (czytanie — bez kolejki). */
@@ -2289,7 +2292,6 @@
      „Sprawdź bramkę" i podgląd idą wprost (nie przez kolejkę): przebieg potrafi trwać ponad 2 minuty. */
   const HELPER_MIN_MAX = 10;                        // tyle, ile HELPER_LIMITS.MIN_MAX w Config.gs (S145 pilnuje)
   const HELPER_NAME_MAP_MAX = 600;                  // HELPER_LIMITS.NAME_MAP
-  const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;        // jak na serwerze: tylko prywatny czat
   const HELPER_FEATURES = [
     ['evening', 'skład na jutro — wieczorem'], ['eveningAlways', '…codziennie (wyłączone: tylko gdy coś nie gra)'],
     ['morning', 'dziś rano — gdy coś nie gra'],
@@ -2305,20 +2307,22 @@
     const f = s.features || {};
     const features = {};
     HELPER_FEATURES.forEach(([k]) => { features[k] = f[k] !== false; });
-    return {chatId: s.chatId || '', chatName: s.chatName || '', toId: s.toId || '', toName: s.toName || '',
+    return {chatId: s.chatId || '', chatName: s.chatName || '', toKey: s.toKey || '', toName: s.toName || '',
             min: Number(s.min) || 3, evening: Number(s.evening) || 0, morning: Number(s.morning) || 0,
             weekDays: (s.weekDays || []).map(Number).sort(), names: s.names || '',
             features, enabled: !!s.enabled};
   }
   function helperForm(){ return state.helperDraft || helperSaved(); }
   function helperDirty(){ return !!state.helperDraft && JSON.stringify(state.helperDraft) !== JSON.stringify(helperSaved()); }
-  /** Te same reguły co helperValid_ / setHelperSettings na serwerze — komunikat od razu. '' = w porządku. */
+  /**
+   * Te same reguły co helperValid_ / setHelperSettings na serwerze — komunikat od razu. '' = w porządku. „Tylko prywatnie"
+   * sprawdza sam serwer: kontakt to klucz (`toKey`), a lista kontaktów ma wyłącznie czaty prywatne.
+   */
   function helperProblem(f, configured){
-    if(f.toId && !HELPER_PRIVATE.test(f.toId)) return 'Na czas testów pomocnik pisze tylko prywatnie — wybierz kontakt z listy';
     if(!(f.min >= 1 && f.min <= HELPER_MIN_MAX)) return 'Minimum osób: od 1 do ' + HELPER_MIN_MAX;
     if(String(f.names).replace(/\r\n?/g, '\n').trim().length > HELPER_NAME_MAP_MAX) return 'Imiona — najwyżej ' + HELPER_NAME_MAP_MAX + ' znaków';
     if(f.enabled && !f.chatId) return 'Wybierz grupę „Grafik", zanim włączysz pomocnika';
-    if(f.enabled && !f.toId) return 'Wybierz kontakt, do którego pomocnik ma pisać';
+    if(f.enabled && !f.toKey) return 'Wybierz kontakt, do którego pomocnik ma pisać';
     if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
     return '';
   }
@@ -2332,7 +2336,7 @@
     const weekDays = [0,1,2,3,4,5,6].filter(n => { const c = el('helperWd' + n); return !!(c && c.checked); });
     const num = (id, def) => { const x = el(id); return x ? Number(x.value) : def; };
     const txt = id => { const x = el(id); return x ? x.value : ''; };
-    return {chatId: chat.id, chatName: chat.name, toId: to.id, toName: to.name, min: num('helperMin', 3),
+    return {chatId: chat.id, chatName: chat.name, toKey: to.id, toName: to.name, min: num('helperMin', 3),
             evening: num('helperEvening', 20), morning: num('helperMorning', 7), weekDays,
             names: txt('helperNames'), features,
             enabled: !!(el('helperEnabled') && el('helperEnabled').checked)};
@@ -2350,9 +2354,9 @@
     const chatOpts = (f.chatId ? '' : `<option value="">— wybierz grupę —</option>`)
       + chats.map(c => `<option value="${esc(c.id)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const people = (state.dayReportContacts || []).slice();
-    if(f.toId && !people.some(c => c.id === f.toId)) people.unshift({id: f.toId, name: f.toName || f.toId, phone: '+' + f.toId.split('@')[0]});
-    const toOpts = (f.toId ? '' : `<option value="">— wybierz kontakt —</option>`)
-      + people.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.toId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    if(f.toKey && !people.some(c => c.key === f.toKey)) people.unshift({key: f.toKey, name: f.toName || 'zapisany kontakt'});
+    const toOpts = (f.toKey ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + people.map(c => `<option value="${esc(c.key)}" data-name="${esc(c.name)}"${c.key===f.toKey ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     let minOpts = '';
     for(let n = 1; n <= HELPER_MIN_MAX; n++) minOpts += `<option value="${n}"${n===f.min ? ' selected' : ''}>${n}</option>`;
     const days = [1,2,3,4,5,6,0].map(n => `<label class="check"><input type="checkbox" id="helperWd${n}"${f.weekDays.indexOf(n) >= 0 ? ' checked' : ''}> ${HELPER_WD[n]}</label>`).join('');
@@ -2363,7 +2367,7 @@
     const status = !h.configured
       ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona — opis przy ankiecie tygodniowej.</div>`
       : `<div class="pollstate${s.enabled && h.trigger && !(g && !g.ok) ? ' ok' : ''}">${s.enabled
-          ? 'Włączony — przebieg co 10 min, pisze do ' + esc(s.toName || s.toId) + (h.trigger ? '' : ' · BRAK wyzwalacza — zapisz jeszcze raz')
+          ? 'Włączony — przebieg co 10 min, pisze do ' + esc(s.toName || 'wybranego kontaktu') + (h.trigger ? '' : ' · BRAK wyzwalacza — zapisz jeszcze raz')
           : 'Wyłączony.'}</div>`
         // bez powiadomień w bramce pomocnik nic nie widzi (test 24–25.10: pisał „brak ankiety", a ankieta była)
         + (g && !g.ok ? `<div class="pollstate">Nie widzi „Grafiku" — w konsoli Green API wyłączone: ${esc(g.missing.join('; '))}. Do włączenia wysyła tylko to ostrzeżenie (raz dziennie).</div>`
@@ -2386,8 +2390,8 @@
     return `
       <div class="panelbox">
         <h3>Pomocnik Grafiku (test)</h3>
-        <div class="hint">Bot czyta „Grafik" — ankietę i czat — i pisze <b>tylko prywatnie</b> do wybranej osoby: skład na jutro, zmiany
-        w ankiecie, przegląd tygodnia… Włącz go tylko w jednym środowisku: test i produkcja dzielą kolejkę bramki.</div>
+        <div class="hint">Bot czyta „Grafik" — ankietę i czat — i pisze <b>tylko prywatnie</b> do wybranej osoby: skład na jutro,
+        przegląd tygodnia… Włącz go tylko w jednym środowisku: test i produkcja dzielą kolejkę bramki.</div>
         ${status}${last}${knows}
         <label class="mailfl" for="helperChat">Grupa „Grafik"</label>
         <div class="pollchat"><select id="helperChat">${chatOpts}</select>
@@ -3332,9 +3336,9 @@
       const r = state.diag && state.diag.dayReport;
       if(!r || !r.day) return;
       if(dayReportDirty()){ toast('Najpierw zapisz zmiany — „Wyślij listę" wysyła według zapisanych ustawień'); return; }
-      if(!r.settings.chatId){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
+      if(!r.settings.chatKey){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
       if(!r.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
-      const who = r.settings.chatName || r.settings.chatId, st = r.day.status;
+      const who = r.settings.chatName || 'wybranego kontaktu', st = r.day.status;
       if(st === 'pending'){ toast('Lista z ' + r.day.label + ' właśnie się wysyła (od ' + r.day.at + ')'); return; }
       // już poszła albo nie wiadomo — prywatna wiadomość drugi raz nikomu nie szkodzi, ale pytamy
       const force = st === 'sent' || st === 'unknown';
@@ -3370,7 +3374,7 @@
       const h = state.diag && state.diag.helper;
       if(!h) return;
       if(helperDirty()){ toast('Najpierw zapisz zmiany — przebieg idzie według zapisanych ustawień'); return; }
-      if(!h.settings.chatId || !h.settings.toId){ toast('Najpierw wybierz i zapisz grupę i kontakt'); return; }
+      if(!h.settings.chatId || !h.settings.toKey){ toast('Najpierw wybierz i zapisz grupę i kontakt'); return; }
       // nie w RETRIABLE i nie przez kolejkę: przebieg wysyła wiadomości i trwa do kilku minut
       helperCall('run', 'helperRunNow', [state.pin], res => {
         applyHelperPanel(res && res.panel);
@@ -3419,9 +3423,10 @@
     if(act==='helperSendPreview'){
       const h = state.diag && state.diag.helper, pv = state.helperPreview;
       if(!h || !pv) return;
-      if(!h.settings.toId){ toast('Najpierw wybierz i zapisz kontakt'); return; }
-      if(!ask('Wysłać ten podgląd do ' + (h.settings.toName || h.settings.toId) + ' na WhatsAppie?')) return;
-      helperCall('send', 'helperPreview', [state.pin, pv.kind, true], () => { toast('Wysłane do ' + (h.settings.toName || h.settings.toId), 'ok'); });
+      if(!h.settings.toKey){ toast('Najpierw wybierz i zapisz kontakt'); return; }
+      const to = h.settings.toName || 'wybranego kontaktu';
+      if(!ask('Wysłać ten podgląd do ' + to + ' na WhatsAppie?')) return;
+      helperCall('send', 'helperPreview', [state.pin, pv.kind, true], () => { toast('Wysłane do ' + to, 'ok'); });
     }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){

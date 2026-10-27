@@ -202,7 +202,13 @@ function makeContext(opts){
       },
       createHtmlOutputFromFile: () => ({ getContent: () => '' }),
     },
-    Utilities: { formatDate },
+    // HMAC, base64 i UUID jak w Apps Script (klucz kontaktu bez numeru telefonu — contactKey_): bajty ze znakiem (-128..127)
+    Utilities: { formatDate,
+      computeHmacSha256Signature: (value, key) => Array.from(require('crypto').createHmac('sha256', String(key)).update(String(value), 'utf8').digest())
+        .map(b => b > 127 ? b - 256 : b),
+      base64EncodeWebSafe: data => Buffer.from(Array.isArray(data) ? data.map(b => b & 255) : String(data), Array.isArray(data) ? undefined : 'utf8')
+        .toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+      getUuid: () => require('crypto').randomUUID() },
     Session: { getScriptTimeZone: ()=>'Europe/Warsaw' },
     LockService: { getScriptLock: ()=>({
       waitLock(){
@@ -287,7 +293,7 @@ function makeContext(opts){
                           catalogLocked_, bootState_, cacheBump_,
                           setHelperSettings, helperSettings_, helperTick, helperRunNow, helperPreview, getHelperGateway, helperPanel_,
                           helperRange_, helperOptDay_, helperDayRefs_, helperKind_, helperAbsence_, helperLoad_,
-                          getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_ };
+                          getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_, noPhones_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,

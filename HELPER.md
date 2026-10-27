@@ -130,9 +130,10 @@ Wszystko we właściwościach skryptu (limit 9 KB na wartość — każda ma suf
 najbliższe dni (najwyżej `HELPER_NOTES_MAX`, po minionym dniu znikają), nieobecności, znaczniki wysłanych
 raportów, dziennik pomocnika do panelu, numery osób (`helperIds`). **Numery telefonów nie opuszczają serwera** (decyzja
 właściciela 27.10): nie idą do `getData`, do panelu (PIN) ani do tekstu wiadomości — panel i wiadomości pokazują nazwy
-i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na WhatsAppa właściciela. **Wyjątek sprzed tej decyzji,
-do rozstrzygnięcia przez właściciela:** wybór kontaktu w panelu (lista dnia i pomocnik — `getDayReportContacts`) pokazuje
-„Imię (+48 …)" dla kontaktów zapisanych w telefonie bota, a ustawienia w panelu mają adres wybranego odbiorcy.
+i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na WhatsAppa właściciela. **Wybór kontaktu w panelu**
+(lista dnia i pomocnik — `getDayReportContacts`) też bez numeru (27.10, decyzja właściciela): pozycja to nazwa, a wartość — klucz
+kontaktu (`contactKey_`, HMAC z sekretem projektu); zapisany odbiorca w panelu to klucz i nazwa, adres zostaje na serwerze.
+Tekst błędów bramki, który idzie do panelu, ma numery zamaskowane (`noPhones_`).
 Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
 
 ## Bezpieczniki

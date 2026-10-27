@@ -292,10 +292,19 @@ function installHelperTrigger_(s) {
   ScriptApp.newTrigger('helperTick').timeBased().everyMinutes(HELPER_TICK_MIN).create();
 }
 
-/** Zapis ustawień z panelu (PIN) i przełożenie wyzwalacza. Idempotentne (RETRIABLE). */
+/**
+ * Zapis ustawień z panelu (PIN) i przełożenie wyzwalacza. Idempotentne (RETRIABLE). Kontakt przychodzi jako klucz
+ * (`toKey` — contactKey_, jak w liście dnia), nie adres z numerem; `toId` wprost — tylko karta sprzed 27.10.
+ */
 function setHelperSettings(settings, pin) {
   requirePin_(pin);
-  const s = helperValid_(settings);
+  const o = Object.assign({}, settings && typeof settings === 'object' ? settings : {});
+  if (o.toKey != null) {
+    const key = String(o.toKey || '').trim();
+    o.toId = key ? contactOfKey_(key, [helperSettings_().toId, dayReportSettings_().chatId]) : '';
+    if (key && !o.toId) throw new Error('Tego kontaktu nie ma na liście — „Pobierz kontakty" jeszcze raz');
+  }
+  const s = helperValid_(o);
   if (s.enabled && !greenApi_()) throw new Error(GREEN_MISSING);
   withLock_(() => {
     setProp_(PROP_HELPER, JSON.stringify(s));
@@ -1496,8 +1505,11 @@ function helperRosterPanel_(st, s) {
 /** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik, członkowie. Bez numerów telefonów. */
 function helperPanel_() {
   const st = helperLoad_(), s = helperSettings_();
+  // kontakt jako klucz i nazwa — adres prywatnego czatu to numer telefonu (contactKey_, Poll.gs)
+  const pub = Object.assign({}, s, { toKey: contactKey_(s.toId) });
+  delete pub.toId;
   return {
-    settings: s, configured: !!greenApi_(), env: env_(),
+    settings: pub, configured: !!greenApi_(), env: env_(),
     trigger: ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'helperTick'),
     stat: st.stat, log: st.log.slice(-HELPER_LIMITS.PANEL_LOG).reverse(),
     gate: st.gate ? { ok: !!st.gate.ok, at: st.gate.at, from: st.gate.from || 0,

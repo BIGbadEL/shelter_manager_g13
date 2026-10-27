@@ -163,6 +163,20 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   on(env, { enabled: false });
   check('wyłączony: wyzwalacza nie ma', env.triggers.filter(t => t._fn === 'helperTick').length === 0);
 
+  // kontakt z „Pobierz kontakty" jako klucz (27.10): numer telefonu nie przychodzi z przeglądarki ani do niej nie wraca
+  env.gw.contacts = [{ id: OWNER, name: 'G', contactName: 'Grzesiek', type: 'user' }, { id: ANIA, name: 'Ania', contactName: 'Ania', type: 'user' }];
+  const people = env.api.getDayReportContacts(TEST_PIN), kA = people.filter(c => c.name === 'Ania')[0].key;
+  const viaKey = env.api.setHelperSettings(Object.assign({}, env.conf.DEFAULT_HELPER, { chatId: GRAFIK, chatName: 'Grafik', toKey: kA, toName: 'Ania', enabled: true }), TEST_PIN);
+  check('odbiorca po kluczu: na serwerze adres, w panelu klucz i nazwa — bez numeru', env.api.helperSettings_().toId === ANIA && viaKey.settings.toKey === kA
+    && viaKey.settings.toName === 'Ania' && !('toId' in viaKey.settings) && !/4860|@c\.us/.test(JSON.stringify(viaKey)), JSON.stringify(viaKey.settings));
+  check('nieznany klucz — odmowa, odbiorca bez zmian', /Pobierz kontakty/.test(throws(() => env.api.setHelperSettings(Object.assign({}, env.conf.DEFAULT_HELPER,
+    { chatId: GRAFIK, toKey: 'kAAAAAAAAAAAAAAAA', enabled: true }), TEST_PIN))) && env.api.helperSettings_().toId === ANIA);
+  env.props.pickContacts = '[]';
+  check('zapisany odbiorca — jego klucz działa i bez świeżej listy; pusty klucz — bez odbiorcy', !!env.api.setHelperSettings(Object.assign({}, env.conf.DEFAULT_HELPER,
+    { chatId: GRAFIK, toKey: kA, toName: 'Ania' }), TEST_PIN) && env.api.helperSettings_().toId === ANIA
+    && /Wybierz kontakt/.test(throws(() => env.api.setHelperSettings(Object.assign({}, env.conf.DEFAULT_HELPER, { chatId: GRAFIK, toKey: '', enabled: true }), TEST_PIN))));
+  on(env, { enabled: false });
+
   // ręcznie zepsuta właściwość z adresem grupy jako odbiorcą — pomocnik się nie uruchamia i nie pisze do grupy
   const bad = build({ props: { helper: JSON.stringify(Object.assign({}, env.conf.DEFAULT_HELPER, { enabled: true, chatId: GRAFIK, toId: GRAFIK })) } });
   bad.push(text(ANIA, 'Ania', 'Będę jutro', '2026-10-25T10:00:00+02:00'));
@@ -499,7 +513,8 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   const h = diag.helper, json = JSON.stringify(h);
   check('panel (getDiagnostics): ustawienia, ostatni przebieg, ankiety, dziennik', h && h.settings.enabled && h.stat && h.polls.length === 1
     && /pn 26\.10 3/.test(h.polls[0].days) && h.log.length > 0, json.slice(0, 300));
-  check('...bez numerów telefonów i bez tokenu', !/48601|48600111|tok3n/.test(json.replace(OWNER, '').replace(/"toId":"[^"]*"/, '')), json.match(/4860\d+/g));
+  check('...bez numerów telefonów (także odbiorcy — tylko klucz i nazwa) i bez tokenu', !/48601|48600111|@c\.us|tok3n|"toId"/.test(json)
+    && /^k[A-Za-z0-9_-]{16}$/.test(h.settings.toKey) && h.settings.toName === 'Grzesiek', json.match(/4860\d+|"toId":"[^"]*"/g));
   const nowRun = env.api.helperRunNow(TEST_PIN);
   check('„Sprawdź teraz": przebieg i panel', nowRun.run && nowRun.panel && nowRun.panel.stat);
   check('getData nie niesie niczego z pomocnika', !/helper|Grafik|48601/.test(JSON.stringify(env.api.getData())));

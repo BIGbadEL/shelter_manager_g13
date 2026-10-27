@@ -272,7 +272,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (`dayReportSent`, ten sam schemat co ankieta: „w toku" pod blokadą → bramka bez blokady → wynik pod blokadą,
   `pollMarkState_`). Ustawienia `dayReport` {enabled, chatId, chatName}: `setDayReportSettings(s, pin)` (RETRIABLE),
   kontakt z `getDayReportContacts(pin)` — tylko zapisani w kontaktach telefonu bota (`contactName`; bez tego
-  lista miałaby każdego członka społeczności). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
+  lista miałaby każdego członka społeczności). **Kontakt w przeglądarce to klucz i nazwa, bez numeru** (27.10, B69, S140):
+  `contactKey_` = HMAC-SHA256 adresu z sekretem projektu (`keySecret` — powstaje sam, nie wychodzi z serwera; zwykły skrót
+  z numeru dałoby się odwrócić), adresy z „Pobierz kontakty" zostają na serwerze (`pickContacts`), zapis dostaje `chatKey`
+  (pomocnik — `toKey`) i zamienia go z powrotem na adres (`contactOfKey_`: zapisany odbiorca albo lista); `chatId`/`toId`
+  wprost — tylko karta sprzed 27.10. Panel (`dayReportPanel_`, `helperPanel_`) ma klucz i nazwę, adresu nie. Tekst błędów
+  bramki — z zamaskowanymi numerami (`noPhones_` w `greenCall_`, B70). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
   ostatniego dnia z Historii (`lastHistDay_`); już wysłaną albo „nie wiadomo" — po potwierdzeniu (`force`;
   prywatna wiadomość drugi raz nikomu nie szkodzi). Nie w RETRIABLE. Panel: `getDiagnostics().dayReport`.
   **Limit planu Developer bramki: 3 czaty w miesiącu na instancję** (test i produkcja dzielą jedną darmową
@@ -604,7 +609,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1923 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1932 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -725,7 +730,7 @@ S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`)
 S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z obu list, zamrożona lista a zmiana
 grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
 dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
-(serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
+(serwer i przeglądarka), S140 panel listy dnia (kontakty po nazwie, bez numeru — klucz, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.4), S142 pasek
 „Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska), S143 stan startowy z pamięci
 serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu), S144 „OK" przy imieniu w polu 2/2
@@ -767,8 +772,9 @@ B65 grupa psa (zakładka bez kolumny, dokładanie kolumny, pisownia, karta sprze
 na wąskiej zakładce), B66 cudza kolumna O (z innym nagłówkiem albo z wpisami bez nagłówka; nocne czyszczenie
 jej nie zapisuje), B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
 z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
-dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
-dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
+dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty jako klucz i nazwa — bez numeru, klucz z sekretem projektu,
+zapis po kluczu, ustawienia, wysyłka po czyszczeniu raz na dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak,
+„nie wiadomo" / „nie wyszła", drugi dzień mimo to, numer z odpowiedzi bramki zamaskowany),
 B71 krótsza praca pod blokadą (pies z pamięci — 6 wywołań arkusza zamiast 11, kolory raz; zmiana psa, dodanie, usunięcie,
 „Wszystkie po 2" unieważniają; ręczna zmiana arkusza — od najbliższego odczytu listy; akcja na spacerze spod zapisu
 zmieniającego psy; awarie pamięci), B72 otwarcie strony
@@ -1083,9 +1089,10 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   powiadomienie o głosie ma jedną osobę czy pełny stan, czy historia czatu ma ankietę bota, które wiadomości to szum. Limit planu Developer dotyczy też
   odbierania (3 czaty w miesiącu) — w październiku „Grafik" i właściciel są w trójce.
   **26–27.10:** zmiany w ankiecie usunięte (@43), członkowie i klasy (@44), pełne numery telefonów w panelu (@45) — cofnięte
-  27.10, w ich miejsce numer osoby „#17" i karta kontaktu (@46, Konwencje). **Otwarte (decyzja właściciela):** wybór kontaktu
-  w panelu (lista dnia, pomocnik) wciąż pokazuje „Imię (+48 …)" kontaktów z telefonu bota — sprzed zasady „numery nie
-  opuszczają serwera".
+  27.10, w ich miejsce numer osoby „#17" i karta kontaktu (@46, Konwencje); wybór kontaktu w panelu (lista dnia, pomocnik)
+  też bez numerów — klucz kontaktu (@47, decyzja właściciela 27.10). Do wiadomości: stare grupy WhatsAppa mają w adresie
+  numer twórcy („48600111222-1600000000@g.us") — lista grup („Pobierz grupy") pokazuje adresy grup; grupy społeczności
+  („120363…@g.us") numeru nie mają.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,

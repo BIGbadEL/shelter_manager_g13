@@ -672,7 +672,8 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 - **Numer osoby „#17" zamiast numeru telefonu** (27.10, decyzja właściciela): numery telefonów nie opuszczają serwera —
   panel pokazuje „Imię (#17)", wiadomości „#17" przy osobie bez imienia. Do telefonu prowadzi karta kontaktu, którą bot
   wysyła na WhatsAppa właściciela („📲" w panelu, „kto 17" w czacie); udostępniony botowi kontakt dostaje odpowiedź z #
-  (B84, S146). Dzień wcześniej (test @45) panel pokazywał pełne numery — cofnięte.
+  (B84, S146). Dzień wcześniej (test @45) panel pokazywał pełne numery — cofnięte. Wybór kontaktu w panelu (lista dnia,
+  pomocnik) też bez numerów — po nazwie, z kluczem kontaktu z serwera (B69, S140, S145).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 

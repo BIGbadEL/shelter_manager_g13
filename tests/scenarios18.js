@@ -335,9 +335,10 @@ function S139(){
 
 /* ---------- S140: panel — lista dnia do prowadzącej ---------- */
 function S140(){
-  console.log('S140: panel — kontakt prowadzącej z kontaktów bota, włącznik, zapis, „Wyślij listę" z potwierdzeniem');
-  const ANIA = '48600100200@c.us';
-  const REPORT = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:''}, s), configured: true, last: null,
+  console.log('S140: panel — kontakt prowadzącej z kontaktów bota (klucz i nazwa, bez numeru), włącznik, zapis, „Wyślij listę" z potwierdzeniem');
+  // kontakt to klucz z serwera (contactKey_), nie adres z numerem telefonu — numery nie opuszczają serwera (27.10)
+  const ANIA = 'kAniaProwadzaca01', BASIA = 'kBasia00000000002';
+  const REPORT = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatKey:'', chatName:''}, s), configured: true, last: null,
     day: {date:'2026-10-07', label:'07.10.2026', status:'', at:''}}, o);
   const POLL = {settings: {question:'Grafik [TYDZIEŃ]', options:['Pon','Wt'], multi:true, day:0, hour:12, enabled:false, chatId:'', chatName:''},
     configured: true, state: null, last: null, next: {day:'2026-10-11', label:'12-18.10'}, now: {label:'12-18.10', question:'Grafik 12-18.10', status:'', at:''}};
@@ -356,9 +357,9 @@ function S140(){
   check('sekcja w panelu, „Wyślij listę z 07.10.2026"', /Lista dnia do prowadzącej/.test(app.html())
     && /Wyślij listę z 07\.10\.2026/.test(txt(doc(app).querySelector('[data-act="reportSend"]'))));
   app.click('[data-act="reportContacts"]');
-  respondTo(app, 'getDayReportContacts', [{id: ANIA, name:'Ania prowadząca', phone:'+48600100200'}, {id:'48500100100@c.us', name:'Basia', phone:'+48500100100'}]);
-  check('kontakty z telefonu bota na liście, z numerem', opts(app, '#reportChat')
-    === '=— wybierz kontakt —|48600100200@c.us=Ania prowadząca (+48600100200)|48500100100@c.us=Basia (+48500100100)', opts(app, '#reportChat'));
+  respondTo(app, 'getDayReportContacts', [{key: ANIA, name:'Ania prowadząca'}, {key: BASIA, name:'Basia'}]);
+  check('kontakty z telefonu bota na liście — po nazwie, bez numeru', opts(app, '#reportChat')
+    === '=— wybierz kontakt —|' + ANIA + '=Ania prowadząca|' + BASIA + '=Basia', opts(app, '#reportChat'));
   const en = doc(app).getElementById('reportEnabled');
   en.checked = true; en.dispatchEvent(new app.window.Event('change', {bubbles:true}));
   app.click('[data-act="reportSave"]');
@@ -374,10 +375,13 @@ function S140(){
   check('szkic przeżył przerysowanie', doc(app).getElementById('reportChat').value === ANIA && doc(app).getElementById('reportEnabled').checked);
   app.click('[data-act="reportSave"]');
   const save = lastCall(app, 'setDayReportSettings');
-  check('zapis: kontakt (nazwa bez numeru), włączone, PIN', !!save && JSON.stringify(save.args) ===
-    JSON.stringify([{chatId: ANIA, chatName:'Ania prowadząca', enabled:true}, '1234']), save && JSON.stringify(save.args));
-  respondTo(app, 'setDayReportSettings', REPORT({}, {enabled:true, chatId:ANIA, chatName:'Ania prowadząca'}));
+  check('zapis: klucz kontaktu i nazwa, włączone, PIN', !!save && JSON.stringify(save.args) ===
+    JSON.stringify([{chatKey: ANIA, chatName:'Ania prowadząca', enabled:true}, '1234']), save && JSON.stringify(save.args));
+  respondTo(app, 'setDayReportSettings', REPORT({}, {enabled:true, chatKey:ANIA, chatName:'Ania prowadząca'}));
   check('po zapisie: bez „Niezapisane", opis włączonego', hidden(app, '.reportdirty') && /Włączone/.test(app.html()));
+  const saved = open(REPORT({}, {enabled:true, chatKey:'kZapisany0000000x', chatName:'Ania prowadząca'}));
+  check('zapisany kontakt bez „Pobierz kontakty" — na liście po nazwie', opts(saved, '#reportChat') === 'kZapisany0000000x=Ania prowadząca'
+    && /idzie do Ania prowadząca/.test(saved.html()), opts(saved, '#reportChat'));
 
   let asked = '';
   app.window.confirm = m => { asked = m; return true; };
@@ -386,7 +390,7 @@ function S140(){
     && JSON.stringify(lastCall(app, 'sendDayReportNow').args) === JSON.stringify(['1234', '2026-10-07']), asked);
   respondTo(app, 'sendDayReportNow', {sent:{day:'2026-10-07', at:'2026-10-09 14:00'},
     panel: REPORT({last:{day:'2026-10-07', at:'2026-10-09 14:00', ok:true, manual:true, chatName:'Ania prowadząca'}, day:{date:'2026-10-07', label:'07.10.2026', status:'sent', at:'2026-10-09 14:00'}},
-                  {enabled:true, chatId:ANIA, chatName:'Ania prowadząca'})});
+                  {enabled:true, chatKey:ANIA, chatName:'Ania prowadząca'})});
   check('wynik w panelu: wysłana (ręcznie)', /wysłana 2026-10-09 14:00 do Ania prowadząca \(ręcznie\)/.test(txt(doc(app).getElementById('view'))));
   app.click('[data-act="reportSend"]');
   check('już poszła — pytanie „jeszcze raz", wysyłka z force', /już poszła/.test(asked)

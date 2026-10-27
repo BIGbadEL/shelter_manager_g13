@@ -2361,14 +2361,29 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   const env = reportEnv({ on: false });
   check('kontakty tylko z PIN-em', throws(() => env.api.getDayReportContacts('zly')));
   const list = env.api.getDayReportContacts(TEST_PIN);
-  check('kontakty: tylko zapisane w telefonie bota, prywatne @c.us, po nazwie, z numerem', JSON.stringify(list) === JSON.stringify([
-    { id: ANIA, name: 'Ania prowadząca', phone: '+48600100200' }, { id: '48500100100@c.us', name: 'Basia', phone: '+48500100100' }]),
-    JSON.stringify(list));
+  check('kontakty: tylko zapisane w telefonie bota, prywatne @c.us, po nazwie — klucz i nazwa, bez numeru (27.10)',
+    JSON.stringify(list.map(c => c.name)) === JSON.stringify(['Ania prowadząca', 'Basia']) && list.every(c => /^k[A-Za-z0-9_-]{16}$/.test(c.key))
+    && list[0].key !== list[1].key && !/4860|4850|@c\.us|phone|"id"/.test(JSON.stringify(list)), JSON.stringify(list));
   check('pyta bramkę o czaty prywatne', /\/getContacts\/tok3n5ecret\?group=false$/.test(env.http.calls.slice(-1)[0].url));
   check('włączenie bez kontaktu — błąd', throws(() => env.api.setDayReportSettings({ enabled: true }, TEST_PIN)));
   check('kontakt spoza WhatsAppa (grupa, śmieć) — błąd', throws(() => env.api.setDayReportSettings({ chatId: GRAFIK }, TEST_PIN))
     && throws(() => env.api.setDayReportSettings({ chatId: '48600 100 200' }, TEST_PIN)));
   check('ustawienia tylko z PIN-em', throws(() => env.api.setDayReportSettings({ enabled: false }, 'zly')));
+  // wybór po kluczu: serwer zamienia go na adres; do przeglądarki wraca znowu klucz
+  const pk = env.api.setDayReportSettings({ enabled: false, chatKey: list[1].key, chatName: 'Basia' }, TEST_PIN);
+  check('zapis po kluczu: na serwerze adres, w panelu klucz i nazwa — bez numeru', JSON.parse(env.props.dayReport).chatId === '48500100100@c.us'
+    && pk.settings.chatKey === list[1].key && pk.settings.chatName === 'Basia' && !/4850|@c\.us|chatId/.test(JSON.stringify(pk)), JSON.stringify(pk));
+  let unknownKey = '';
+  try { env.api.setDayReportSettings({ enabled: true, chatKey: 'kAAAAAAAAAAAAAAAA', chatName: 'X' }, TEST_PIN); } catch(e){ unknownKey = e.message; }
+  check('nieznany klucz — błąd „Pobierz kontakty jeszcze raz", nic nie zapisane', /Pobierz kontakty/.test(unknownKey)
+    && JSON.parse(env.props.dayReport).chatId === '48500100100@c.us', unknownKey);
+  env.props.pickContacts = '[]';
+  check('zapisany kontakt — jego klucz działa i bez listy z „Pobierz kontakty"', !!env.api.setDayReportSettings({ enabled: false, chatKey: list[1].key, chatName: 'Basia' }, TEST_PIN)
+    && JSON.parse(env.props.dayReport).chatId === '48500100100@c.us');
+  const other = reportEnv({ on: false });
+  check('klucz z sekretem projektu — ten sam kontakt w innym projekcie ma inny klucz (z numeru klucza nie policzysz)',
+    other.api.getDayReportContacts(TEST_PIN)[0].key !== list[0].key && env.props.keySecret.length > 30
+    && JSON.stringify(env.api.getDiagnostics(TEST_PIN)).indexOf(env.props.keySecret) < 0);
 
   // wyłączone (kontakt zapisany): czyszczenie nic nie wysyła
   env.api.setDayReportSettings({ enabled: false, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
@@ -2401,7 +2416,8 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
     && again.panel.last.manual === true);
   check('„Wyślij listę" za dzień niezamknięty — błąd', throws(() => on.api.sendDayReportNow(TEST_PIN, '2026-08-05', true)));
   check('„Wyślij listę" bez PIN-u — błąd', throws(() => on.api.sendDayReportNow('zly', '2026-08-04', true)));
-  check('w getDiagnostics', !!on.api.getDiagnostics(TEST_PIN).dayReport);
+  check('w getDiagnostics — bez numeru prowadzącej', !!on.api.getDiagnostics(TEST_PIN).dayReport
+    && !/4860|@c\.us/.test(JSON.stringify(on.api.getDiagnostics(TEST_PIN).dayReport)), JSON.stringify(on.api.getDiagnostics(TEST_PIN).dayReport));
 
   // dzień bez spacerów (sama rezerwacja 5.08) i dwa zaległe dni naraz
   on.setNow('2026-08-05T22:30:00+02:00');
@@ -2437,7 +2453,8 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   e5.api.sendDayReportNow(TEST_PIN, '2026-08-04', true);
   check('...z potwierdzeniem — idzie, panel: wysłana', msgs(e5).length === 2 && e5.api.dayReportPanel_().day.status === 'sent');
 
-  const e4 = reportEnv({ send: () => ({ code: 400, body: 'zły numer' }) });
+  // bramka w odpowiedzi powtarza adres czatu (z numerem) — w panelu i w komunikacie numeru już nie ma
+  const e4 = reportEnv({ send: () => ({ code: 400, body: '{"message":"zły numer: 48600100200@c.us, +48 600 100 200"}' }) });
   walkAll(e4, '2026-08-04');
   e4.setNow('2026-08-04T22:30:00+02:00');
   e4.api.endOfDay();
@@ -2447,6 +2464,14 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   reportGateway(e4);
   e4.api.sendDayReportNow(TEST_PIN, '2026-08-04');
   check('...ręcznie bez potwierdzenia — idzie od razu', msgs(e4).length === 2);
+  const e4b = reportEnv({ send: () => ({ code: 400, body: '{"message":"zły numer: 48600100200@c.us, +48 600 100 200"}' }) });
+  walkAll(e4b, '2026-08-04');
+  e4b.setNow('2026-08-05T10:00:00+02:00');
+  let e4err = '';
+  try { e4b.api.sendDayReportNow(TEST_PIN, '2026-08-04'); } catch(e){ e4err = e.message; }
+  check('...numer z odpowiedzi bramki zamaskowany — w panelu i w komunikacie z „Wyślij listę" (daty zostają)', /zły numer: …, …/.test(p4.last.msg)
+    && /400/.test(e4err) && /zły numer: …, …/.test(e4err) && !/600100200|600 100 200/.test(p4.last.msg + e4err)
+    && e4.api.noPhones_('2026-10-26, 600-100-200') === '2026-10-26, …', p4.last.msg + ' | ' + e4err);
 
   // limit planu Developer (3 czaty w miesiącu) — bramka odpowiada 466: po ludzku, pewne „nie wyszła"
   const e6 = reportEnv({ send: () => ({ code: 466, body: JSON.stringify({ correspondentsStatus: { used: 3, total: 3 } }) }) });
