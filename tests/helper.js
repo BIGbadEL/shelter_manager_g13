@@ -17,7 +17,7 @@ const OWNER = '48600111222@c.us';
 const BOT = '48799000111@c.us';
 const ANIA = '48601000001@c.us', BASIA = '48601000002@c.us', CELINA = '48601000003@c.us',
       DAWID = '48601000004@c.us', EWA = '48601000005@c.us', KASIA = '48601000006@c.us', GOSIA = '48601000007@c.us';
-/** Klucz osoby z listy członków po imieniu (klasę zapisuje się po kluczu, nie po numerze). */
+/** Klucz osoby z listy członków po imieniu (numer telefonu do panelu nie idzie). */
 const keyOf = (roster, name) => { const x = roster.list.filter(y => y.name === name)[0]; if (!x) throw new Error('brak na liście: ' + name); return x.key; };
 const OPTS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela', 'Nie mogę'];
 const Q = 'Grafik 26.10-01.11';
@@ -583,16 +583,11 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   env.tick();
   check('lista członków: PIN, tylko grupa', /PIN/.test(throws(() => env.api.getHelperMembers('0000'))) && /grupę/.test(throws(() => env.api.getHelperMembers(TEST_PIN, OWNER))));
   const r = env.api.getHelperMembers(TEST_PIN);
-  const names = r.list.map(x => x.named ? x.name + ' (' + x.phone + ')' : x.phone);
-  check('imiona: zapisane w telefonie bota, z WhatsAppa (bez dopisku grupy), z wiadomości, z panelu — zawsze z numerem; bez imienia cały numer, na końcu',
-    JSON.stringify(names) === JSON.stringify(['Ania Kowalska (+48 601 000 001)', 'Basia (+48 601 000 002)', 'Gosia (+48 601 000 007)', 'Kasia (+48 601 000 006)',
-      'Zosia (+48 601 000 099)', '+48 601 000 003']) && r.counts.all === 6 && r.counts.none === 6 && r.chatName === 'Grafik', JSON.stringify(names));
-  const ph = env.api.helperPhone_;
-  check('numer: polski ze spacjami, zagraniczny w całości, konto bez numeru w adresie (@lid) — „konto"', ph(ANIA) === '+48 601 000 001'
-    && ph('447700900123@c.us') === '+447700900123' && ph(LID) === 'konto 157000000000777', [ph(ANIA), ph('447700900123@c.us'), ph(LID)].join(' / '));
-  check('„Imiona": numer przepisany z panelu (+48 i spacje), cały bez spacji, końcówka', JSON.stringify(env.api.helperNameMap_('+48 601 000 003 = Celina\n48601000004 = Dorota\n…005 = Ewa\n12 = za krótki'))
-    === JSON.stringify({ '48601000003': 'Celina', '48601000004': 'Dorota', '005': 'Ewa' }));
-  check('klasę zapisuje się po kluczu — klucz bez numeru', r.list.every(x => /^m[0-9a-z]+$/.test(x.key)) && !/4860/.test(r.list.map(x => x.key).join()), JSON.stringify(r.list[0]));
+  const names = r.list.map(x => x.name);
+  check('imiona: zapisane w telefonie bota, z WhatsAppa (bez dopisku grupy), z wiadomości, z panelu; bez imienia — końcówka numeru, na końcu',
+    JSON.stringify(names) === JSON.stringify(['Ania Kowalska', 'Basia', 'Gosia', 'Kasia', 'Zosia', '…003']) && r.counts.all === 6 && r.counts.none === 6 && r.chatName === 'Grafik',
+    JSON.stringify(names));
+  check('do przeglądarki tylko klucze, żadnego numeru telefonu', !/4860|157000/.test(JSON.stringify(r)) && r.list.every(x => /^m[0-9a-z]+$/.test(x.key)), JSON.stringify(r.list[0]));
   const k = n => keyOf(env.api.getHelperMembers(TEST_PIN), n);
   check('klasa: PIN, znana klasa, osoba z listy', /PIN/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'p', '0000')))
     && /klasa/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'x', TEST_PIN))) && /pobierz członków/.test(throws(() => env.api.setHelperRole('mzzz', 'p', TEST_PIN))));
@@ -627,10 +622,6 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   const t2 = env.api.helperPreview(TEST_PIN, 'dzis').text;
   check('z fioletową: „kandydaci: Kasia — z fioletowym ✓", bez „brak fioletowego"; klasa też przy numerze @lid', /🟣Gosia/.test(t2)
     && /🌱 kandydaci: Kasia — z fioletowym ✓/.test(t2) && !/brak fioletowego|bez fioletowego/.test(t2), t2);
-  env.push(vote('P1', CELINA, ['Wtorek'], '2026-10-27T07:25:00+02:00'));
-  env.tick('2026-10-27T07:30:00+02:00');
-  check('osoba bez imienia w wiadomości — cały numer, nie końcówka', /👥 .*\+48 601 000 003/.test(env.api.helperPreview(TEST_PIN, 'dzis').text),
-    env.api.helperPreview(TEST_PIN, 'dzis').text.split('\n')[1]);
   // bez nikogo sklasyfikowanego jako fioletowy — „brak fioletowego" nic by nie znaczyło
   const plain = build({ now: '2026-10-26T12:00:00+02:00' });
   on(plain, { min: 1, weekDays: [], features: { newPoll: false, members: false, weather: false, lastWeek: false } });

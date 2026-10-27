@@ -2400,7 +2400,7 @@
           <label for="helperMorning">rano o</label><select id="helperMorning">${hourOptions(f.morning)}</select></div>
         <div class="mailfl">Przegląd tygodnia (wieczorem) w</div>
         <div class="pollchecks days">${days}</div>
-        <label class="mailfl" for="helperNames">Imiona dla numerów bez nazwy — „+48 600 111 222 = Ania" (numer jak na liście członków albo jego końcówka), każde w linijce</label>
+        <label class="mailfl" for="helperNames">Imiona dla numerów bez nazwy — „…123 = Ania", każde w linijce</label>
         <textarea id="helperNames" class="mailtpl" rows="3" maxlength="${HELPER_NAME_MAP_MAX}">${esc(f.names)}</textarea>
         <div class="mailfl">Co wysyła</div>
         <div class="pollchecks helperfeat">${feats}</div>
@@ -2427,8 +2427,7 @@
   /* ---------- członkowie: fioletowy / pomarańczowy / kandydat (pomocnik Grafiku) ----------
      Lista ze składu grupy z bramki („Pobierz członków" — getHelperMembers, wprost), stuknięcie w klasę zapisuje ją od
      razu (setHelperRole przez kolejkę, RETRIABLE; nieudany zapis wraca do poprzedniej klasy), drugie stuknięcie zdejmuje.
-     Przy nicku numer telefonu w nawiasie, bez nicka — cały numer (decyzja właściciela 26.10; panel jest za PIN-em);
-     klasę zapisuje się po kluczu osoby, nie po numerze. */
+     Z serwera przychodzi tylko klucz osoby, nie numer telefonu. */
   const ROLE_BTNS = [['p', 'fioletowy'], ['o', 'pomarańczowy'], ['k', 'kandydat']];
   const ROSTER_FILTERS = [['all', 'wszyscy'], ['none', 'bez klasy'], ['p', '🟣 fioletowi'], ['o', '🟠 pomarańczowi'], ['k', '🌱 kandydaci']];
   function rosterCounts(r){
@@ -2451,7 +2450,7 @@
       const f = state.rosterFilter || 'all';
       const chips = ROSTER_FILTERS.map(([k, label]) => `<button class="rchip${f===k ? ' on' : ''}" data-act="rosterFilter" data-f="${k}">${label} ${r.counts[k] || 0}</button>`).join('');
       const rows = r.list.filter(x => f === 'all' || (f === 'none' ? !x.role : x.role === f)).map(x => `
-          <li class="rrow"><span class="rname${x.named ? '' : ' unnamed'}">${x.named ? esc(x.name) + ' <span class="rphone">(' + esc(x.phone) + ')</span>' : esc(x.phone)}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
+          <li class="rrow"><span class="rname${x.named ? '' : ' unnamed'}">${esc(x.name)}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
             <span class="rroles">${ROLE_BTNS.map(([k, label]) => `<button class="rrole r${k}${x.role===k ? ' on' : ''}" data-act="rosterRole" data-key="${esc(x.key)}" data-role="${k}" aria-pressed="${x.role===k}">${label}</button>`).join('')}</span></li>`).join('')
         || `<li class="rrow"><span class="rname unnamed">Nikogo w tym widoku.</span></li>`;
       body = `<div class="hint">„${esc(r.chatName || r.chatId)}" — ${r.counts.all} os., pobrane ${esc(diagWhen(r.at))}.</div>
@@ -2463,7 +2462,7 @@
         ${head}${body}
         <div class="hint">Stuknięcie w klasę zapisuje ją od razu, drugie — zdejmuje. Skład dnia od pomocnika ma przy imionach 🟣 🟠 🌱
         i ostrzega o kandydacie bez fioletowego (kandydat nie może być sam). Imię z kontaktów telefonu bota albo z WhatsAppa;
-        bez imienia — sam numer (imię wpiszesz wyżej, w „Imiona"). Klasa zostaje przy osobie także po ponownym pobraniu.</div>
+        bez imienia — końcówka numeru (imię wpiszesz wyżej, w „Imiona"). Klasa zostaje przy osobie także po ponownym pobraniu.</div>
       </div>`;
   }
   /**
