@@ -42,6 +42,8 @@ function buildApp(opts){
   const shipped = [];   // log wszystkich wysłanych wywołań
   // Dziennik spowolnień (reportDiag) odpowiada sam i nie staje w `pending` — inaczej respondNext
   // starszych testów trafiałby w niego zamiast w wywołanie, o które chodzi. `diagManual` — jak każde inne.
+  // Odpowiedź przychodzi w następnym obiegu zegara albo po `opts.diagDelay` ms: do tego czasu wysłany wpis jest
+  // i w `diagReports`, i w kolejce telefonu (scenarios17: liczyć po id — noted()).
   const diagReports = [];
   function makeRunner(){
     const t = { _ok:null, _fail:null };
@@ -52,7 +54,7 @@ function buildApp(opts){
       if(p === 'reportDiag' && !opts.diagManual) return (entries) => {
         diagReports.push(entries);
         const ok = tgt._ok;
-        setTimeout(() => { if(ok) ok({ ok: true, n: entries.length }); }, 0);
+        setTimeout(() => { if(ok) ok({ ok: true, n: entries.length }); }, opts.diagDelay || 0);
       };
       return (...args) => {
         shipped.push(p);

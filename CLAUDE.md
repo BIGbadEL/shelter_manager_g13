@@ -612,7 +612,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1935 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1936 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -632,7 +632,10 @@ Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymani
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
 ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
 `scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
-spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
+spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. **`17` liczy wpisy po id** (`noted`):
+wpis w drodze (wysłany, odpowiedź jeszcze nie wróciła) jest naraz w `app.diagReports` i w kolejce telefonu, a pełny
+`npm test` pod obciążeniem (27.10) liczył go dwa razy — prawdziwe podwójne zanotowanie ma dwa różne id. Sprawdzenia, że coś
+się STAŁO, czekają na to (`until`, najwyżej 3 s), nie stałą pauzę; że się NIE stało — stały czas. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
 serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku) — S145c czeka na skrócony `T.helperWait`.
@@ -653,7 +656,9 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   = `pointerdown` + `MouseEvent('click', {detail:1})` (patrz `tap()` w `scenarios14.js`).
   **`reportDiag` (dziennik spowolnień) harness obsługuje sam** — trafia do `app.diagReports`, NIE do
   `pending`, inaczej `respondNext` starszych testów odpowiadałby jemu; `opts.diagManual` — jak każde
-  inne wywołanie. `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
+  inne wywołanie; odpowiada w następnym obiegu zegara albo po `opts.diagDelay` ms (wpis „w drodze" na dłużej — S123).
+  `__force` ustawia start zapisu na 0, więc wpis „zerwane" z niego ma `ms` = znacznik czasu (tylko w teście).
+  `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
   prawdziwym adresem, nie na about:blank), `opts.storage` (localStorage przed startem), `__diag()` —
   kolejka dziennika. `let`/`const` skryptu nie są widoczne z `window.eval` (osobny zakres eval) —
   do stanu przez wystawione `__…`.
