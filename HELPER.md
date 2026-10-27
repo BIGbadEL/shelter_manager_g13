@@ -49,15 +49,31 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
    ⚠️ upał od 28°C.
 8. **Pytania w prywatnym czacie** (`commands`) — właściciel pisze do bota: `jutro`, `dziś`, `pojutrze`,
    dzień tygodnia (`sobota`), data (`31.10`), `tydzień`, `nieobecni`, `nieaktywni`, `ludzie`, `stan`,
-   `pomoc`. Bot odpowiada przy najbliższym przebiegu (do 10 min). Inne czaty — nic.
+   `pomoc`, **`kto 17`** (też `#17`, `17`) — karta kontaktu osoby #17; **udostępniony botowi kontakt** (jeden albo kilka
+   naraz) — odpowiedź, kto to na liście: „📇 Gośka = #3 („Gosia") · 🟣 fioletowy", „nie znam tej osoby", „spoza listy
+   członków". Bot odpowiada przy najbliższym przebiegu (do 10 min). Inne czaty — nic.
 
 **Członkowie i ich klasy** (od 26.10, zamiast pól „fioletowi" / „nowi"; B83, S146). Panel → „Członkowie": „Pobierz
 członków" bierze skład wybranej grupy z bramki (`getGroupData`) — „Grafik" albo **grupę ogłoszeń społeczności, czyli całą
 społeczność** (bot jest jej członkiem; skład samej społeczności-rodzica bramka może podawać niepełny) — z imionami
-z kontaktów telefonu bota (`getContacts`: zapisane imię, inaczej nazwa z WhatsAppa), z wiadomości z „Grafiku" i z pola
-„Imiona"; bez imienia — końcówka numeru. Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
-(`setHelperRole`, RETRIABLE), drugie zdejmuje; filtr „bez klasy" pokazuje, kogo jeszcze nie przypisano. Klasa zostaje przy
-osobie także po ponownym pobraniu. Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. W składzie
+z kontaktów telefonu bota (`getContacts`: nazwa kontaktu, inaczej nazwa z WhatsAppa — po dodaniu nowych kontaktów
+„Pobierz członków" jeszcze raz), z wiadomości z „Grafiku" i z pola „Imiona". Przy każdej osobie **numer osoby w nawiasie:
+„Ania Kowalska (#17)"**, bez imienia — sam „#17". Stuknięcie w **fioletowy / pomarańczowy / kandydat** zapisuje klasę od razu
+(`setHelperRole(nr, role, pin)`, RETRIABLE), drugie zdejmuje; filtr „bez klasy" pokazuje, kogo jeszcze nie przypisano. Klasa
+i numer zostają przy osobie także po ponownym pobraniu.
+
+**Numer osoby zamiast numeru telefonu** (27.10, decyzja właściciela; B84, S146): numery telefonów **nie opuszczają serwera** —
+nie ma ich w panelu ani w tekście wiadomości (podgląd w panelu to ten sam tekst). 26.10 panel pokazywał je przez dzień (test
+@45) — cofnięte: „nie czuję się bezpiecznie trzymając dane wrażliwe tylko za PIN-em". Numer osoby nadaje serwer po kolei przy
+pierwszym spotkaniu (lista członków, głos, wiadomość) i pamięta (`helperIds`, `helperNrsAdd_`); **nie powstaje z numeru
+telefonu** — dawny klucz panelu (`helperKey_`, skrót FNV z numeru) dało się odwrócić przeszukaniem polskich komórek
+w ok. 100 s. Numery nie wracają do obiegu, sufit `HELPER_LIMITS.IDS` (najpierw wypadają osoby, których pomocnik już nie zna).
+Ten sam człowiek pod drugim adresem (`@lid` z ankiety, `newChatId` z kontaktów bota) ma ten sam numer (`helperSame_`).
+**Do telefonu prowadzi karta kontaktu**: „📲" przy osobie w panelu (`sendHelperContact`) albo „kto 17" w czacie — bot wysyła
+kartę (`sendContact`) do prywatnego czatu właściciela; numer idzie tylko serwer → bramka → WhatsApp właściciela. Karta ma
+nazwę „Gosia #17" (bez imienia — „Grafik #17"); stuknięcie otwiera osobę na WhatsAppie, z nazwą z kontaktów właściciela.
+Konto bez numeru (`@lid` bez kontaktu bota) — bez karty, bot to mówi. Osobny sufit `HELPER_CARD_MAX` na dzień. W „Imiona":
+**„#17 = Ania"** (albo jak dotąd „…123 = Ania" — końcówka numeru). W składzie
 dnia: 🟣 🟠 🌱 przy imionach, **„brak fioletowego"** (tylko gdy ktokolwiek jest fioletowy) i **„kandydat bez fioletowego"**
 (z czatu: „tylko fiolet może opiekować się kandydatem", „świeżak nie może być sam") — oba to też powód porannego alarmu;
 przegląd tygodnia — „bez 🟣" / „kandydat bez 🟣". Pomarańczowy na razie tylko oznaczenie.
@@ -112,13 +128,19 @@ B79 pilnuje, że w ciągu dnia nic nie idzie. Nie przywracać bez decyzji właś
 Wszystko we właściwościach skryptu (limit 9 KB na wartość — każda ma sufit `HELPER_BYTES`): ankiety (najwyżej
 `HELPER_POLLS_KEEP`), osoby (numer → nazwa z WhatsAppa, najwyżej `HELPER_PEOPLE_MAX`), notatki z czatu na
 najbliższe dni (najwyżej `HELPER_NOTES_MAX`, po minionym dniu znikają), nieobecności, znaczniki wysłanych
-raportów, dziennik pomocnika do panelu. Numery telefonów nie idą do `getData`; panel (PIN) pokazuje nazwy
-i końcówki numerów. Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
+raportów, dziennik pomocnika do panelu, numery osób (`helperIds`). **Numery telefonów nie opuszczają serwera** (decyzja
+właściciela 27.10): nie idą do `getData`, do panelu (PIN) ani do tekstu wiadomości — panel i wiadomości pokazują nazwy
+i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na WhatsAppa właściciela. **Wyjątek sprzed tej decyzji,
+do rozstrzygnięcia przez właściciela:** wybór kontaktu w panelu (lista dnia i pomocnik — `getDayReportContacts`) pokazuje
+„Imię (+48 …)" dla kontaktów zapisanych w telefonie bota, a ustawienia w panelu mają adres wybranego odbiorcy.
+Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
 
 ## Bezpieczniki
 
 - Wiadomość tylko do kontaktu prywatnego z ustawień (B74), najwyżej `HELPER_SEND_MAX` na przebieg
-  i `HELPER_DAY_MAX` na dzień.
+  i `HELPER_DAY_MAX` na dzień. Karta kontaktu — też tylko tam, osobno najwyżej `HELPER_CARD_MAX` na dzień.
+- Numery osób nadają dwa miejsca (przebieg i „Pobierz członków"), więc zawsze pod blokadą skryptu ze świeżym odczytem
+  (`helperNrsAdd_`); przebieg bierze ją na chwilę i tylko wtedy, gdy ktoś nowy nie ma numeru (bez flush i pamięci podręcznej).
 - Jeden przebieg naraz (`helperBusy`, `HELPER_BUSY_MS`) — wyzwalacz i „Sprawdź teraz" się nie dublują.
 - `helperTick` jest publiczne (wyzwalacz), więc nic nie przyjmuje: przebieg wywołany z zewnątrz robi to samo
   co wyzwalacz, a raporty mają znaczniki „wysłany" — nie da się nim zasypać właściciela wiadomościami.
@@ -133,6 +155,9 @@ i końcówki numerów. Tokeny bramki — jak dotąd tylko we właściwościach (
 2. W jakim formacie przychodzą numery głosujących (`@c.us` czy `@lid`) i czy nazwy osób się zgadzają.
 3. Czy pełna lista głosujących w powiadomieniu to cały stan ankiety, czy jedna osoba.
 4. Które wiadomości są pomocne, a które to szum — wyłączyć w panelu.
+5. Numer osoby i karta (27.10, @46): „Pobierz członków" — czy wszyscy mają numer i 📲 (brak 📲 = grupa podała konto `@lid`
+   bez kontaktu w telefonie bota); 📲 i „kto 17" — czy karta dochodzi z nazwą „Imię #17" i otwiera właściwą osobę;
+   udostępniony botowi kontakt — czy odpowiedź przychodzi (`contactMessage` z `waid=` w vCard — tak mówi dokumentacja).
 
 ## Poza zakresem (na później)
 

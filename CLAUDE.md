@@ -304,8 +304,18 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   usunięta 26.10 (decyzja właściciela: męcząca, sens bota to mniej powiadomień; wystarczą podsumowania wieczorem i rano,
   B79 pilnuje ciszy w ciągu dnia) — nie przywracać bez pytania. **Członkowie i klasy** (26.10, prośba właściciela; B83, S146):
   `getHelperMembers(pin, chatId)` — skład grupy z bramki („Grafik" albo ogłoszenia społeczności = cała społeczność) z imionami
-  z `getContacts`, zapisany w `helperRoster`; `setHelperRole(key, role, pin)` — 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
-  / '' (RETRIABLE, `helperRoles`); do przeglądarki tylko `helperKey_` (FNV z numeru), nigdy numer. W składzie dnia klasy przy
+  z `getContacts`, zapisany w `helperRoster`; `setHelperRole(nr, role, pin)` — 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
+  / '' (RETRIABLE, `helperRoles`). **Numery telefonów nie opuszczają serwera** (decyzja właściciela 27.10, po dniu z pełnymi
+  numerami w panelu — test @45, cofnięte: „nie czuję się bezpiecznie trzymając dane wrażliwe tylko za PIN-em") — ani do panelu,
+  ani do tekstu wiadomości (podgląd w panelu to ten sam tekst). **Prośbę, która by to łamała, najpierw ostrzeż i każ potwierdzić.**
+  Osobę wskazuje **numer osoby „#17"** (B84, S146): nadany przez serwer po kolei przy pierwszym spotkaniu i zapamiętany
+  (`helperIds`, `helperNrsAdd_` — dwa miejsca nadają, więc pod blokadą skryptu ze świeżym odczytem; numery nie wracają do obiegu),
+  **nie z numeru telefonu** — dawny klucz `helperKey_` (FNV z numeru) dało się odwrócić w ok. 100 s. Panel: „Imię (#17)", bez
+  imienia „#17"; wiadomości: „#17" zamiast końcówki numeru; „Imiona" przyjmuje „#17 = Ania". Ten sam człowiek pod drugim adresem
+  (`@lid` z ankiety, `newChatId` z kontaktów bota) — ten sam numer (`helperSame_`). Do telefonu prowadzi **karta kontaktu**
+  (`helperSendCard_`, `sendContact` tylko do prywatnego czatu właściciela, sufit `HELPER_CARD_MAX`): „📲" w panelu
+  (`sendHelperContact(nr, pin)`, wprost, NIE RETRIABLE — dwa wywołania = dwie karty) i „kto 17" w czacie; udostępniony botowi
+  kontakt (`contactMessage`, `waid=` w vCard) dostaje odpowiedź z numerem osoby i klasą. W składzie dnia klasy przy
   imionach, „brak fioletowego" (tylko gdy ktoś jest fioletowy) i „kandydat bez fioletowego" (`helperSquadRoles_`). Zastąpiło pola
   „Fioletowi" / „Nowi". **Na czas testów pisze TYLKO prywatnie** — adres
   grupy jako odbiorcę odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`) i wysyłka (`helperSend_`, B74);
@@ -594,7 +604,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1898 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1923 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -722,7 +732,8 @@ serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odc
 w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px), S145 panel pomocnika Grafiku (grupa i kontakt
 z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
 reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`; S145d — bramka bez powiadomień w panelu),
-S146 członkowie w panelu (pobranie, klasa jednym stuknięciem od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr),
+S146 członkowie w panelu (pobranie, „Imię (#17)" / sam „#17", bez numerów telefonu, 📲 wprost bez powtórki, klasa jednym
+stuknięciem po numerze osoby od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -770,7 +781,10 @@ skład dnia wieczorem i rano, B79 — dopisania i wypisania w ciągu dnia bez os
 przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
 bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu
 powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejka, B83 członkowie i klasy (lista z grupy z imionami,
-bez numerów w odpowiedzi, klasa po kluczu, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
+bez numerów w odpowiedzi, klasa po numerze osoby, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
+B84 numer osoby i karta kontaktu (nadany po kolei, nie z numeru telefonu, stały po wyjściu i powrocie, „#17 = Ania", „#17" w składzie
+i w „ludzie", 📲 i „kto 17" — karta tylko do właściciela, konto bez numeru, przebieg w toku, udostępnione kontakty, sufit kart
+i sufit zapamiętanych numerów),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1068,6 +1082,10 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   **Do sprawdzenia w pierwszych dniach** (HELPER.md): czy przychodzą głosy, format numerów (`@c.us` / `@lid`), czy
   powiadomienie o głosie ma jedną osobę czy pełny stan, czy historia czatu ma ankietę bota, które wiadomości to szum. Limit planu Developer dotyczy też
   odbierania (3 czaty w miesiącu) — w październiku „Grafik" i właściciel są w trójce.
+  **26–27.10:** zmiany w ankiecie usunięte (@43), członkowie i klasy (@44), pełne numery telefonów w panelu (@45) — cofnięte
+  27.10, w ich miejsce numer osoby „#17" i karta kontaktu (@46, Konwencje). **Otwarte (decyzja właściciela):** wybór kontaktu
+  w panelu (lista dnia, pomocnik) wciąż pokazuje „Imię (+48 …)" kontaktów z telefonu bota — sprzed zasady „numery nie
+  opuszczają serwera".
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
