@@ -17,8 +17,8 @@ const OWNER = '48600111222@c.us';
 const BOT = '48799000111@c.us';
 const ANIA = '48601000001@c.us', BASIA = '48601000002@c.us', CELINA = '48601000003@c.us',
       DAWID = '48601000004@c.us', EWA = '48601000005@c.us', KASIA = '48601000006@c.us', GOSIA = '48601000007@c.us';
-/** Klucz osoby z listy członków po imieniu (numer telefonu do panelu nie idzie). */
-const keyOf = (roster, name) => { const x = roster.list.filter(y => y.name === name)[0]; if (!x) throw new Error('brak na liście: ' + name); return x.key; };
+/** Numer osoby (#17) z listy członków po imieniu (numer telefonu do panelu nie idzie). */
+const nrOf = (roster, name) => { const x = roster.list.filter(y => y.name === name)[0]; if (!x) throw new Error('brak na liście: ' + name); return x.nr; };
 const OPTS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela', 'Nie mogę'];
 const Q = 'Grafik 26.10-01.11';
 
@@ -51,7 +51,7 @@ function build(o){
     ],
     props: Object.assign({ pin: TEST_PIN, walksImported: '2026-01-01' }, o.gateway === false ? {} : GREEN, o.props),
   });
-  const gw = { queue: [], receipt: 0, deleted: [], sent: [], received: 0, members: [ANIA, BASIA], weather: null, fail: null,
+  const gw = { queue: [], receipt: 0, deleted: [], sent: [], cards: [], received: 0, members: [ANIA, BASIA], weather: null, fail: null,
                history: [], historyCalls: [], contacts: [],
                settings: { incomingWebhook: 'yes', pollMessageWebhook: 'yes', outgoingAPIMessageWebhook: 'yes', outgoingMessageWebhook: 'yes', webhookUrl: '' } };
   env.http.handler = (url, opts) => {
@@ -72,6 +72,14 @@ function build(o){
       const p = JSON.parse(opts.payload);
       gw.sent.push(p); ALL_SENT.push(p);
       return { code: 200, body: JSON.stringify({ idMessage: 'OUT' + gw.sent.length }) };
+    }
+    // karta kontaktu jak sendContact: numer liczbą, 11–16 cyfr, choć jedno imię
+    if(/\/sendContact\//.test(url)){
+      const p = JSON.parse(opts.payload), c = p.contact || {};
+      if(typeof c.phoneContact !== 'number' || !/^\d{11,16}$/.test(String(c.phoneContact)) || !(c.firstName || c.lastName))
+        return { code: 400, body: '{"message":"Validation failed"}' };
+      gw.cards.push(p); ALL_SENT.push(p);
+      return { code: 200, body: JSON.stringify({ idMessage: 'CARD' + gw.cards.length }) };
     }
     if(/\/getGroupData\//.test(url)) return { code: 200, body: JSON.stringify({ groupId: GRAFIK, subject: 'Grafik', participants: gw.members.map(id => ({ id })) }) };
     if(/\/getContacts\//.test(url)) return { code: 200, body: JSON.stringify(gw.contacts) };
@@ -113,6 +121,16 @@ function text(who, name, body, iso, chat, id){
   return { typeWebhook: 'incomingMessageReceived', idMessage: id || 'T' + (++seq), timestamp: ts(iso),
     senderData: { chatId: chat || GRAFIK, sender: who, senderName: name, chatName: 'Grafik' },
     messageData: { typeMessage: 'textMessage', textMessageData: { textMessage: body } } };
+}
+/** Kontakt(y) udostępnione botowi przez właściciela w prywatnym czacie: jeden — contactMessage, kilka — contactsArrayMessage. */
+function shared(list, iso){
+  const vc = c => 'BEGIN:VCARD\nVERSION:3.0\nN:;' + c.n + ';;;\nFN:' + c.n + '\n'
+    + (c.w ? 'item1.TEL;waid=' + c.w + ':+' + c.w + '\nitem1.X-ABLabel:Komórka\n' : 'TEL;type=CELL:+48 22 000 00 00\n') + 'END:VCARD';
+  const md = list.length === 1
+    ? { typeMessage: 'contactMessage', contactMessageData: { displayName: list[0].n, vcard: vc(list[0]), isForwarded: false } }
+    : { typeMessage: 'contactsArrayMessage', messageData: { contacts: list.map(c => ({ displayName: c.n, vcard: vc(c) })), isForwarded: false } };
+  return { typeWebhook: 'incomingMessageReceived', idMessage: 'C' + (++seq), timestamp: ts(iso),
+    senderData: { chatId: OWNER, sender: OWNER, senderName: 'Grzesiek' }, messageData: md };
 }
 const pollOf = (env, id) => env.st().polls.filter(p => p.id === id)[0];
 const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.keys(p.v).filter(w => p.v[w].some(i => p.days[i].d === date && !p.days[i].x && !p.days[i].no)).sort(); };
@@ -327,7 +345,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   // fioletowa jest Gosia — w ankiecie na poniedziałek jej nie ma
   env.gw.members = [ANIA, BASIA, GOSIA];
   env.gw.contacts = [{ id: GOSIA, name: 'Gosia K', contactName: 'Gosia', type: 'user' }];
-  env.api.setHelperRole(keyOf(env.api.getHelperMembers(TEST_PIN), 'Gosia'), 'p', TEST_PIN);
+  env.api.setHelperRole(nrOf(env.api.getHelperMembers(TEST_PIN), 'Gosia'), 'p', TEST_PIN);
   env.gw.weather = { daily: { time: ['2026-10-26'], temperature_2m_min: [4.2], temperature_2m_max: [11.4], precipitation_probability_max: [30] } };
   env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
            vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
@@ -584,14 +602,16 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('lista członków: PIN, tylko grupa', /PIN/.test(throws(() => env.api.getHelperMembers('0000'))) && /grupę/.test(throws(() => env.api.getHelperMembers(TEST_PIN, OWNER))));
   const r = env.api.getHelperMembers(TEST_PIN);
   const names = r.list.map(x => x.name);
-  check('imiona: zapisane w telefonie bota, z WhatsAppa (bez dopisku grupy), z wiadomości, z panelu; bez imienia — końcówka numeru, na końcu',
-    JSON.stringify(names) === JSON.stringify(['Ania Kowalska', 'Basia', 'Gosia', 'Kasia', 'Zosia', '…003']) && r.counts.all === 6 && r.counts.none === 6 && r.chatName === 'Grafik',
+  check('imiona: zapisane w telefonie bota, z WhatsAppa (bez dopisku grupy), z wiadomości, z panelu; bez imienia — puste (pokaże się numer osoby), na końcu',
+    JSON.stringify(names) === JSON.stringify(['Ania Kowalska', 'Basia', 'Gosia', 'Kasia', 'Zosia', '']) && r.counts.all === 6 && r.counts.none === 6 && r.chatName === 'Grafik',
     JSON.stringify(names));
-  check('do przeglądarki tylko klucze, żadnego numeru telefonu', !/4860|157000/.test(JSON.stringify(r)) && r.list.every(x => /^m[0-9a-z]+$/.test(x.key)), JSON.stringify(r.list[0]));
-  const k = n => keyOf(env.api.getHelperMembers(TEST_PIN), n);
+  check('do przeglądarki numery osób (1–6, każdy inny), żadnego numeru telefonu ani adresu WhatsAppa', !/4860|157000|@c\.us|@lid/.test(JSON.stringify(r))
+    && r.list.map(x => x.nr).sort().join() === '1,2,3,4,5,6' && !r.list.some(x => 'key' in x), JSON.stringify(r.list[0]));
+  const k = n => nrOf(env.api.getHelperMembers(TEST_PIN), n);
   check('klasa: PIN, znana klasa, osoba z listy', /PIN/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'p', '0000')))
-    && /klasa/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'x', TEST_PIN))) && /pobierz członków/.test(throws(() => env.api.setHelperRole('mzzz', 'p', TEST_PIN))));
-  env.api.setHelperRole(k('Gosia'), 'p', TEST_PIN);
+    && /klasa/.test(throws(() => env.api.setHelperRole(k('Gosia'), 'x', TEST_PIN))) && /pobierz członków/.test(throws(() => env.api.setHelperRole(99, 'p', TEST_PIN)))
+    && /pobierz członków/.test(throws(() => env.api.setHelperRole('mzzz', 'p', TEST_PIN))));
+  env.api.setHelperRole('#' + k('Gosia'), 'p', TEST_PIN);
   env.api.setHelperRole(k('Basia'), 'o', TEST_PIN);
   env.api.setHelperRole(k('Kasia'), 'k', TEST_PIN);
   const again = env.api.setHelperRole(k('Kasia'), 'k', TEST_PIN);
@@ -632,7 +652,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   plain.tick();
   check('nikt nie ma klasy — bez „brak fioletowego"', !/fioletow/.test(plain.api.helperPreview(TEST_PIN, 'jutro').text));
   // sama kandydatka (nikt nie jest fioletowy na liście): ostrzeżenie idzie z reguły o kandydacie, nie z „brak fioletowego"
-  plain.api.setHelperRole(keyOf(plain.api.getHelperMembers(TEST_PIN), 'Basia'), 'k', TEST_PIN);
+  plain.api.setHelperRole(nrOf(plain.api.getHelperMembers(TEST_PIN), 'Basia'), 'k', TEST_PIN);
   plain.setNow('2026-10-27T07:10:00+02:00');                  // wtorek rano — Ania (bez klasy), nic nie grozi
   plain.tick();
   plain.setNow('2026-10-28T07:10:00+02:00');                  // środa rano — sama kandydatka Basia
@@ -640,6 +660,118 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   const mo = plain.msgs().filter(m => /Dziś —/.test(m));
   check('rano: tylko dzień z samą kandydatką jest problemem („kandydat bez fioletowego", bez „brak fioletowego")', mo.length === 1
     && /Dziś — środa 28\.10/.test(mo[0]) && /kandydat bez fioletowego/.test(mo[0]) && !/brak fioletowego/.test(mo[0]), mo.join(' | '));
+})();
+
+/* ---------- B84: numer osoby (#17) i karta kontaktu ---------- */
+(()=>{
+  console.log('B84: pomocnik — numer osoby (#17) zamiast numeru telefonu (nadany raz, stały, nie z numeru), karta kontaktu (📲, „kto 17"), udostępniony kontakt → numer osoby');
+  const LID_G = '157000000000777@lid', LID_X = '157000000000555@lid', EWA_ = EWA;
+  const env = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.gw.members = [ANIA, CELINA, LID_G, LID_X];
+  // Gosia: grupa podaje ją jako konto @lid, a kontakt w telefonie bota wiąże je z numerem (newChatId); LID_X — bez kontaktu
+  env.gw.contacts = [{ id: ANIA, name: 'Ania', contactName: 'Ania Kowalska', type: 'user' },
+                     { id: GOSIA, name: 'Gośka', contactName: 'Gosia', type: 'user', newChatId: LID_G }];
+  const r = env.api.getHelperMembers(TEST_PIN);
+  const by = n => r.list.filter(x => x.name === n)[0] || {};
+  const cel = r.list.filter(x => !x.name && x.nr === 2)[0] || {}, lx = r.list.filter(x => !x.name && x.nr === 4)[0] || {};
+  check('numery osób po kolei (1–4); bez imienia — sam numer; @lid z kontaktem bota — imię z kontaktu i karta; @lid bez kontaktu — bez karty',
+    by('Ania Kowalska').nr === 1 && cel.nr === 2 && by('Gosia').nr === 3 && lx.nr === 4 && by('Gosia').card === true && cel.card === true && lx.card === false,
+    JSON.stringify(r.list));
+  check('w odpowiedzi ani numeru telefonu, ani adresu WhatsAppa', !/4860|1570|@c\.us|@lid/.test(JSON.stringify(r)), JSON.stringify(r));
+  // numer osoby zależy od kolejności pierwszego spotkania, nie od numeru telefonu — z numeru osoby telefonu nie da się odtworzyć
+  const other = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(other, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  other.gw.members = [CELINA, ANIA];
+  const r2 = other.api.getHelperMembers(TEST_PIN);
+  check('ta sama osoba w innej kolejności — inny numer (numer nie wynika z telefonu)', r2.list.filter(x => !x.name)[0].nr === 1 && r2.list.filter(x => !x.name)[1].nr === 2
+    && env.api.helperNr_(env.st(), CELINA) === 2 && other.api.helperNr_(other.st(), CELINA) === 1);
+
+  // stałe: ponowne pobranie, wyjście z grupy i powrót — ten sam numer; nowa osoba — następny, numery nie wracają do obiegu
+  env.gw.members = [ANIA, LID_G, LID_X, DAWID];
+  env.api.getHelperMembers(TEST_PIN);
+  env.gw.members = [ANIA, CELINA, LID_G, LID_X, DAWID];
+  const r3 = env.api.getHelperMembers(TEST_PIN);
+  check('po wyjściu i powrocie Celina dalej #2, Dawid (nowy) #5', r3.list.filter(x => x.nr === 2).length === 1 && env.api.helperNr_(env.st(), CELINA) === 2
+    && env.api.helperNr_(env.st(), DAWID) === 5, JSON.stringify(r3.list));
+
+  // „Imiona": „#2 = Celina" — w panelu i w wiadomościach
+  on(env, { min: 1, weekDays: [], names: '#2 = Celina', features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  check('„Imiona": #2 = Celina — w panelu imię, dalej z numerem', env.api.helperPanel_().roster.list.filter(x => x.nr === 2)[0].name === 'Celina');
+  check('„Imiona" — parser: #17, końcówka numeru, #0 pominięty', JSON.stringify(env.api.helperNameMap_('#17 = Ania\n…123 = Basia\n# 5: Kasia\n#0 = nikt'))
+    === JSON.stringify({ '#17': 'Ania', '123': 'Basia', '#5': 'Kasia' }));
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+
+  // wiadomości: osoba bez imienia — „#2", nie końcówka numeru; głosująca spoza listy członków dostaje numer w przebiegu
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', CELINA, ['Wtorek'], '2026-10-26T12:10:00+02:00'),
+           vote('P1', EWA_, ['Wtorek'], '2026-10-26T12:11:00+02:00'));
+  env.tick('2026-10-26T12:20:00+02:00');
+  const nrE = env.api.helperNr_(env.st(), EWA_);
+  const t = env.api.helperPreview(TEST_PIN, 'jutro').text;
+  check('skład: „#2" i numer nowej osoby spoza listy, żadnej końcówki numeru', nrE === 6 && /👥 .*#2/.test(t) && new RegExp('#' + nrE).test(t) && !/…|4860/.test(t), t);
+  const ppl = (() => { env.push(text(OWNER, 'Grzesiek', 'ludzie', '2026-10-26T12:21:00+02:00', OWNER)); env.tick('2026-10-26T12:25:00+02:00'); return env.last(); })();
+  check('„ludzie": przy imieniu numer osoby, bez imienia sam numer', /#2 — ankiety: 1/.test(ppl) && !/4860/.test(ppl), ppl);
+
+  // 📲 z panelu: karta kontaktu do właściciela; w odpowiedzi tylko numer osoby
+  check('karta: PIN, zły numer, nieznana osoba, konto bez numeru telefonu', /PIN/.test(throws(() => env.api.sendHelperContact(2, '0000')))
+    && /Nieprawidłowy/.test(throws(() => env.api.sendHelperContact('x', TEST_PIN))) && /Nie znam osoby #77/.test(throws(() => env.api.sendHelperContact(77, TEST_PIN)))
+    && /nie podaje numeru telefonu/.test(throws(() => env.api.sendHelperContact(4, TEST_PIN))) && env.gw.cards.length === 0);
+  const res = env.api.sendHelperContact(2, TEST_PIN), c1 = env.gw.cards[0] || { contact: {} };
+  check('📲 #2: karta do właściciela — numer z adresu, nazwa „Grafik #2" (bez imienia); odpowiedź bez telefonu', JSON.stringify(res) === '{"nr":2}'
+    && env.gw.cards.length === 1 && c1.chatId === OWNER && c1.contact.phoneContact === 48601000003 && c1.contact.firstName === 'Grafik' && c1.contact.lastName === '#2',
+    JSON.stringify(env.gw.cards));
+  env.api.sendHelperContact('#3', TEST_PIN);
+  const c2 = env.gw.cards[1] || { contact: {} };
+  check('📲 #3 (Gosia, w grupie jako @lid): numer z kontaktu bota, nazwa „Gosia #3"', c2.contact.phoneContact === 48601000007 && c2.contact.firstName === 'Gosia'
+    && c2.contact.lastName === '#3', JSON.stringify(c2));
+  env.props.helperBusy = String(env.now());
+  check('przebieg w toku — „spróbuj za kilka minut", bez karty', /właśnie pracuje/.test(throws(() => env.api.sendHelperContact(2, TEST_PIN))) && env.gw.cards.length === 2);
+  delete env.props.helperBusy;
+
+  // w czacie z botem: „kto 2", „#3", nieznany numer; udostępnione kontakty → numer osoby
+  const n0 = env.msgs().length, k0 = env.gw.cards.length;
+  env.push(text(OWNER, 'Grzesiek', 'Kto 2?', '2026-10-26T12:30:00+02:00', OWNER), text(OWNER, 'Grzesiek', '#3', '2026-10-26T12:30:10+02:00', OWNER),
+           text(OWNER, 'Grzesiek', 'kto 77', '2026-10-26T12:30:20+02:00', OWNER));
+  env.tick('2026-10-26T12:35:00+02:00');
+  check('„Kto 2?" i „#3" — karty; „kto 77" — tekst, że nie znam', env.gw.cards.length === k0 + 2 && env.gw.cards[k0].contact.lastName === '#2'
+    && env.gw.cards[k0 + 1].contact.lastName === '#3' && env.msgs().length === n0 + 1 && /Nie znam osoby #77/.test(env.last()), env.msgs().slice(n0).join(' | '));
+  env.push(text(OWNER, 'Grzesiek', 'kto 4', '2026-10-26T12:36:00+02:00', OWNER));
+  env.tick('2026-10-26T12:40:00+02:00');
+  check('„kto 4" (konto bez numeru) — tekst zamiast karty', /#4: WhatsApp nie podaje numeru telefonu/.test(env.last()) && env.gw.cards.length === k0 + 2, env.last());
+  env.push(shared([{ n: 'Celinka', w: '48601000003' }], '2026-10-26T12:41:00+02:00'));
+  env.tick('2026-10-26T12:45:00+02:00');
+  check('udostępniony kontakt: „Celinka = #2"', /📇 Celinka = \*#2\*/.test(env.last()) && !/4860/.test(env.last()), env.last());
+  env.api.setHelperRole(3, 'p', TEST_PIN);
+  env.push(shared([{ n: 'Gośka', w: '48601000007' }, { n: 'Obcy', w: '48609999999' }, { n: 'Stacjonarny' }, { n: 'Ewa', w: '48601000005' }], '2026-10-26T12:46:00+02:00'));
+  env.tick('2026-10-26T12:50:00+02:00');
+  const sh = env.last();
+  check('kilka kontaktów: Gosia (@lid przez kontakt bota) z klasą, nieznany, bez WhatsAppa, spoza listy członków', /📇 Gośka = \*#3\* \(„Gosia"\) · 🟣 fioletowy/.test(sh)
+    && /📇 Obcy — nie znam tej osoby/.test(sh) && /📇 Stacjonarny — w karcie nie ma numeru WhatsAppa/.test(sh)
+    && new RegExp('📇 Ewa = \\*#' + nrE + '\\* · spoza listy członków').test(sh) && !/4860|48609/.test(sh), sh);
+  const n1 = env.msgs().length;
+  env.push(Object.assign(shared([{ n: 'Celinka', w: '48601000003' }], '2026-10-26T12:51:00+02:00'), { senderData: { chatId: ANIA, sender: ANIA, senderName: 'Ania' } }));
+  env.tick('2026-10-26T12:55:00+02:00');
+  check('kontakt od kogoś innego niż właściciel — bez odpowiedzi', env.msgs().length === n1);
+  check('„kto 17" i jego warianty', [env.api.helperWho_('kto 17'), env.api.helperWho_('Kto #17?'), env.api.helperWho_('#5'), env.api.helperWho_('12'),
+    env.api.helperWho_('jutro'), env.api.helperWho_('31.10'), env.api.helperWho_('kto')].join() === '17,17,5,12,0,0,0');
+
+  // sufit kart na dzień — osobny od wiadomości
+  env.props.helperState = JSON.stringify(Object.assign(JSON.parse(env.props.helperState), { sent: { day: '2026-10-26', n: 0, c: env.conf.HELPER_CARD_MAX } }));
+  const k1 = env.gw.cards.length;
+  check('sufit kart (' + env.conf.HELPER_CARD_MAX + ') — „kolejne jutro", bez karty', /kolejne jutro/.test(throws(() => env.api.sendHelperContact(2, TEST_PIN))) && env.gw.cards.length === k1);
+
+  // sufit zapamiętanych numerów: najpierw wypadają osoby, których pomocnik już nie zna, od najstarszej; lista członków zostaje
+  const big = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(big, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  const m = {};
+  for (let i = 0; i < big.conf.HELPER_LIMITS.IDS; i++) m['4870000' + String(i).padStart(4, '0') + '@c.us'] = i + 1;
+  big.props.helperIds = JSON.stringify({ n: big.conf.HELPER_LIMITS.IDS + 1, m });
+  big.gw.members = [ANIA, BASIA];
+  const rb = big.api.getHelperMembers(TEST_PIN), ids = JSON.parse(big.props.helperIds);
+  check('sufit numerów: lista członków dostaje kolejne numery, najstarsi nieznani wypadają, numery nie wracają', Object.keys(ids.m).length === big.conf.HELPER_LIMITS.IDS
+    && rb.list.map(x => x.nr).sort().join() === [251, 252].join() && !ids.m['48700000000@c.us'] && !ids.m['48700000001@c.us'] && ids.m['48700000002@c.us'] === 3 && ids.n === 253,
+    JSON.stringify(rb.list) + ' n=' + ids.n);
 })();
 
 /* ---------- B74 (ciąg dalszy): w żadnym scenariuszu nic nie poszło do grupy ---------- */

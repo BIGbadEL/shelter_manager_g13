@@ -33,6 +33,7 @@ const PROP_HELPER_STATE = 'helperState';       // ...znaczniki wysłanych wiadom
 const PROP_HELPER_LOG = 'helperLog';           // ...dziennik do panelu
 const PROP_HELPER_ROSTER = 'helperRoster';     // ...lista członków z ostatniego „Pobierz członków" (numer, imię)
 const PROP_HELPER_ROLES = 'helperRoles';       // ...klasy osób: numer → 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
+const PROP_HELPER_IDS = 'helperIds';           // ...numery osób (#17): adres WhatsAppa → numer, licznik — nie do przeglądarki
 const PROP_HELPER_BUSY = 'helperBusy';         // ...przebieg w toku (znacznik czasu) — jeden naraz
 const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
 const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)

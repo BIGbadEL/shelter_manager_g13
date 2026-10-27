@@ -204,40 +204,59 @@ function S145d(){
 
 /* ---------- S146: członkowie i klasy w panelu ---------- */
 function S146(){
-  console.log('S146: członkowie — lista z grupy, klasa jednym stuknięciem (od razu na ekranie, zapis przez kolejkę), drugie zdejmuje, filtr, bez numerów');
+  console.log('S146: członkowie — imię z numerem osoby „(#2)", bez imienia sam „#3"; 📲 karta kontaktu wprost; klasa jednym stuknięciem po numerze osoby (kolejka), drugie zdejmuje, filtr; bez numerów telefonu');
   const on = {chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek', enabled: true};
   const ROSTER = () => ({at: Date.parse('2026-10-26T12:00:00+01:00'), chatId: GRAFIK, chatName: 'Grafik', grafikList: true,
-    list: [{key: 'ma1', name: 'Ania Kowalska', named: true, role: 'p', grafik: null}, {key: 'mb2', name: 'Basia', named: true, role: '', grafik: null},
-           {key: 'mc3', name: '…003', named: false, role: 'k', grafik: null}], counts: {all: 3, none: 1, p: 1, o: 0, k: 1}});
+    list: [{nr: 1, name: 'Ania Kowalska', role: 'p', grafik: null, card: true}, {nr: 2, name: 'Basia', role: '', grafik: null, card: true},
+           {nr: 3, name: '', role: 'k', grafik: null, card: true}, {nr: 4, name: '', role: '', grafik: null, card: false}],
+    counts: {all: 4, none: 2, p: 1, o: 0, k: 1}});
   const empty = openPanel(HELPER({trigger: true}, on));
   check('bez pobranej listy — podpowiedź i „Pobierz członków"', /Lista jeszcze nie pobrana/.test(empty.html()) && !!doc(empty).querySelector('[data-act="rosterLoad"]'));
   empty.click('[data-act="rosterLoad"]');
   check('„Pobierz członków" — wprost do serwera, z PIN-em i grupą (domyślnie „Grafik")', JSON.stringify(lastCall(empty, 'getHelperMembers').args) === JSON.stringify(['1234', GRAFIK]));
   respondTo(empty, 'getHelperMembers', ROSTER());
-  check('...lista na ekranie i komunikat', doc(empty).querySelectorAll('.roster .rrow').length === 3 && /Lista członków: 3 os\./.test(toastOf(empty)), toastOf(empty));
+  check('...lista na ekranie i komunikat', doc(empty).querySelectorAll('.roster .rrow').length === 4 && /Lista członków: 4 os\./.test(toastOf(empty)), toastOf(empty));
 
   const app = openPanel(HELPER({trigger: true, roster: ROSTER()}, on));
-  const row = name => [...doc(app).querySelectorAll('.roster .rrow')].find(li => txt(li.querySelector('.rname')) === name);
-  const active = name => { const li = row(name); const b = li && li.querySelector('.rrole.on'); return b ? b.dataset.role : ''; };
-  check('lista: imiona, klasy zaznaczone, liczniki w filtrze', !!row('Ania Kowalska') && active('Ania Kowalska') === 'p' && active('Basia') === '' && active('…003') === 'k'
-    && /wszyscy 3/.test(txt(doc(app).querySelector('.rchips'))) && /🟣 fioletowi 1/.test(txt(doc(app).querySelector('.rchips'))));
-  check('w panelu żadnych numerów telefonu — tylko klucze', !/4860|@c\.us|@lid/.test(doc(app).querySelector('.roster').innerHTML));
-  row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
-  check('stuknięcie „pomarańczowy": od razu na ekranie, zapis (klucz, klasa, PIN)', active('Basia') === 'o'
-    && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', 'o', '1234']));
-  respondTo(app, 'setHelperRole', {key: 'mb2', role: 'o'});
-  row('Basia').querySelector('[data-role="o"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
-  check('drugie stuknięcie w tę samą klasę — zdejmuje', active('Basia') === '' && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify(['mb2', '', '1234']));
-  respondTo(app, 'setHelperRole', {key: 'mb2', role: ''});
-  row('…003').querySelector('[data-role="p"]').dispatchEvent(new app.window.Event('click', {bubbles: true}));
-  check('zmiana klasy: kandydat → fioletowy', active('…003') === 'p');
+  const rows = () => [...doc(app).querySelectorAll('.roster .rrow')];
+  const row = label => rows().find(li => txt(li.querySelector('.rname')) === label);
+  const active = label => { const li = row(label); const b = li && li.querySelector('.rrole.on'); return b ? b.dataset.role : ''; };
+  const tap = (label, sel) => row(label).querySelector(sel).dispatchEvent(new app.window.Event('click', {bubbles: true}));
+  check('osoba: imię i numer osoby w nawiasie, bez imienia — sam numer osoby', JSON.stringify(rows().map(li => txt(li.querySelector('.rname'))))
+    === JSON.stringify(['Ania Kowalska (#1)', 'Basia (#2)', '#3', '#4']) && !!row('Basia (#2)').querySelector('.rnr') && !row('#3').querySelector('.rnr'),
+    JSON.stringify(rows().map(li => txt(li.querySelector('.rname')))));
+  check('lista: klasy zaznaczone, liczniki w filtrze', active('Ania Kowalska (#1)') === 'p' && active('Basia (#2)') === '' && active('#3') === 'k'
+    && /wszyscy 4/.test(txt(doc(app).querySelector('.rchips'))) && /🟣 fioletowi 1/.test(txt(doc(app).querySelector('.rchips'))));
+  check('w panelu żadnych numerów telefonu', !/4860|@c\.us|@lid/.test(doc(app).querySelector('.roster').innerHTML));
+  check('📲 przy osobach, do których bot zna numer — przy koncie bez numeru nie', !!row('#3').querySelector('[data-act="rosterCard"]')
+    && !row('#4').querySelector('[data-act="rosterCard"]') && rows().filter(li => li.querySelector('[data-act="rosterCard"]')).length === 3);
+  tap('Basia (#2)', '[data-role="o"]');
+  check('stuknięcie „pomarańczowy": od razu na ekranie, zapis (numer osoby, klasa, PIN)', active('Basia (#2)') === 'o'
+    && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify([2, 'o', '1234']));
+  respondTo(app, 'setHelperRole', {nr: 2, role: 'o'});
+  tap('Basia (#2)', '[data-role="o"]');
+  check('drugie stuknięcie w tę samą klasę — zdejmuje', active('Basia (#2)') === '' && JSON.stringify(lastCall(app, 'setHelperRole').args) === JSON.stringify([2, '', '1234']));
+  respondTo(app, 'setHelperRole', {nr: 2, role: ''});
+  tap('#3', '[data-role="p"]');
+  check('zmiana klasy: kandydat → fioletowy', active('#3') === 'p');
   const sent = app.shipped.filter(f => f === 'setHelperRole').length;
   failTo(app, 'setHelperRole', 'Przekroczono limit czasu');
   check('zapis bez odpowiedzi — powtórzony raz (RETRIABLE)', app.shipped.filter(f => f === 'setHelperRole').length === sent + 1);
   failTo(app, 'setHelperRole', 'Tej osoby nie ma na liście — pobierz członków jeszcze raz');
-  check('nieudany zapis — wraca poprzednia klasa i komunikat', active('…003') === 'k' && /pobierz członków/.test(toastOf(app)), toastOf(app));
+  check('nieudany zapis — wraca poprzednia klasa i komunikat', active('#3') === 'k' && /pobierz członków/.test(toastOf(app)), toastOf(app));
+
+  tap('#3', '[data-act="rosterCard"]');
+  check('📲 — wprost do serwera: numer osoby i PIN; w czasie wysyłki 📲 wstrzymane', JSON.stringify(lastCall(app, 'sendHelperContact').args) === JSON.stringify([3, '1234'])
+    && row('Basia (#2)').querySelector('[data-act="rosterCard"]').disabled);
+  respondTo(app, 'sendHelperContact', {nr: 3});
+  check('...komunikat „Karta kontaktu #3", 📲 z powrotem', /Karta kontaktu #3/.test(toastOf(app)) && !row('Basia (#2)').querySelector('[data-act="rosterCard"]').disabled, toastOf(app));
+  const cards = app.shipped.filter(f => f === 'sendHelperContact').length;
+  tap('Basia (#2)', '[data-act="rosterCard"]');
+  failTo(app, 'sendHelperContact', 'Przekroczono limit czasu');
+  check('📲 bez odpowiedzi — bez powtórki (dwa wywołania = dwie karty), komunikat', app.shipped.filter(f => f === 'sendHelperContact').length === cards + 1
+    && calls(app, 'sendHelperContact').length === 0 && /limit czasu/.test(toastOf(app)), toastOf(app));
   app.click('[data-act="rosterFilter"][data-f="none"]');
-  check('filtr „bez klasy" — tylko osoby bez klasy', doc(app).querySelectorAll('.roster .rrow').length === 1 && !!row('Basia'));
+  check('filtr „bez klasy" — tylko osoby bez klasy', rows().length === 2 && !!row('Basia (#2)') && !!row('#4'));
   check('bez błędów', app.errors.length === 0 && empty.errors.length === 0, app.errors.concat(empty.errors).join('; '));
 }
 

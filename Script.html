@@ -2400,7 +2400,7 @@
           <label for="helperMorning">rano o</label><select id="helperMorning">${hourOptions(f.morning)}</select></div>
         <div class="mailfl">Przegląd tygodnia (wieczorem) w</div>
         <div class="pollchecks days">${days}</div>
-        <label class="mailfl" for="helperNames">Imiona dla numerów bez nazwy — „…123 = Ania", każde w linijce</label>
+        <label class="mailfl" for="helperNames">Imiona dla osób bez nazwy — „#17 = Ania" (numer osoby z listy członków) albo „…123 = Ania" (końcówka numeru telefonu), każde w linijce</label>
         <textarea id="helperNames" class="mailtpl" rows="3" maxlength="${HELPER_NAME_MAP_MAX}">${esc(f.names)}</textarea>
         <div class="mailfl">Co wysyła</div>
         <div class="pollchecks helperfeat">${feats}</div>
@@ -2427,7 +2427,8 @@
   /* ---------- członkowie: fioletowy / pomarańczowy / kandydat (pomocnik Grafiku) ----------
      Lista ze składu grupy z bramki („Pobierz członków" — getHelperMembers, wprost), stuknięcie w klasę zapisuje ją od
      razu (setHelperRole przez kolejkę, RETRIABLE; nieudany zapis wraca do poprzedniej klasy), drugie stuknięcie zdejmuje.
-     Z serwera przychodzi tylko klucz osoby, nie numer telefonu. */
+     Osoba to imię i jej numer osoby „(#17)" — numer telefonu nie opuszcza serwera (decyzja właściciela 27.10). Do telefonu
+     prowadzi „📲": bot wysyła kartę kontaktu na WhatsAppa właściciela (sendHelperContact, wprost — dwa razy = dwie karty). */
   const ROLE_BTNS = [['p', 'fioletowy'], ['o', 'pomarańczowy'], ['k', 'kandydat']];
   const ROSTER_FILTERS = [['all', 'wszyscy'], ['none', 'bez klasy'], ['p', '🟣 fioletowi'], ['o', '🟠 pomarańczowi'], ['k', '🌱 kandydaci']];
   function rosterCounts(r){
@@ -2449,9 +2450,15 @@
     if(r){
       const f = state.rosterFilter || 'all';
       const chips = ROSTER_FILTERS.map(([k, label]) => `<button class="rchip${f===k ? ' on' : ''}" data-act="rosterFilter" data-f="${k}">${label} ${r.counts[k] || 0}</button>`).join('');
-      const rows = r.list.filter(x => f === 'all' || (f === 'none' ? !x.role : x.role === f)).map(x => `
-          <li class="rrow"><span class="rname${x.named ? '' : ' unnamed'}">${esc(x.name)}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
-            <span class="rroles">${ROLE_BTNS.map(([k, label]) => `<button class="rrole r${k}${x.role===k ? ' on' : ''}" data-act="rosterRole" data-key="${esc(x.key)}" data-role="${k}" aria-pressed="${x.role===k}">${label}</button>`).join('')}</span></li>`).join('')
+      const rows = r.list.filter(x => f === 'all' || (f === 'none' ? !x.role : x.role === f)).map(x => {
+        const nr = posInt(x.nr);
+        const who = x.name ? esc(x.name) + (nr ? ` <span class="rnr">(#${nr})</span>` : '') : nr ? '#' + nr : 'bez nazwy';
+        const card = nr && x.card ? `<button class="rrole rcard" data-act="rosterCard" data-nr="${nr}"${busy ? ' disabled' : ''} title="Karta kontaktu na Twój WhatsApp" aria-label="Wyślij mi kartę kontaktu #${nr} na WhatsAppa">📲</button>` : '';
+        const roles = nr ? ROLE_BTNS.map(([k, label]) => `<button class="rrole r${k}${x.role===k ? ' on' : ''}" data-act="rosterRole" data-nr="${nr}" data-role="${k}" aria-pressed="${x.role===k}">${label}</button>`).join('') : '';
+        return `
+          <li class="rrow"><span class="rname${x.name ? '' : ' unnamed'}">${who}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
+            <span class="rroles">${card}${roles}</span></li>`;
+      }).join('')
         || `<li class="rrow"><span class="rname unnamed">Nikogo w tym widoku.</span></li>`;
       body = `<div class="hint">„${esc(r.chatName || r.chatId)}" — ${r.counts.all} os., pobrane ${esc(diagWhen(r.at))}.</div>
         <div class="rchips">${chips}</div><ul class="roster">${rows}</ul>`;
@@ -2461,8 +2468,11 @@
         <h3>Członkowie — fioletowy / pomarańczowy / kandydat</h3>
         ${head}${body}
         <div class="hint">Stuknięcie w klasę zapisuje ją od razu, drugie — zdejmuje. Skład dnia od pomocnika ma przy imionach 🟣 🟠 🌱
-        i ostrzega o kandydacie bez fioletowego (kandydat nie może być sam). Imię z kontaktów telefonu bota albo z WhatsAppa;
-        bez imienia — końcówka numeru (imię wpiszesz wyżej, w „Imiona"). Klasa zostaje przy osobie także po ponownym pobraniu.</div>
+        i ostrzega o kandydacie bez fioletowego (kandydat nie może być sam). Imię z kontaktów telefonu bota (po dodaniu nowych
+        kontaktów — „Pobierz członków" jeszcze raz), inaczej z WhatsAppa; bez imienia — sam numer osoby (imię wpiszesz wyżej,
+        w „Imiona": „#17 = Ania"). <b>#17</b> to numer osoby nadany przez bota, nie numer telefonu — ten nie wychodzi z serwera.
+        📲 — bot wyśle Ci kartę kontaktu tej osoby na WhatsAppa (czat z botem); tam też „kto 17", a kontakt udostępniony botowi
+        dostaje odpowiedź, kto to na liście. Klasa i numer zostają przy osobie także po ponownym pobraniu.</div>
       </div>`;
   }
   /**
@@ -3385,19 +3395,26 @@
     if(act==='rosterFilter'){ state.rosterFilter = btn.dataset.f; render('nav'); }
     if(act==='rosterRole'){
       const cur = () => state.diag && state.diag.helper && state.diag.helper.roster;
-      const r = cur(), key = btn.dataset.key;
-      const x = r && r.list.find(y => y.key === key);
+      const r = cur(), nr = posInt(btn.dataset.nr);
+      const find = () => cur() && cur().list.find(z => posInt(z.nr) === nr);
+      const x = nr && find();
       if(!x) return;
       const prev = x.role, role = prev === btn.dataset.role ? '' : btn.dataset.role;
       x.role = role; rosterCounts(r);                // od razu na ekranie
       render('nav');
-      enqueue('setHelperRole', [key, role, state.pin], {key: 'role:' + key,
-        reconcile: res => { const y = cur() && cur().list.find(z => z.key === key); if(y && res && typeof res.role === 'string'){ y.role = res.role; rosterCounts(cur()); } },
+      enqueue('setHelperRole', [nr, role, state.pin], {key: 'role:' + nr,
+        reconcile: res => { const y = find(); if(y && res && typeof res.role === 'string'){ y.role = res.role; rosterCounts(cur()); } },
         fail: () => {                                // nie zapisało się — wraca poprzednia klasa (komunikat daje kolejka)
-          const y = cur() && cur().list.find(z => z.key === key);
+          const y = find();
           if(y && y.role === role){ y.role = prev; rosterCounts(cur()); }
           if(state.view==='diag') render('nav');
         }});
+    }
+    if(act==='rosterCard'){
+      const nr = posInt(btn.dataset.nr);
+      if(!nr) return;
+      // wprost, nie przez kolejkę: dwa wywołania to dwie karty (nie w RETRIABLE); numer telefonu nie wraca do przeglądarki
+      helperCall('card', 'sendHelperContact', [nr, state.pin], () => { toast('Karta kontaktu #' + nr + ' — na Twoim WhatsAppie (czat z botem)', 'ok'); });
     }
     if(act==='helperSendPreview'){
       const h = state.diag && state.diag.helper, pv = state.helperPreview;

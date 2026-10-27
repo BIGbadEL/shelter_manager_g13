@@ -10,6 +10,10 @@
  * NA CZAS TESTÓW KAŻDA WIADOMOŚĆ IDZIE TYLKO PRYWATNIE, do kontaktu z ustawień. Adres grupy odrzuca zapis
  * ustawień (helperValid_), odczyt (helperSettings_) i każda wysyłka (helperSend_) — B74.
  *
+ * NUMERY TELEFONÓW NIE OPUSZCZAJĄ SERWERA (decyzja właściciela 27.10.2026) — ani do panelu, ani w tekście wiadomości
+ * (podgląd w panelu to ten sam tekst). Osobę wskazuje numer osoby „#17" (helperNr_), a do jej telefonu prowadzi karta
+ * kontaktu, którą bot wysyła prosto na WhatsAppa właściciela (helperSendCard_).
+ *
  * Przebieg (helperRun_) co HELPER_TICK_MIN minut z wyzwalacza helperTick: kolejka bramki (helperIntake_) →
  * wiadomości o swoich porach (helperSchedule_) → zapis stanu. Jeden przebieg naraz (helperClaim_).
  * Pomocnik nie pisze do arkusza i nie trzyma blokady aplikacji w czasie wywołań bramki. Błąd bramki zostaje
@@ -93,47 +97,140 @@ function helperShort_(n) {
     .replace(/\s*(schronisko\s*)?g\s*13\s*$/i, '').trim().slice(0, 40);
 }
 
-/**
- * Osoba do wiadomości: imię z ustawień („…123 = Ania" — końcówka numeru), z WhatsAppa (nadawca, także pod
- * innym formatem numeru — alias) albo końcówka numeru. Pełnego numeru pomocnik nigdzie nie pisze.
- */
+/** Osoba do wiadomości: jej imię (helperNameOnly_), a bez imienia — numer osoby „#17". Numeru telefonu nigdy. */
 function helperName_(s, st, id) {
-  const digits = String(id).split('@')[0];
-  const named = helperNameMap_(s.names);
-  const own = Object.keys(named).filter(k => digits.slice(-k.length) === k)[0];
-  if (own) return named[own];
-  let p = st.people[id];
-  if (!p) {
-    const sender = Object.keys(st.alias).filter(k => st.alias[k] === id)[0];
-    if (sender) p = st.people[sender];
-  }
-  return (p && p.n) || (st.rosterNames && st.rosterNames[id]) || ('…' + digits.slice(-3));
+  const n = helperNameOnly_(s, st, id);
+  if (n) return n;
+  const nr = helperNr_(st, id);
+  return nr ? '#' + nr : 'bez nazwy';
 }
-/** „123 = Ania" w linijkach (albo po przecinku) → {'123': 'Ania'}. */
+/**
+ * Imię osoby albo '': z panelu („#17 = Ania" albo „…123 = Ania" — końcówka numeru), z listy członków (kontakty telefonu
+ * bota, inaczej nazwa z WhatsAppa — z chwili „Pobierz członków"), z „Grafiku" (nadawca). Także pod drugim adresem
+ * tej samej osoby (helperSame_).
+ */
+function helperNameOnly_(s, st, id) {
+  const same = helperSame_(st, id), named = helperNameMap_(s.names), nr = helperNr_(st, id);
+  if (nr && named['#' + nr]) return named['#' + nr];
+  const phones = same.filter(x => HELPER_PRIVATE.test(x)).map(x => x.split('@')[0]);
+  const own = Object.keys(named).filter(k => k.charAt(0) !== '#' && phones.some(d => d.slice(-k.length) === k))[0];
+  if (own) return named[own];
+  const roster = same.filter(x => st.rosterNames[x])[0];
+  if (roster) return st.rosterNames[roster];
+  const p = same.filter(x => st.people[x] && st.people[x].n)[0];
+  return p ? st.people[p].n : '';
+}
+/** „#17 = Ania" (numer osoby) albo „123 = Ania" (końcówka numeru telefonu), w linijkach albo po przecinku → {'#17': 'Ania', '123': 'Ania'}. */
 function helperNameMap_(text) {
   const out = {};
   String(text || '').split(/[\n,;]+/).forEach(line => {
+    const p = line.match(/^\s*#\s*(\d{1,5})\s*[=:-]\s*(.+?)\s*$/);
+    if (p) { if (Number(p[1]) > 0) out['#' + Number(p[1])] = p[2].slice(0, 40); return; }
     const m = line.match(/^\s*(?:…|\.\.\.)?\s*(\d{3,15})\s*[=:-]\s*(.+?)\s*$/);
     if (m) out[m[1]] = m[2].slice(0, 40);
   });
   return out;
 }
+
+/* ---------- numery osób (#17) ----------
+   Numer osoby nadaje serwer po kolei, przy pierwszym spotkaniu (lista członków, głos, wiadomość z „Grafiku") — i pamięta
+   (`helperIds`: adres WhatsAppa → numer, licznik). Nie powstaje z numeru telefonu, więc z numeru osoby nie da się go
+   odtworzyć — dawny klucz panelu był skrótem z numeru (FNV) i przeszukanie polskich komórek odzyskiwało numer w ok. 100 s.
+   Ten sam człowiek pod drugim adresem (helperSame_) ma ten sam numer. Numery nadają dwa miejsca — przebieg (helperNrsGive_)
+   i „Pobierz członków" — więc zawsze pod blokadą skryptu, ze świeżym odczytem (helperNrsAdd_). */
+
+/** Ten sam człowiek pod innymi adresami: z głosu (alias: nadawca @c.us ↔ głosujący @lid) i z kontaktów bota (links: @lid ↔ @c.us). */
+function helperSame_(st, id) {
+  const out = [String(id)];
+  const add = x => { if (x && out.indexOf(x) < 0) out.push(x); };
+  add(st.alias[id]);
+  Object.keys(st.alias).forEach(k => { if (st.alias[k] === id) add(k); });
+  add(st.links && st.links[id]);
+  return out;
+}
+/** Numer osoby albo 0 (jeszcze bez numeru). */
+function helperNr_(st, id) {
+  const m = st.nrs || {};
+  const hit = helperSame_(st, id).filter(x => m[x] > 0)[0];
+  return hit ? m[hit] : 0;
+}
+/** Adres osoby o numerze `nr` — albo ''. */
+function helperByNr_(st, nr) {
+  const m = st.nrs || {};
+  return Object.keys(m).filter(k => m[k] === nr)[0] || '';
+}
+/** Numer telefonu osoby (same cyfry) — tylko do karty kontaktu, nigdy do tekstu ani panelu; '' — konto bez numeru (@lid). */
+function helperPhoneOf_(st, id) {
+  const hit = helperSame_(st, id).filter(x => HELPER_PRIVATE.test(x))[0];
+  return hit ? hit.split('@')[0] : '';
+}
+/** Powiązania adresów z listy członków: [adres, imię, adres @c.us tej samej osoby] → {lid: cus, cus: lid}. */
+function helperLinks_(list) {
+  const out = {};
+  (list || []).forEach(x => { if (Array.isArray(x) && x[2]) { out[x[0]] = x[2]; out[x[2]] = x[0]; } });
+  return out;
+}
+/** Wszyscy, o kim pomocnik może napisać: lista członków, nadawcy, głosujący, skład „Grafiku", notatki. */
+function helperKnownIds_(st) {
+  const ids = {};
+  (st.roster ? st.roster.list : []).forEach(x => { ids[x[0]] = 1; });
+  Object.keys(st.people).forEach(k => { ids[k] = 1; });
+  st.polls.forEach(p => Object.keys(p.v).forEach(w => { ids[w] = 1; }));
+  (st.members ? st.members.ids : []).forEach(w => { ids[w] = 1; });
+  st.notes.concat(st.abs, st.gone).forEach(x => { if (x && x.w) ids[x.w] = 1; });
+  return Object.keys(ids);
+}
+/**
+ * Numery dla `ids` bez numeru. Woła się POD BLOKADĄ SKRYPTU (nadają dwa miejsca): świeży odczyt, nadanie, zapis od razu.
+ * Ponad HELPER_LIMITS.IDS albo HELPER_BYTES wypadają najpierw numery osób, których pomocnik już nie zna, potem znanych tylko
+ * z „Grafiku" — od najstarszego; z listy członków i z klasą nigdy. Numery nie wracają do obiegu (licznik tylko rośnie).
+ */
+function helperNrsAdd_(st, ids) {
+  const cur = helperJson_(PROP_HELPER_IDS, {}) || {};
+  const m = cur.m && typeof cur.m === 'object' && !Array.isArray(cur.m) ? cur.m : {};
+  st.nrs = m;
+  let n = Math.max(Number(cur.n) || 1, 1);
+  Object.keys(m).forEach(k => { if (m[k] >= n) n = m[k] + 1; });
+  const fresh = [];
+  (ids || []).forEach(id => { if (id && !helperNr_(st, id)) { m[String(id)] = n++; fresh.push(String(id)); } });
+  if (!fresh.length) return 0;
+  const keep = {}, known = {};
+  (st.roster ? st.roster.list : []).forEach(x => { keep[x[0]] = 1; if (x[2]) keep[x[2]] = 1; });
+  Object.keys(st.roles || {}).forEach(k => { keep[k] = 1; });
+  fresh.forEach(k => { keep[k] = 1; });
+  helperKnownIds_(st).forEach(k => { known[k] = 1; });
+  const drop = Object.keys(m).filter(k => !keep[k]).sort((a, b) => (known[a] || 0) - (known[b] || 0) || m[a] - m[b]);
+  let json = JSON.stringify({ n, m });
+  while ((Object.keys(m).length > HELPER_LIMITS.IDS || diagBytes_(json) > HELPER_BYTES) && drop.length) {
+    delete m[drop.shift()];
+    json = JSON.stringify({ n, m });
+  }
+  setProp_(PROP_HELPER_IDS, json);
+  return fresh.length;
+}
+/** Numery dla osób bez numeru (domyślnie: wszystkich, o kim pomocnik może napisać) — pod krótką blokadą skryptu
+ *  (bez flush i pamięci podręcznej: arkusza nie ruszamy). Blokada zajęta — następnym razem. */
+function helperNrsGive_(st, ids) {
+  const missing = (ids || helperKnownIds_(st)).filter(id => !helperNr_(st, id));
+  if (!missing.length) return 0;
+  if (lockDepth_ > 0) return helperNrsAdd_(st, missing);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return 0;
+  try { return helperNrsAdd_(st, missing); } finally { lock.releaseLock(); }
+}
 /* ---------- członkowie i ich klasa: fioletowy / pomarańczowy / kandydat (identyfikator w schronisku) ----------
    Lista członków to skład grupy z bramki (getGroupData) — „Grafiku" albo ogłoszeń społeczności, czyli całej
    społeczności — z imionami z kontaktów telefonu bota (getContacts). Właściciel klasyfikuje stuknięciem w panelu
-   (setHelperRole). Do przeglądarki idzie tylko klucz osoby (`helperKey_`), nie numer telefonu. Z „Grafiku": „tylko
+   (setHelperRole). Do przeglądarki idzie numer osoby (#17), nie numer telefonu. Z „Grafiku": „tylko
    fiolet może opiekować się kandydatem", „świeżak nie może być sam" — skład dnia ostrzega o kandydacie bez fioletowego. */
 const HELPER_ROLES = ['p', 'o', 'k'];
 const HELPER_ROLE_MARK = { p: '🟣', o: '🟠', k: '🌱' };
-/** Klucz osoby do panelu (FNV-1a z numeru, z literą na początku — numer telefonu nie wychodzi z serwera). */
-function helperKey_(id) { return 'm' + volHash_(String(id)).toString(36); }
-/** Klasa osoby — po numerze z ankiety albo po jego powiązaniu z numerem nadawcy (alias, `@lid` / `@c.us`). */
+const HELPER_ROLE_LABEL = { p: '🟣 fioletowy', o: '🟠 pomarańczowy', k: '🌱 kandydat' };
+/** Klasa osoby — po jej adresie albo po drugim adresie tej samej osoby (helperSame_: `@lid` / `@c.us`). */
 function helperRoleOf_(st, id) {
   const r = st.roles || {};
-  if (r[id]) return r[id];
-  if (st.alias[id] && r[st.alias[id]]) return r[st.alias[id]];
-  const back = Object.keys(st.alias).filter(k => st.alias[k] === id)[0];
-  return back && r[back] ? r[back] : '';
+  const hit = helperSame_(st, id).filter(x => r[x])[0];
+  return hit ? r[hit] : '';
 }
 /** Imię do porównania z Historią aplikacji: pierwszy wyraz, bez wielkości liter i ogonków. */
 function helperFirst_(name) { return volNorm_(helperShort_(name)).split(' ')[0] || ''; }
@@ -227,13 +324,16 @@ function helperLoad_() {
   // ankiety w dwóch właściwościach (helperSave_): nowsze w pierwszej, starsze w drugiej
   const polls = arr(helperJson_(PROP_HELPER_POLLS, [])).concat(arr(helperJson_(PROP_HELPER_POLLS2, [])))
     .filter(p => p && p.id).sort((a, b) => a.t - b.t);
-  // członkowie i klasy — osobne właściwości, pisane tylko z panelu (getHelperMembers, setHelperRole); przebieg ich nie zapisuje
+  // członkowie i klasy — osobne właściwości, pisane tylko z panelu (getHelperMembers, setHelperRole); przebieg ich nie zapisuje.
+  // Numery osób — pisane tylko pod blokadą (helperNrsAdd_)
   const roster = helperJson_(PROP_HELPER_ROSTER, null);
-  const list = roster && Array.isArray(roster.list) ? roster.list : [];
+  const list = roster && Array.isArray(roster.list) ? roster.list.filter(x => Array.isArray(x) && x[0]) : [];
   const rosterNames = {};
-  list.forEach(x => { if (Array.isArray(x) && x[1]) rosterNames[x[0]] = x[1]; });
+  list.forEach(x => { if (x[1]) rosterNames[x[0]] = x[1]; });
+  const nrs = helperJson_(PROP_HELPER_IDS, {}) || {};
   return {
     roles: obj(helperJson_(PROP_HELPER_ROLES, {})), roster: roster && typeof roster === 'object' ? Object.assign({}, roster, { list }) : null, rosterNames,
+    links: helperLinks_(list), nrs: obj(nrs.m),
     polls, people: obj(people.p), alias: obj(people.a),
     notes: arr(notes.n), abs: arr(notes.b), gone: arr(notes.g),
     marks: obj(x.marks), members: x.members && Array.isArray(x.members.ids) ? x.members : null,
@@ -457,9 +557,24 @@ function helperEvent_(s, st, b, run, src) {
       if (text) helperNote_(st, id, sender, text, at);
     }
   } else if (chat === s.toId && incoming && queue) {
+    const cards = helperCards_(tm, md);
+    if (cards.length) { st.cmds.push({ c: cards, at }); return; }
     const text = helperText_(md);
     if (text) st.cmds.push({ t: text.slice(0, 100), at });
   }
+}
+
+/**
+ * Kontakty, które właściciel udostępnił botowi (karta: contactMessage, kilka kart: contactsArrayMessage) — numer WhatsAppa
+ * z karty (`waid=` w vCard) i nazwa z karty: [{w, n}], najwyżej 10. Zostają na serwerze (kolejka pytań we właściwościach).
+ */
+function helperCards_(tm, md) {
+  const list = tm === 'contactMessage' ? [md.contactMessageData]
+    : tm === 'contactsArrayMessage' ? (md.messageData && md.messageData.contacts) : null;
+  return (Array.isArray(list) ? list : []).filter(c => c && typeof c === 'object').slice(0, 10).map(c => {
+    const m = String(c.vcard || '').match(/waid=(\d{6,15})/);
+    return { w: m ? m[1] : '', n: helperShort_(c.displayName) };
+  });
 }
 
 /** Wiadomość z historii czatu (getChatHistory — inny kształt niż powiadomienie) w kształcie powiadomienia. */
@@ -945,7 +1060,7 @@ function helperDogLines_(s, st, d, info, ctx) {
   if (hard.length) {
     let hist = [];
     try { hist = ctx.hist(); } catch (e) { hist = []; }
-    const squad = info.voters.map(w => helperFirst_(helperName_(s, st, w))).filter(Boolean);
+    const squad = info.voters.map(w => helperFirst_(helperNameOnly_(s, st, w))).filter(Boolean);
     hard.forEach(x => {
       const label = dogLabel_(x.name, x.ident, x.id), last = {};
       hist.forEach(e => {
@@ -1050,6 +1165,30 @@ function helperSend_(s, st, text, run) {
   return true;
 }
 
+/**
+ * Karta kontaktu osoby #nr (sendContact) do właściciela — jedyna droga numeru telefonu poza serwer: bramka → WhatsApp
+ * właściciela, nigdy przeglądarka ani tekst. Tylko prywatny czat z ustawień (B74). Osobny sufit dzienny (HELPER_CARD_MAX).
+ * Zwraca '' (wysłana) albo tekst dla właściciela, dlaczego karty nie będzie (nie zna osoby, konto bez numeru, sufit).
+ */
+function helperSendCard_(s, st, nr) {
+  if (!HELPER_PRIVATE.test(String(s.toId || ''))) throw new Error('Pomocnik pisze tylko prywatnie — w ustawieniach nie ma kontaktu');
+  const id = helperByNr_(st, nr);
+  if (!id) return 'Nie znam osoby #' + nr + ' — numery osób są na liście członków w panelu i przy osobach bez imienia w wiadomościach.';
+  const name = helperNameOnly_(s, st, id), phone = helperPhoneOf_(st, id);
+  if (!phone) return '#' + nr + (name ? ' — ' + name : '') + ': WhatsApp nie podaje numeru telefonu tej osoby (konto bez numeru) — karty kontaktu nie będzie.';
+  const day = today_();
+  if (st.sent.day !== day) st.sent = { day, n: 0 };
+  if ((st.sent.c || 0) >= HELPER_CARD_MAX) {
+    helperLog_(st, 'warn', 'limit kart kontaktu na dzień — nie wysłano #' + nr);
+    return 'Dziś poszło już ' + HELPER_CARD_MAX + ' kart kontaktu — kolejne jutro.';
+  }
+  const res = greenCall_('sendContact', { chatId: s.toId, contact: { phoneContact: Number(phone), firstName: name || 'Grafik', lastName: '#' + nr } });
+  if (!res || !res.idMessage) throw new Error('Bramka WhatsAppa nie potwierdziła wysłania');
+  st.sent.c = (st.sent.c || 0) + 1;
+  helperLog_(st, 'sent', 'karta kontaktu #' + nr);
+  return '';
+}
+
 /** Raz na klucz (`ev|2026-10-24`…): znacznik po wysłaniu albo po nieznanym wyniku (bramka mogła wysłać). */
 function helperOnce_(st, key, run, fn) {
   if (st.marks[key]) return;
@@ -1093,11 +1232,18 @@ function helperSchedule_(s, st, run) {
     try { helperCatchUp_(s, st, run); }
     catch (e) { helperLog_(st, 'err', 'historia czatu: ' + (e && e.message || e)); }
   }
+  // numery osób dla nowych osób — zanim padną w wiadomościach (bez numeru osoba bez imienia byłaby „bez nazwy")
+  try { helperNrsGive_(st); } catch (e) { helperLog_(st, 'err', 'numery osób: ' + (e && e.message || e)); }
 
+  // pytania właściciela: „kto 17" — karta kontaktu; udostępniony kontakt — kto to na liście; reszta — helperCommand_
   const cmds = st.cmds.splice(0, st.cmds.length);
   if (f.commands) cmds.slice(-HELPER_LIMITS.CMDS).forEach(c => {
-    try { helperSend_(s, st, helperCommand_(s, st, c.t, ctx), run); }
-    catch (e) { helperLog_(st, 'err', 'odpowiedź: ' + (e && e.message || e)); }
+    try {
+      if (c.c) { helperSend_(s, st, helperCardsText_(s, st, c.c), run); return; }
+      const nr = helperWho_(c.t);
+      if (nr) { const why = helperSendCard_(s, st, nr); if (why) helperSend_(s, st, why, run); return; }
+      helperSend_(s, st, helperCommand_(s, st, c.t, ctx), run);
+    } catch (e) { helperLog_(st, 'err', 'odpowiedź: ' + (e && e.message || e)); }
   });
 
   const queue = st.queue.splice(0, st.queue.length);
@@ -1139,6 +1285,7 @@ function helperMembers_(s, st, run, send) {
   if (!prev || !send) return;
   const plus = ids.filter(x => prev.ids.indexOf(x) < 0), minus = prev.ids.filter(x => ids.indexOf(x) < 0);
   if (!plus.length && !minus.length) return;
+  try { helperNrsGive_(st, plus); } catch (e) { /* bez numeru — „bez nazwy"; nada go następny przebieg */ }
   const L = ['*Grafik — skład grupy* (' + ids.length + ' os.)'];
   if (plus.length) L.push('👋 nowe osoby: ' + plus.map(w => helperName_(s, st, w)).join(', ')
     + ' — nie zobaczą ankiety wysłanej przed dołączeniem; niech napiszą dostępność w czacie');
@@ -1149,7 +1296,29 @@ function helperMembers_(s, st, run, send) {
 /* ---------- pytania w prywatnym czacie ---------- */
 
 const HELPER_HELP = 'Napisz jedno słowo: *jutro* · *dziś* · *pojutrze* · dzień tygodnia (*sobota*) · data (*31.10*) · *tydzień* · '
-  + '*miniony* · *nieobecni* · *nieaktywni* · *ludzie* · *stan*';
+  + '*miniony* · *nieobecni* · *nieaktywni* · *ludzie* · *stan* · *kto 17* (karta kontaktu osoby #17). '
+  + 'Udostępnij mi kontakt z telefonu — odpiszę, kto to na liście członków.';
+
+/** „kto 17", „kto #17", „#17", „17" → 17 (numer osoby); inaczej 0. */
+function helperWho_(text) {
+  const m = volNorm_(String(text || '')).trim().match(/^(?:kto(?:\s+to)?\s*)?#?\s*(\d{1,5})\s*[?!.]*$/);
+  return m ? posInt_(m[1]) : 0;
+}
+
+/** Odpowiedź na kontakty udostępnione botowi: kto to na liście — numer osoby, imię u bota, klasa. Bez numerów telefonów. */
+function helperCardsText_(s, st, cards) {
+  const list = st.roster ? st.roster.list : [];
+  return '*Udostępnione kontakty*\n' + cards.map(c => {
+    const who = c.n || 'kontakt';
+    if (!c.w) return '📇 ' + who + ' — w karcie nie ma numeru WhatsAppa';
+    const id = c.w + '@c.us', nr = helperNr_(st, id);
+    if (!nr) return '📇 ' + who + ' — nie znam tej osoby (nie ma jej na liście członków ani w „Grafiku")';
+    const name = helperNameOnly_(s, st, id), role = helperRoleOf_(st, id), same = helperSame_(st, id);
+    const listed = list.some(x => same.indexOf(x[0]) >= 0);
+    return '📇 ' + who + ' = *#' + nr + '*' + (name && name !== who ? ' („' + name + '")' : '')
+      + (role ? ' · ' + HELPER_ROLE_LABEL[role] : '') + (listed ? '' : ' · spoza listy członków');
+  }).join('\n');
+}
 
 /** Odpowiedź na pytanie właściciela (tekst z jego prywatnego czatu z botem). */
 function helperCommand_(s, st, text, ctx) {
@@ -1193,10 +1362,11 @@ function helperPeopleText_(s, st) {
   const ids = {};
   Object.keys(st.people).forEach(w => { ids[st.alias[w] || w] = true; });
   st.polls.forEach(p => Object.keys(p.v).forEach(w => { ids[w] = true; }));
-  const rows = Object.keys(ids).map(w => ({ n: helperName_(s, st, w), k: st.polls.filter(p => p.v[w]).length }))
+  const rows = Object.keys(ids).map(w => ({ n: helperName_(s, st, w), nr: helperNr_(st, w), k: st.polls.filter(p => p.v[w]).length }))
     .sort((a, b) => a.n.localeCompare(b.n, 'pl'));
-  return '*Znane osoby* (' + rows.length + ')\n' + rows.map(r => r.n + ' — ankiety: ' + r.k).join('\n')
-    + '\nImiona dla numerów bez nazwy: panel → „Imiona" („…123 = Ania").';
+  return '*Znane osoby* (' + rows.length + ')\n'
+    + rows.map(r => r.n + (r.nr && r.n !== '#' + r.nr ? ' (#' + r.nr + ')' : '') + ' — ankiety: ' + r.k).join('\n')
+    + '\nImiona dla osób bez nazwy: panel → „Imiona" („#17 = Ania"); *kto 17* — karta kontaktu.';
 }
 
 function helperStatusText_(s, st) {
@@ -1215,9 +1385,11 @@ function helperStatusText_(s, st) {
 
 /**
  * „Pobierz członków" (PIN): skład grupy `chatId` z bramki (getGroupData; domyślnie „Grafik" z ustawień — dla całej
- * społeczności jej grupa ogłoszeń) z imionami: kontakty telefonu bota (getContacts: zapisane imię, inaczej nazwa
- * z WhatsAppa), wiadomości z „Grafiku", imiona z panelu. Zapisany skład (`helperRoster`) panel pokazuje do kolejnego
- * pobrania, a klasy (`helperRoles`) zostają przy osobie także wtedy, gdy wypadnie z listy.
+ * społeczności jej grupa ogłoszeń) z imionami: kontakty telefonu bota (getContacts: nazwa kontaktu, inaczej nazwa
+ * z WhatsAppa), wiadomości z „Grafiku"; imiona z panelu („Imiona") dochodzą przy pokazywaniu. Kontakt z drugim adresem
+ * (`newChatId` — konto @lid) wiąże oba adresy: karta kontaktu działa wtedy także dla osoby, którą grupa podaje jako @lid.
+ * Zapisany skład (`helperRoster`) panel pokazuje do kolejnego pobrania, klasy (`helperRoles`) i numery osób (`helperIds`)
+ * zostają przy osobie także wtedy, gdy wypadnie z listy. Numery nadaje pod tą samą blokadą co zapis listy.
  */
 function getHelperMembers(pin, chatId) {
   requirePin_(pin);
@@ -1227,54 +1399,93 @@ function getHelperMembers(pin, chatId) {
   const g = greenCall_('getGroupData', { groupId: group });
   const ids = (g && Array.isArray(g.participants) ? g.participants : []).map(p => String(p && p.id || '')).filter(Boolean);
   if (!ids.length) throw new Error('Bramka nie podała składu tej grupy (bot musi do niej należeć)');
-  const known = {};
+  const known = {}, cusOf = {};
   try {
     const contacts = greenCall_('getContacts');
     (Array.isArray(contacts) ? contacts : []).forEach(c => {
-      if (c && c.type !== 'group' && c.id) known[String(c.id)] = helperShort_(c.contactName || c.name || '');
+      if (!c || c.type === 'group' || !c.id) return;
+      const id = String(c.id), name = helperShort_(c.contactName || c.name || '');
+      known[id] = name;
+      if (c.newChatId && HELPER_PRIVATE.test(id)) { cusOf[String(c.newChatId)] = id; if (name) known[String(c.newChatId)] = known[String(c.newChatId)] || name; }
     });
   } catch (e) { /* bez imion z kontaktów — zostają wiadomości i panel */ }
   const st = helperLoad_();
-  const named = helperNameMap_(s.names);
-  const nameOf = id => {
-    const digits = id.split('@')[0], own = Object.keys(named).filter(k => digits.slice(-k.length) === k)[0];
-    return own ? named[own] : known[id] || (st.people[id] && st.people[id].n) || '';
-  };
-  const list = ids.slice(0, HELPER_LIMITS.ROSTER).map(id => [id, nameOf(id).slice(0, 30)]);
+  const nameOf = id => known[id] || (st.people[id] && st.people[id].n) || '';
+  const list = ids.slice(0, HELPER_LIMITS.ROSTER).map(id => {
+    const link = HELPER_PRIVATE.test(id) ? '' : cusOf[id] || '';
+    return link ? [id, nameOf(id).slice(0, 30), link] : [id, nameOf(id).slice(0, 30)];
+  });
   const roster = { at: Date.now(), chatId: group, chatName: clean_(String(g.subject || (group === s.chatId ? s.chatName : '') || ''), 60), list };
   let json = JSON.stringify(roster);
   while (diagBytes_(json) > HELPER_BYTES && roster.list.length > 1) { roster.list.pop(); json = JSON.stringify(roster); }
-  withLock_(() => setProp_(PROP_HELPER_ROSTER, json));
+  withLock_(() => {
+    setProp_(PROP_HELPER_ROSTER, json);
+    st.roster = roster;
+    st.links = helperLinks_(roster.list);
+    helperNrsAdd_(st, roster.list.map(x => x[0]));
+  });
   return helperRosterPanel_(helperLoad_(), s);
 }
 
 /**
- * Klasa osoby z panelu (PIN): `role` 'p' fioletowy, 'o' pomarańczowy, 'k' kandydat, '' — bez klasy. Osoba po kluczu
- * z ostatniego pobrania listy (numer telefonu nie przychodzi z przeglądarki). Idempotentne — w RETRIABLE.
+ * Klasa osoby z panelu (PIN): `role` 'p' fioletowy, 'o' pomarańczowy, 'k' kandydat, '' — bez klasy. Osoba po numerze osoby
+ * (17 albo „#17") z listy członków — numer telefonu nie przychodzi z przeglądarki. Idempotentne — w RETRIABLE.
  */
-function setHelperRole(key, role, pin) {
+function setHelperRole(nr, role, pin) {
   requirePin_(pin);
   const r = String(role == null ? '' : role);
   if (r && HELPER_ROLES.indexOf(r) < 0) throw new Error('Nieznana klasa');
+  const n = posInt_(String(nr == null ? '' : nr).replace(/^\s*#/, ''));
   return withLock_(() => {
     const st = helperLoad_();
-    const hit = (st.roster ? st.roster.list : []).filter(x => helperKey_(x[0]) === String(key))[0];
+    const id = n ? helperByNr_(st, n) : '';
+    const same = id ? helperSame_(st, id) : [];
+    const hit = (st.roster ? st.roster.list : []).filter(x => same.indexOf(x[0]) >= 0)[0];
     if (!hit) throw new Error('Tej osoby nie ma na liście — pobierz członków jeszcze raz');
     const roles = st.roles;
-    if (r) roles[hit[0]] = r; else delete roles[hit[0]];
+    helperSame_(st, hit[0]).forEach(x => { delete roles[x]; });
+    if (r) roles[hit[0]] = r;
     setProp_(PROP_HELPER_ROLES, JSON.stringify(roles));
-    return { key: String(key), role: r };
+    return { nr: n, role: r };
   });
 }
 
-/** Lista członków do panelu: klucz, imię (albo końcówka numeru), klasa, czy jest w „Grafiku"; liczniki klas. */
+/**
+ * „📲" przy osobie (PIN): karta kontaktu osoby #nr na WhatsAppa właściciela (helperSendCard_). Numer telefonu nie wraca
+ * do przeglądarki — w odpowiedzi tylko numer osoby. Nie w RETRIABLE (dwa wywołania = dwie karty); jeden przebieg naraz.
+ */
+function sendHelperContact(nr, pin) {
+  requirePin_(pin);
+  const n = posInt_(String(nr == null ? '' : nr).replace(/^\s*#/, ''));
+  if (!n) throw new Error('Nieprawidłowy numer osoby');
+  const s = helperSettings_();
+  if (!s.toId) throw new Error('Najpierw wybierz i zapisz kontakt');
+  if (!greenApi_()) throw new Error(GREEN_MISSING);
+  if (!helperClaim_()) throw new Error('Pomocnik właśnie pracuje — spróbuj za kilka minut');
+  let why = '';
+  try {
+    const st = helperLoad_();
+    try { why = helperSendCard_(s, st, n); }
+    finally { helperSave_(st); }
+  } finally {
+    helperRelease_();
+  }
+  if (why) throw new Error(why);
+  return { nr: n };
+}
+
+/**
+ * Lista członków do panelu: numer osoby, imię ('' — bez imienia), klasa, czy jest w „Grafiku", czy da się wysłać kartę
+ * kontaktu (`card` — znany numer telefonu); liczniki klas. Najpierw osoby z imieniem, po imieniu; bez imienia — po numerze.
+ */
 function helperRosterPanel_(st, s) {
   const r = st.roster;
   if (!r) return null;
   const inGrafik = st.members && r.chatId !== s.chatId ? st.members.ids : null;
-  const list = r.list.map(x => ({ key: helperKey_(x[0]), name: x[1] || helperName_(s, st, x[0]), named: !!x[1],
-                                  role: st.roles[x[0]] || '', grafik: inGrafik ? inGrafik.indexOf(x[0]) >= 0 : null }))
-    .sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1) || a.name.localeCompare(b.name, 'pl'));
+  const list = r.list.map(x => ({ nr: helperNr_(st, x[0]), name: helperNameOnly_(s, st, x[0]), role: helperRoleOf_(st, x[0]),
+                                  grafik: inGrafik ? helperSame_(st, x[0]).some(y => inGrafik.indexOf(y) >= 0) : null,
+                                  card: !!helperPhoneOf_(st, x[0]) }))
+    .sort((a, b) => (!a.name - !b.name) || (a.name && b.name ? a.name.localeCompare(b.name, 'pl') : 0) || a.nr - b.nr);
   const counts = { all: list.length, none: 0, p: 0, o: 0, k: 0 };
   list.forEach(x => { counts[x.role || 'none']++; });
   return { at: r.at, chatId: r.chatId, chatName: r.chatName || '', grafikList: r.chatId === s.chatId, list, counts };
@@ -1282,7 +1493,7 @@ function helperRosterPanel_(st, s) {
 
 /* ---------- panel ---------- */
 
-/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik. Bez numerów telefonów. */
+/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik, członkowie. Bez numerów telefonów. */
 function helperPanel_() {
   const st = helperLoad_(), s = helperSettings_();
   return {
