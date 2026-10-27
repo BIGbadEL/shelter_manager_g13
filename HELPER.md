@@ -18,7 +18,7 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 | „Kto dołączy jutro?", „W czwartek potrzebne jeszcze 2 osoby", „3 osoby/dzień są potrzebne" — prowadząca liczy głosy ręcznie | prawie codziennie | **skład na jutro** wieczorem, **dziś** rano, gdy mało osób |
 | „W czwartek były 3 osoby, ktoś się wypisał?", „chyba mi się odkliknęło", „Nie widać Cię w grafiku" | co tydzień | **„wypisali się"** w składzie dnia (wieczorem i rano) — bez osobnych wiadomości o każdej zmianie (niżej) |
 | „Czy ktoś z niedzieli może się przepisać na sobotę?" | co tydzień | **przegląd tygodnia** z najsłabszymi dniami i podpowiedzią „z X na Y" |
-| „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **„Z czatu"** w składzie dnia: wiadomości, które dotyczą tego dnia |
+| „Będę 10–12", „na 2 psy", „do 12:30", „nie dam rady jutro", „wypisuję się z piątku" | codziennie | **bez cytowania** (27.10 — decyzja właściciela: wiadomość ma docelowo iść do „Grafiku", więc cytat to ten sam tekst w tym samym czacie); z takich wiadomości bierze się **rozjazd czatu i ankiety** (niżej) |
 | „Dopisałam się", a głosu nie ma; „wypisuję się", a głos dalej jest; nowa osoba „nie mam dostępu do grafiku" | kilka razy w miesiącu | **rozjazd czatu i ankiety** w składzie dnia, **nowa osoba w grupie** |
 | „Nie ma mnie 13–17 sierpnia", „W poniższych terminach będę nieobecny: …" | kilka razy w miesiącu | **zapowiedziane nieobecności** w przeglądzie tygodnia i w dniu |
 | „potrzebny fioletowy wolo", „świeżak nie może być sam", „tylko fiolet może opiekować się kandydatem" | kilka razy w miesiącu | **klasy członków** (fioletowy / pomarańczowy / kandydat) z listy w panelu, ostrzeżenie w składzie dnia |
@@ -29,8 +29,8 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 ## Funkcje (każda z osobnym włącznikiem w panelu)
 
 1. **Skład na jutro** (`evening`) — codziennie o godzinie „wieczorem" (domyślnie 20): kto jest w ankiecie na
-   jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani od wczoraj, „Z czatu", rozjazd czatu
-   i ankiety, nieobecności, klasy przy imionach (🟣 🟠 🌱) i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
+   jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani od wczoraj, rozjazd czatu i ankiety (🔀),
+   nieobecności (🚫), klasy przy imionach (🟣 🟠 🌱) i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
    wyznaczonych osób), pogoda. W niedzielę na górze: czy jest ankieta na nowy tydzień.
    `eveningAlways` — wysyłaj codziennie (na czas testów); wyłączone = tylko, gdy jest problem.
 2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, **tylko gdy jest problem**
@@ -80,7 +80,15 @@ przegląd tygodnia — „bez 🟣" / „kandydat bez 🟣". Pomarańczowy na ra
 
 **Usunięte: „zmiany w ankiecie"** (osobna wiadomość o każdym dopisaniu i wypisaniu, po kwadransie ciszy) — 26.10.2026,
 decyzja właściciela po pierwszym dniu testu: męczące, a cały sens bota to, żeby takich powiadomień nie dostawać;
-wystarczą podsumowania wieczorem i rano (wypisania są w nich jako „wypisali się", wiadomości z czatu — w „Z czatu").
+wystarczą podsumowania wieczorem i rano (wypisania są w nich jako „wypisali się", z czatu — 🔀 i 🚫).
+
+**Usunięte: „Z czatu"** (cytaty wiadomości o danym dniu w składzie) — 27.10.2026, decyzja właściciela: wiadomość ma docelowo iść
+do „Grafiku", więc cytowanie czatu byłoby wklejaniem tego samego w to samo. Zostaje to, czego w czacie wprost nie ma: **🔀** (pisze,
+że będzie, a nie ma w ankiecie / pisze, że nie da rady, a dalej jest) i **🚫** (zapowiedziana nieobecność). Notatki z czatu nie
+trzymają już treści (tylko kto, kiedy, o których dniach, jaki rodzaj); treść zostaje tylko przy nieobecności — dla „nieobecni",
+gdzie oznaczenia osób („@48600111222") idą jako imię albo numer osoby (`helperMentions_`). Skutek: **pomyłka rodzaju wiadomości
+(`helperKind_`) ukrywa teraz informację** — wcześniej cytat i tak był w składzie. Przykład z 27.10: „Chociaż nie wpadnę w środę
+i czwartek" rozpoznane jako „będzie" (brak „nie wpadnę" w regułach), więc 🔀 nie powie, że osoba z ankiety nie przyjdzie.
 B79 pilnuje, że w ciągu dnia nic nie idzie. Nie przywracać bez decyzji właściciela.
 
 ## Jak bot widzi „Grafik" — bramka Green API

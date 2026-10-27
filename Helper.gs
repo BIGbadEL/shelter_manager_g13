@@ -120,6 +120,17 @@ function helperNameOnly_(s, st, id) {
   const p = same.filter(x => st.people[x] && st.people[x].n)[0];
   return p ? st.people[p].n : '';
 }
+/**
+ * Cytat z czatu bez numerów telefonów: oznaczenie osoby („@48600111222" — tak WhatsApp zapisuje wzmiankę) → „@Ania" albo
+ * „@#17", nieznana — „@…"; inne ciągi cyfr jak numer telefonu → „…" (noPhones_). Numery nie opuszczają serwera (27.10).
+ */
+function helperMentions_(s, st, text) {
+  const out = String(text == null ? '' : text).replace(/@(\d{6,15})\b/g, (m, d) => {
+    const n = helperName_(s, st, d + '@c.us');
+    return '@' + (n === 'bez nazwy' ? '…' : n);
+  });
+  return noPhones_(out);
+}
 /** „#17 = Ania" (numer osoby) albo „123 = Ania" (końcówka numeru telefonu), w linijkach albo po przecinku → {'#17': 'Ania', '123': 'Ania'}. */
 function helperNameMap_(text) {
   const out = {};
@@ -355,7 +366,7 @@ function helperLoad_() {
 /** Porządki przed zapisem: minione dni znikają, listy mają swoje sufity. */
 function helperPrune_(st) {
   const T = today_(), y = addDays_(T, -1);
-  st.notes = st.notes.filter(n => (n.d || []).some(d => d >= y) || (n.k === 'ask' && Date.now() - n.at < 86400000)).slice(-HELPER_LIMITS.NOTES);
+  st.notes = st.notes.filter(n => (n.d || []).some(d => d >= y)).slice(-HELPER_LIMITS.NOTES);
   st.gone = st.gone.filter(g => g.d >= y).slice(-HELPER_LIMITS.GONE);
   st.abs = st.abs.filter(a => (a.iv || []).some(iv => iv[1] >= T)).slice(-HELPER_LIMITS.ABS);
   st.seen = st.seen.slice(-HELPER_LIMITS.SEEN);
@@ -891,35 +902,32 @@ function helperAbsence_(text, msgDate, hour) {
   return iv.filter(x => x[1] >= msgDate);
 }
 
-/** Notatka z czatu — tylko taka, która dotyczy konkretnych dni (albo nieobecność). */
+/**
+ * Notatka z czatu — tylko taka, która dotyczy konkretnych dni (albo nieobecność): kto, kiedy, o których dniach, jakiego
+ * rodzaju — bez treści (cytatów w składzie dnia nie ma od 27.10). Treść zostaje tylko przy nieobecności („nieobecni").
+ */
 function helperNote_(st, id, sender, text, at) {
   if (id && (st.notes.some(n => n.id === id) || st.abs.some(a => a.id === id))) return;   // ta sama z historii i z kolejki
   const day = helperDate_(at), hour = Number(helperTime_(at).split(':')[0]);
   const k = helperKind_(text);
-  const quote = text.replace(/\s*\n+\s*/g, ' / ').replace(/\s+/g, ' ').trim();
-  const x = quote.length > HELPER_LIMITS.TEXT ? quote.slice(0, HELPER_LIMITS.TEXT - 1) + '…' : quote;
   if (k === 'abs') {
     const iv = helperAbsence_(text, day, hour);
     if (iv.length) {
-      st.abs.push({ id, w: sender, at, iv, x });
-      const d = [];                                       // cytat przy każdym dniu nieobecności z najbliższych dwóch tygodni
+      const quote = text.replace(/\s*\n+\s*/g, ' / ').replace(/\s+/g, ' ').trim();
+      st.abs.push({ id, w: sender, at, iv, x: quote.length > HELPER_LIMITS.TEXT ? quote.slice(0, HELPER_LIMITS.TEXT - 1) + '…' : quote });
+      const d = [];                                       // nieobecność przy każdym dniu z najbliższych dwóch tygodni (🚫 w składzie)
       iv.forEach(r => {
         for (let a = r[0]; a <= r[1] && d.length < 14; a = addDays_(a, 1)) {
           if (a >= day && helperDaysBetween_(day, a) <= 13 && d.indexOf(a) < 0) d.push(a);
         }
       });
-      if (d.length) st.notes.push({ id, w: sender, at, d: d.sort(), k, x });
+      if (d.length) st.notes.push({ id, w: sender, at, d: d.sort(), k });
       return;
     }
   }
   const d = helperDayRefs_(text, day, hour);
   if (!d.length) return;
-  const n = { id, w: sender, at, d, k: k === 'abs' ? 'out' : k, x };
-  if (n.k === 'ask') {                                    // ilu było w ankiecie, gdy padło pytanie — „bez odzewu?"
-    n.c = {};
-    d.forEach(day2 => { const p = helperPollFor_(st, day2); if (p) n.c[day2] = helperVotersOn_(p, day2).length; });
-  }
-  st.notes.push(n);
+  st.notes.push({ id, w: sender, at, d, k: k === 'abs' ? 'out' : k });
 }
 
 /* ---------- dane aplikacji (leniwie — przebieg bez raportu nie czyta arkusza) ---------- */
@@ -1025,14 +1033,8 @@ function helperDayText_(s, st, d, ctx) {
       : '🌱 kandydat bez fioletowego ⚠️ (' + roles.k.map(name).join(', ') + ') — kandydat nie może być sam');
   }
   if (info.abs.length) L.push('🚫 zapowiedziana nieobecność: ' + info.abs.map(a => name(a.w)).filter((x, i, a) => a.indexOf(x) === i).join(', '));
-  if (info.notes.length) {
-    L.push('💬 Z czatu:');
-    info.notes.slice(-HELPER_LIMITS.DAY_NOTES).forEach(x => {
-      const c = x.k === 'ask' && x.c && x.c[d] != null ? ', wtedy ' + x.c[d] + ' os.' : '';
-      L.push('• ' + (x.k === 'ask' ? '❓ ' : x.k === 'out' ? '➖ ' : x.k === 'abs' ? '🚫 ' : x.k === 'in' ? '➕ ' : '')
-        + name(x.w) + ' (' + helperWhen_(x.at) + c + '): „' + x.x + '"');
-    });
-  }
+  // cytatów z czatu tu nie ma (27.10.2026, decyzja właściciela): wiadomość ma docelowo iść do „Grafiku", a cytowanie
+  // czatu w ten sam czat to wklejanie tego samego w to samo. Z czatu zostaje to, czego w nim wprost nie ma: 🚫 i 🔀
   if (info.poll) {
     // rozjazd czatu i ankiety: „dopisałam się na wtorek", a głosu nie ma (albo nowa osoba bez dostępu do ankiety);
     // „wypisuję się z jutra", a głos dalej jest — numer nadawcy bywa w innym formacie niż numer głosującego (alias)
@@ -1346,7 +1348,7 @@ function helperCommand_(s, st, text, ctx) {
     const T2 = today_();
     const list = st.abs.filter(a => a.iv.some(iv => iv[1] >= T2));
     return list.length ? '*Zapowiedziane nieobecności*\n' + list.map(a => '🚫 ' + helperName_(s, st, a.w) + ': ' + a.iv.map(helperSpan_).join(', ')
-      + '\n   „' + a.x + '"').join('\n') : 'Nikt nie zapowiedział nieobecności.';
+      + '\n   „' + helperMentions_(s, st, a.x) + '"').join('\n') : 'Nikt nie zapowiedział nieobecności.';
   }
   if (/^nieaktyw/.test(w)) return helperInactiveText_(s, st);
   if (/^(ludzie|osoby)/.test(w)) return helperPeopleText_(s, st);

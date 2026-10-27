@@ -217,12 +217,12 @@ const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
 /**
  * Sufity pomocnika. Właściwość ma limit 9 KB na wartość — każda część stanu najwyżej HELPER_BYTES bajtów,
  * listy najwyżej tyle pozycji. NAME_MAP — pole panelu „Imiona" (ta sama liczba w Script.html — S145b),
- * TEXT — cytat z czatu, MESSAGE — długość wiadomości, DAY_NOTES — cytatów w składzie dnia, CMDS — pytań na przebieg,
+ * TEXT — cytat nieobecności z czatu („nieobecni"), MESSAGE — długość wiadomości, CMDS — pytań na przebieg,
  * ROSTER — członków na liście w panelu (społeczność G13 to ok. 40–100 osób; więcej i tak nie zmieści się w 8 KB),
  * IDS — zapamiętanych numerów osób (#17; lista członków + osoby z „Grafiku", ok. 25 bajtów na osobę).
  */
 const HELPER_LIMITS = { MIN_MAX: 10, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, NOTES: 40, GONE: 40, ABS: 20,
-                        SEEN: 60, LOG: 30, PANEL_LOG: 15, TEXT: 160, DAY_NOTES: 8, CMDS: 3, MESSAGE: 3500, ROSTER: 150, IDS: 250 };
+                        SEEN: 60, LOG: 30, PANEL_LOG: 15, TEXT: 160, CMDS: 3, MESSAGE: 3500, ROSTER: 150, IDS: 250 };
 const HELPER_BYTES = 8000;
 const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps Script: 1, 5, 10, 15 albo 30)
 const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)

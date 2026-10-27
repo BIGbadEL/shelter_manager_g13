@@ -349,6 +349,18 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   const st = env.st();
   check('wiadomość bez dnia — bez notatki; nieobecność — zapamiętana z przedziałem i przy każdym dniu', st.notes.length === 1 && st.notes[0].k === 'abs'
     && st.notes[0].d.join() === '2026-10-26,2026-10-27,2026-10-28' && JSON.stringify(st.abs[0].iv) === '[["2026-10-26","2026-10-28"]]', JSON.stringify(st.notes));
+  check('notatka bez treści wiadomości (cytatów w składzie nie ma — 27.10); treść tylko przy nieobecności', !('x' in st.notes[0]) && /Nie ma mnie/.test(st.abs[0].x),
+    JSON.stringify(st.notes[0]));
+
+  // „nieobecni": cytat z czatu — oznaczenie osoby (WhatsApp zapisuje je numerem) imieniem, nieznanej „@…", numer w treści „…"
+  env.push(text(GOSIA, 'Gosia', 'Hej wszystkim', '2026-10-25T10:02:00+02:00'),
+           text(DAWID, 'Dawid', 'Nie będzie mnie 26-27 października, @48601000007 przejmiesz Draco? @48609999999 dzwoń 600 111 222', '2026-10-25T10:03:00+02:00'));
+  env.tick();
+  env.push(text(OWNER, 'Grzesiek', 'nieobecni', '2026-10-25T10:04:00+02:00', OWNER));
+  env.tick('2026-10-25T10:10:00+02:00');
+  const ab = env.last();
+  check('„nieobecni": znana osoba — „@Gosia", nieznana — „@…", numer w treści — „…"', /🚫 Dawid: /.test(ab)
+    && /„Nie będzie mnie 26-27 października, @Gosia przejmiesz Draco\? @… dzwoń …"/.test(ab) && !/4860|600 111 222/.test(ab), ab);
 })();
 
 /* ---------- B78: skład dnia — wieczorem, rano ---------- */
@@ -369,7 +381,8 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
            vote('P1', CELINA, [], '2026-10-25T15:28:00+02:00', { name: 'Celina' }),
            text(KASIA, 'Kasia', 'Dopisałam się na poniedziałek, będę 10-12 — nie mogę zaznaczyć w grafiku', '2026-10-25T16:00:00+02:00'),
            text(BASIA, 'Basia', 'Muszę się wypisać z poniedziałku, nie dam rady', '2026-10-25T17:00:00+02:00'),
-           text(EWA, 'Ewa', 'Kto dołączy w poniedziałek?', '2026-10-25T18:00:00+02:00'));
+           text(EWA, 'Ewa', 'Kto dołączy w poniedziałek?', '2026-10-25T18:00:00+02:00'),
+           text(ANIA, 'Ania', '@48601000007 przypomnij w poniedziałek, jak chodzić z Bysiem', '2026-10-25T18:30:00+02:00'));
   env.tick();
   const before = env.msgs().length;
   env.tick('2026-10-25T20:05:00+02:00');
@@ -378,8 +391,11 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && /👥 Ania, Dawid, Basia|👥 .*Ania.*Basia.*Dawid/.test(ev), ev);
   check('...wypisani: Celina (z godziną)', /➖ wypisali się: Celina \(nd 15:28\)/.test(ev), ev);
   check('...brak fioletowego (fioletowa Gosia nie głosowała)', /🟣 brak fioletowego ⚠️/.test(ev));
-  check('...z czatu: cytaty z godziną, pytanie z liczbą osób w chwili pytania', /Kasia \(nd 16:00\): „Dopisałam się na poniedziałek/.test(ev)
-    && /❓ Ewa \(nd 18:00, wtedy 3 os\.\): „Kto dołączy w poniedziałek\?"/.test(ev), ev);
+  check('...bez cytatów z czatu (27.10: wiadomość ma docelowo iść do „Grafiku" — to byłby ten sam tekst w tym samym czacie), bez numerów z oznaczeń',
+    !/Z czatu|💬|Dopisałam się|Kto dołączy|przypomnij|Bysiem|48601000007/.test(ev), ev);
+  const notes = env.st().notes;
+  check('...notatki z czatu (będzie, nie będzie, pytanie, inne) bez treści — pomocnik jej już nie trzyma', notes.length >= 4
+    && notes.every(n => !('x' in n)) && !/Dopisałam|Bysiem/.test(JSON.stringify(notes)), JSON.stringify(notes));
   check('...rozjazd: Kasia pisze, że będzie, a nie ma jej w ankiecie; Basia pisze, że nie da rady, a dalej jest',
     /pisze, że będzie, a nie ma w ankiecie: Kasia/.test(ev) && /pisze, że nie da rady, a dalej w ankiecie: Basia/.test(ev), ev);
   check('...psy: 4 naszych, 5 spacerów (Hańcza na dwa), najdłużej bez spaceru: Draco', /🐕 4 psów, 5 spacerów \(~2 na osobę\)/.test(ev)
@@ -444,8 +460,9 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('włącznika „zmiany w ankiecie" już nie ma', env.conf.HELPER_FEATURES.indexOf('changes') < 0, env.conf.HELPER_FEATURES.join());
   env.tick('2026-10-26T20:05:00+02:00');
   const ev = env.msgs().filter(m => /Jutro — wtorek 27\.10/.test(m))[0] || '';
-  check('wieczorem jeden skład z tym wszystkim: kto jest, kto się wypisał, co napisał', env.msgs().length === 1 && /👥 .*Kasia/.test(ev)
-    && /➖ wypisali się: Basia \(pn 12:08\)/.test(ev) && /Ania \(pn 13:00\): „Muszę się wypisać z jutra/.test(ev), ev);
+  check('wieczorem jeden skład z tym wszystkim: kto jest, kto się wypisał, kto pisze, że nie da rady (bez cytatu — 27.10)', env.msgs().length === 1
+    && /👥 .*Kasia/.test(ev) && /➖ wypisali się: Basia \(pn 12:08\)/.test(ev) && /🔀 pisze, że nie da rady, a dalej w ankiecie: Ania/.test(ev)
+    && !/Muszę się wypisać/.test(ev), ev);
 })();
 
 /* ---------- B80: przegląd tygodnia, skład grupy, pytania, sufity, panel ---------- */

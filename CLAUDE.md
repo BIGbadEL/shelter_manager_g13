@@ -339,7 +339,10 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   reguły co kolejka). Ankieta `partial` (poznana z głosu albo z historii sprzed włączenia powiadomień — `gate.from`):
   „co najmniej N os.", „≥". Ankiety w dwóch właściwościach (`helperPolls`, `helperPolls2`). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
   („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. Czat (`helperDayRefs_`, `helperKind_`, `helperAbsence_`)
-  to heurystyka na eksporcie z 16.03–24.10 — cytaty idą do wiadomości w całości, więc pomyłka rodzaju nie ukrywa treści.
+  to heurystyka na eksporcie z 16.03–24.10. **Cytatów z czatu w składzie dnia nie ma** (27.10, decyzja właściciela: wiadomość ma
+  docelowo iść do „Grafiku" — cytat to ten sam tekst w tym samym czacie; B78, B79): zostają 🔀 (rozjazd czatu i ankiety) i 🚫
+  (nieobecność), notatki nie trzymają treści; treść tylko przy nieobecności („nieobecni", oznaczenia osób jako imię — `helperMentions_`,
+  B77). **Nie przywracać bez pytania.** Skutek: pomyłka rodzaju (`helperKind_`) ukrywa teraz informację — wcześniej cytat i tak był.
 - **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
   katalogu z grupą (`team` w `getData`, kolumna `grupa_psa`). `addDog(data…)` i `updateDog(id, data…)`
   przyjmują `data.team`; **brak pola (karta sprzed 1.3) = grupa zostaje, jaka była** — inaczej stara karta
@@ -609,7 +612,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1932 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1935 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 

@@ -674,6 +674,9 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   wysyła na WhatsAppa właściciela („📲" w panelu, „kto 17" w czacie); udostępniony botowi kontakt dostaje odpowiedź z #
   (B84, S146). Dzień wcześniej (test @45) panel pokazywał pełne numery — cofnięte. Wybór kontaktu w panelu (lista dnia,
   pomocnik) też bez numerów — po nazwie, z kluczem kontaktu z serwera (B69, S140, S145).
+- **Bez cytatów z czatu w składzie dnia** (27.10, decyzja właściciela): wiadomość ma docelowo iść do „Grafiku", więc „Z czatu"
+  byłoby wklejaniem tego samego w to samo. Zostają 🔀 (rozjazd czatu i ankiety) i 🚫 (nieobecność); „nieobecni" cytuje dalej,
+  ale oznaczenia osób zamiast numerem — imieniem (B77–B79).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 
