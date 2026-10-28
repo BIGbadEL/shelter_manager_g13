@@ -117,11 +117,12 @@ PIN wpisuje właściciel.
   - edycja: imię, 2 spacery, grupa innej grupy, notatka;
   - zaraz po edycji akcja na jego spacerze widzi zmianę.
 - [ ] **Zadanie:** dodanie na dziś i na jutro, odhaczenie.
-- [ ] **Panel:**
-  - liczniki, Dziennik spowolnień;
-  - ustawienia maila (bez zapisu);
+- [ ] **Panel** (od 1.5 w zwijanych sekcjach — rozwinąć stuknięciem w nagłówek, drugie zwija):
+  - Diagnostyka: liczniki, Dziennik spowolnień;
+  - Lista i e-mail: ustawienia maila (bez zapisu);
   - WhatsApp: stan konta, bez wysyłek;
-  - pomocnik Grafiku (od 1.5): stan, „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu.
+  - pomocnik Grafiku (od 1.5): na teście sekcja „— produkcja" wyszarzona, „— test" działa — stan (czeka na produkcję albo
+    pracuje), „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu.
 - [ ] **Sprzątanie:** usunięcie psa próbnego i zadań, wyjście z trybu edycji.
 
 ## 3. Wynik

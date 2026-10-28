@@ -344,6 +344,24 @@
   .panelbox h3{margin:0 0 9px;font-size:13.5px;font-weight:800;color:var(--forest);}
   .panelbox .lbl{font-size:13px;color:var(--ink);font-weight:600;flex:1;}
   .panelbox select{min-width:104px;}
+  /* sekcje Panelu (28.10, „panel jest już za duży"): nagłówek-przycisk, treść zwinięta; w środku dawne pola bez własnej
+     ramki — oddziela je kreska. `off` — sekcja drugiego środowiska (pomocnik): wyszarzona, bez rozwijania */
+  .psec{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);}
+  .psec-h{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;border:0;background:none;border-radius:12px;
+    font-family:inherit;font-size:14px;font-weight:800;color:var(--forest);text-align:left;cursor:pointer;}
+  .psec-t{flex:1;min-width:0;}
+  .psec-badge{flex:none;max-width:46%;font-size:12px;font-weight:700;color:var(--muted);text-align:right;}
+  .psec-arrow{flex:none;width:12px;font-size:13px;color:var(--muted);}
+  .psec-b{padding:0 12px 12px;}
+  .psec .panelbox{margin-top:0;padding:12px 1px 4px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;}
+  .psec .panelbox:first-child{border-top:0;padding-top:2px;}
+  .psec.off{background:#ece8dd;opacity:.72;}
+  .psec.off .psec-h{cursor:default;color:var(--muted);}
+  .psec.off .hint{margin-top:0;}
+  /* pomocnik na produkcji: funkcja z trybem (wyłączona / w teście / gotowa) — nazwa i lista wyboru w jednym wierszu */
+  .hmode{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;font-size:13px;font-weight:600;color:var(--ink);}
+  .hmode label{flex:1 1 150px;min-width:0;}
+  .panelbox .hmode select{flex:none;min-width:0;font-family:inherit;font-size:13px;padding:7px 6px;border:1px solid #bcccbc;border-radius:9px;background:#fff;}
   .hint{margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted);}
   .mailtpl{display:block;width:100%;margin-bottom:8px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;
     background:#fff;color:var(--ink);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical;}

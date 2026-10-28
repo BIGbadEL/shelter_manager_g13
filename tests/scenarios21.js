@@ -64,9 +64,13 @@ function S144(){
 // kontakt (odbiorca) to klucz z serwera (contactKey_), nie adres z numerem — numery nie opuszczają serwera (27.10)
 const GRAFIK = '120363000000000001@g.us', OWNER = 'kGrzesiek00000001';
 const FEATS = {evening:true, eveningAlways:true, morning:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
+const NOT_READY = {evening:false, morning:false, week:false, newPoll:false, members:false, lastWeek:false};
 const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toKey:'', toName:'', min:3, evening:20, morning:7,
-    weekDays:[0,3], names:'', features: Object.assign({}, FEATS)}, s),
-  configured: true, env: 'test', trigger: false, stat: null, log: [], polls: [], people: 0, notes: 0, abs: 0, members: null}, o);
+    weekDays:[0,3], names:'', features: Object.assign({}, FEATS), ready: Object.assign({}, NOT_READY)}, s),
+  configured: true, env: 'test', lease: null, trigger: false, stat: null, log: [], polls: [], people: 0, members: null}, o);
+/** Sekcja Panelu po kluczu (panelSec) i jej rozwinięcie stuknięciem w nagłówek — jak człowiek. */
+const sec = (app, key) => doc(app).querySelector('.psec[data-sec="' + key + '"]');
+const openSec = (app, key) => { if(!sec(app, key).classList.contains('open')) app.click('.psec[data-sec="' + key + '"] [data-act="panelSec"]'); return sec(app, key); };
 const POLL = {settings: {question:'Grafik [TYDZIEŃ]', options:['Pon','Wt'], multi:true, day:0, hour:12, enabled:false, chatId:'', chatName:''},
   configured: true, state: null, last: null, next: {day:'2026-10-25', label:'26.10-01.11'}, now: {label:'26.10-01.11', question:'Grafik 26.10-01.11', status:'', at:''}};
 const DIAG = h => ({env:'test', triggerInstalled:true, triggerCount:1, resetHour:18, serverDate:D, serverTime:'10:00', businessDate:D,
@@ -84,7 +88,8 @@ function openPanel(h, o){
 function S145(){
   console.log('S145: panel pomocnika Grafiku — grupa i kontakt z list bota, szkic, zapis z PIN-em, podgląd, „Sprawdź teraz", bramka');
   const app = openPanel(HELPER());
-  check('sekcja w panelu: „Pomocnik Grafiku (test)", wyłączony', /Pomocnik Grafiku \(test\)/.test(app.html()) && /Wyłączony\./.test(app.html()));
+  openSec(app, 'botTest');
+  check('sekcja w panelu: „Pomocnik Grafiku — test", wyłączony', /Pomocnik Grafiku — test/.test(txt(sec(app, 'botTest'))) && /Wyłączony\./.test(txt(sec(app, 'botTest'))));
   app.click('[data-act="pollChats"]');
   respondTo(app, 'getPollChats', [{id: GRAFIK, name: 'Grafik'}, {id: '120363000000000002@g.us', name: 'Grupa próbna'}]);
   app.click('[data-act="reportContacts"]');
@@ -106,9 +111,9 @@ function S145(){
   app.click('[data-act="helperSave"]');
   const save = lastCall(app, 'setHelperSettings');
   const want = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', min: 4, evening: 20, morning: 7, weekDays: [0, 5],
-    names: '123 = Ania', features: Object.assign({}, FEATS, {weather: false}), enabled: true};
-  check('zapis: grupa, kontakt (klucz i nazwa), minimum, dni, imiona, włączniki, PIN', !!save && JSON.stringify(save.args) === JSON.stringify([want, '1234']),
-    save && JSON.stringify(save.args));
+    names: '123 = Ania', features: Object.assign({}, FEATS, {weather: false}), ready: Object.assign({}, NOT_READY), enabled: true};
+  check('zapis: grupa, kontakt (klucz i nazwa), minimum, dni, imiona, włączniki, PIN; na teście nic „gotowego" (wszystko prywatnie)',
+    !!save && JSON.stringify(save.args) === JSON.stringify([want, '1234']), save && JSON.stringify(save.args));
   respondTo(app, 'setHelperSettings', HELPER({trigger: true}, Object.assign({}, want, {features: want.features})));
   check('po zapisie: komunikat, bez „Niezapisane", włączony z wyzwalaczem', /zapisany i włączony/.test(toastOf(app)) && hidden(app, '.helperdirty')
     && /Włączony — przebieg co 10 min, pisze do Grzesiek/.test(txt(doc(app).getElementById('view'))), toastOf(app));
@@ -196,12 +201,12 @@ function S145d(){
   const on = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true};
   const off = openPanel(HELPER({trigger: true, gate: {ok: false, at: Date.now(), from: 0,
     missing: ['powiadomienia o wiadomościach przychodzących', 'powiadomienia o ankietach']}}, on));
-  const box = [...doc(off).querySelectorAll('.panelbox')].find(b => /Pomocnik Grafiku/.test(b.textContent));
+  const box = sec(off, 'botTest');
   const warn = box && [...box.querySelectorAll('.pollstate')].map(txt).join(' | ');
   check('bramka bez powiadomień: ostrzeżenie z listą, stan pomocnika nie „zielony"', /Nie widzi „Grafiku" — w konsoli Green API wyłączone: powiadomienia o wiadomościach przychodzących; powiadomienia o ankietach/.test(warn)
     && !box.querySelector('.pollstate.ok'), warn);
   const ok = openPanel(HELPER({trigger: true, gate: {ok: true, at: Date.now(), from: Date.parse('2026-10-25T21:30:00+01:00'), missing: []}}, on));   // 25.10 — już czas zimowy
-  const box2 = [...doc(ok).querySelectorAll('.panelbox')].find(b => /Pomocnik Grafiku/.test(b.textContent));
+  const box2 = sec(ok, 'botTest');
   check('włączone: „Powiadomienia w bramce włączone (od 25.10 21:30…)", stan zielony', /Powiadomienia w bramce włączone \(od 25\.10 21:30/.test(txt(box2))
     && !!box2.querySelector('.pollstate.ok'));
   check('bez błędów', off.errors.length === 0 && ok.errors.length === 0, off.errors.concat(ok.errors).join('; '));
@@ -265,6 +270,107 @@ function S146(){
   check('bez błędów', app.errors.length === 0 && empty.errors.length === 0, app.errors.concat(empty.errors).join('; '));
 }
 
+/* ---------- S147: Panel w sekcjach; pomocnik — produkcja i test (jeden aktywny), tryb funkcji na produkcji ---------- */
+function S147(){
+  console.log('S147: Panel w zwijanych sekcjach (28.10); pomocnik — dwie sekcje, aktywna z tego środowiska, druga wyszarzona; na produkcji tryb funkcji („w teście" / „gotowa" — do Grafiku) z pytaniem');
+  const on = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true};
+  const app = openPanel(HELPER({trigger: true}, on));
+  const keys = [...doc(app).querySelectorAll('#view .psec')].map(s => s.dataset.sec);
+  check('sekcje po kolei: lista i e-mail, WhatsApp, pomocnik — produkcja, pomocnik — test, członkowie, diagnostyka', keys.join() === 'app,wa,botProd,botTest,members,diag', keys.join());
+  const body = key => sec(app, key).querySelector('.psec-b');
+  check('na start wszystkie zwinięte (treść ukryta), w nagłówku krótki stan', ['app', 'wa', 'botTest', 'members', 'diag'].every(k => body(k).classList.contains('hidden'))
+    && /ankieta wył\./.test(txt(sec(app, 'wa').querySelector('.psec-badge'))) && txt(sec(app, 'botTest').querySelector('.psec-badge')) === 'włączony');
+  openSec(app, 'app');
+  check('stuknięcie w nagłówek rozwija sekcję', !body('app').classList.contains('hidden') && sec(app, 'app').querySelector('[data-act="panelSec"]').getAttribute('aria-expanded') === 'true'
+    && !!sec(app, 'app').querySelector('#mailTemplate'));
+  app.window.eval('fetchDiag()');                         // odświeżenie panelu — rozwinięte zostaje rozwinięte
+  respondTo(app, 'getDiagnostics', DIAG(HELPER({trigger: true}, on)));
+  calls(app, 'getPollState').forEach(() => respondTo(app, 'getPollState', {code:'authorized', text:'połączone'}));
+  check('po przerysowaniu panelu sekcja dalej rozwinięta, reszta zwinięta', !body('app').classList.contains('hidden') && body('wa').classList.contains('hidden'));
+  app.click('.psec[data-sec="app"] [data-act="panelSec"]');
+  check('drugie stuknięcie zwija', body('app').classList.contains('hidden'));
+
+  // test: sekcja produkcji wyszarzona (ustawia się ją w aplikacji produkcyjnej), sekcja testu działa
+  const prodOff = sec(app, 'botProd');
+  check('test: „Pomocnik Grafiku — produkcja" wyszarzona, bez rozwijania i bez pól, mówi, gdzie się ją ustawia i że ma pierwszeństwo',
+    prodOff.classList.contains('off') && !prodOff.querySelector('[data-act], input, select') && /aplikacji produkcyjnej/.test(txt(prodOff)) && /pierwszeństwo/.test(txt(prodOff)),
+    txt(prodOff));
+  openSec(app, 'botTest');
+  check('test: zwykłe włączniki, bez trybu „gotowa" (tu wszystko prywatnie), w opisie 🧪 i pierwszeństwo produkcji', !!doc(app).getElementById('helperF_evening')
+    && !doc(app).querySelector('[id^="helperM_"]') && /tylko prywatnie/.test(txt(sec(app, 'botTest'))) && /pierwszeństwo ma produkcja/.test(txt(sec(app, 'botTest'))));
+
+  // test czeka na produkcję — panel to mówi w obu sekcjach
+  const lease = {at: Date.parse('2026-10-24T18:40:00+02:00'), until: Date.parse('2026-10-24T19:10:00+02:00'), waits: true};
+  const wait = openPanel(HELPER({trigger: true, lease}, on));
+  openSec(wait, 'botTest');
+  check('test z sygnałem produkcji: „Czeka — pracuje pomocnik produkcji (sygnał 18:40, ważny do 19:10)", nie „zielony"; w nagłówku „czeka"',
+    /Czeka — pracuje pomocnik produkcji \(sygnał 18:40, ważny do 19:10\)/.test(txt(sec(wait, 'botTest'))) && !sec(wait, 'botTest').querySelector('.pollstate.ok')
+    && /czeka/.test(txt(sec(wait, 'botTest').querySelector('.psec-badge'))), txt(sec(wait, 'botTest').querySelector('.pollstate')));
+  check('...a wyszarzona sekcja produkcji: „Teraz pracuje (sygnał …)"', /Teraz pracuje \(sygnał 24\.10 18:40/.test(txt(sec(wait, 'botProd'))), txt(sec(wait, 'botProd')));
+
+  // produkcja: aktywna sekcja produkcji z trybem funkcji, sekcja testu wyszarzona
+  const PROD = (o, s) => HELPER(Object.assign({env: 'prod'}, o), s);
+  const pd = openPanel(PROD({trigger: true, lease: {at: Date.parse('2026-10-24T18:40:00+02:00'), on: true, ok: true, err: ''}}, on));
+  const testOff = sec(pd, 'botTest');
+  check('produkcja: „Pomocnik Grafiku — test" wyszarzona — ustawia się w aplikacji testowej, pracuje, gdy tu wyłączony; ostatni sygnał ✓',
+    testOff.classList.contains('off') && !testOff.querySelector('[data-act], input, select') && /aplikacji testowej/.test(txt(testOff))
+    && /tu\s+pomocnik jest wyłączony/.test(txt(testOff)) && /Ostatni sygnał: 24\.10 18:40:00 ✓/.test(txt(testOff)), txt(testOff));
+  openSec(pd, 'botProd');
+  const modes = [...doc(pd).querySelectorAll('[id^="helperM_"]')].map(s => s.id.slice(8));
+  check('produkcja: tryb przy każdej funkcji z wiadomością (' + modes.length + '), „codziennie", pogoda i pytania — zwykłe włączniki',
+    modes.join() === 'evening,morning,week,newPoll,members,lastWeek' && !doc(pd).getElementById('helperF_evening')
+    && ['eveningAlways', 'weather', 'commands'].every(k => !!doc(pd).getElementById('helperF_' + k)), modes.join());
+  check('...trzy tryby: wyłączona / w teście → do kontaktu / gotowa → do Grafiku; na start „w teście"', opts(pd, '#helperM_evening')
+    === 'off=wyłączona|test=w teście → do kontaktu|group=gotowa → do Grafiku' && doc(pd).getElementById('helperM_week').value === 'test');
+  check('...sygnał dla bota testowego doszedł', /Sygnał dla bota testowego \(„pracuję", 24\.10 18:40:00\): doszedł ✓/.test(txt(sec(pd, 'botProd'))), txt(sec(pd, 'botProd')));
+  fill(pd, {'#helperM_evening': 'group', '#helperM_lastWeek': 'off'});
+  check('zmiana trybu — „Niezapisane zmiany"', !hidden(pd, '.helperdirty'));
+  let asked = '';
+  pd.window.confirm = m => { asked = m; return false; };
+  pd.click('[data-act="helperSave"]');
+  check('nowa funkcja „gotowa" — pytanie przed zapisem (do kogo i co pójdzie); „Anuluj" — nic nie idzie', /Do grupy „Grafik" — do wszystkich jej członków — zaczną iść: skład na jutro — wieczorem\./.test(asked)
+    && /imiona z kontaktów bota/.test(asked) && !calls(pd, 'setHelperSettings').length, asked);
+  pd.window.confirm = m => { asked = m; return true; };
+  pd.click('[data-act="helperSave"]');
+  const save = lastCall(pd, 'setHelperSettings');
+  check('„OK" — zapis z trybami: skład na jutro gotowy, miniony tydzień wyłączony, reszta w teście', !!save && save.args[0].ready.evening === true
+    && save.args[0].features.evening === true && save.args[0].features.lastWeek === false && save.args[0].ready.lastWeek === false
+    && save.args[0].ready.week === false && save.args[0].features.week === true, save && JSON.stringify(save.args[0]));
+  const saved = Object.assign({}, save.args[0], {ready: Object.assign({}, NOT_READY, {evening: true})});
+  respondTo(pd, 'setHelperSettings', PROD({trigger: true, lease: {at: Date.parse('2026-10-24T18:45:00+02:00'), on: true, ok: false, err: 'aplikacja testowa odpowiedziała kodem 404'}}, saved));
+  const st = txt(sec(pd, 'botProd'));
+  check('po zapisie: „do Grafiku: skład na jutro — wieczorem"; sygnał nie doszedł — ostrzeżenie', /pisze do Grzesiek; do Grafiku: skład na jutro — wieczorem/.test(st)
+    && /nie doszedł — aplikacja testowa odpowiedziała kodem 404\. Jeśli bot testowy jest włączony, może pracować równocześnie/.test(st)
+    && !!sec(pd, 'botProd').querySelector('.hint.pollerr'), st);
+  asked = '';
+  fill(pd, {'#helperMin': '4'});
+  pd.click('[data-act="helperSave"]');
+  check('zapis bez nowej funkcji „gotowej" — bez pytania', asked === '' && lastCall(pd, 'setHelperSettings').args[0].min === 4);
+
+  // stałe przeglądarki = serwer (Config.gs)
+  const env = makeContext({ props: { pin: '1234' } });
+  const src = fs.readFileSync(path.join(ROOT, 'Script.html'), 'utf8');
+  const client = JSON.parse(((src.match(/const HELPER_READY = (\[[^\]]*\]);/) || [])[1] || '[]').replace(/'/g, '"'));
+  check('funkcje z trybem w przeglądarce = HELPER_READY na serwerze', JSON.stringify(client) === JSON.stringify(env.conf.HELPER_READY),
+    JSON.stringify(client) + ' / ' + JSON.stringify(env.conf.HELPER_READY));
+
+  // bez trybu edycji (5 stuknięć w datę) Panel to sama diagnostyka — bez sekcji
+  const plain = buildApp();
+  plain.seed(base({dogs: [dogFree({id: 1, name: 'Borys'})]}));
+  plain.window.__state.view = 'diag';
+  plain.window.eval("render('nav')");
+  check('Panel bez trybu edycji: bez sekcji, diagnostyka od razu', !doc(plain).querySelector('.psec') && /Dane serwera tylko w trybie edycji/.test(plain.html()));
+  // nieudane pobranie panelu — sekcja diagnostyki sama się rozwija (tam komunikat i „Spróbuj jeszcze raz")
+  const failed = buildApp();
+  failed.seed(base({dogs: [dogFree({id: 1, name: 'Borys'})]}));
+  failed.window.__setAdmin('1234');
+  failed.click('.tab[data-tab="diag"]');
+  failTo(failed, 'getDiagnostics', 'Przekroczono limit czasu');
+  check('nieudane pobranie: diagnostyka rozwinięta, „Spróbuj jeszcze raz" na wierzchu', !sec(failed, 'diag').querySelector('.psec-b').classList.contains('hidden')
+    && !!sec(failed, 'diag').querySelector('[data-act="diagRetry"]') && /nie udało się pobrać/.test(txt(sec(failed, 'diag').querySelector('.psec-badge'))));
+  check('bez błędów', [app, wait, pd, plain, failed].every(a => a.errors.length === 0), [app, wait, pd, plain, failed].map(a => a.errors.join('; ')).join(' | '));
+}
+
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */
 async function S145c(){
   console.log('S145c: pomocnik — odpowiedź nie przyszła (google.script.run nie oddzwonił): po T.helperWait przyciski wracają');
@@ -278,7 +384,7 @@ async function S145c(){
 }
 
 (async () => {
-  for(const s of [S144, S145, S145b, S145d, S146, S145c]){
+  for(const s of [S144, S145, S145b, S145d, S146, S147, S145c]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

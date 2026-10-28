@@ -8,8 +8,12 @@
  * w grupie, miniony tydzień; do tego odpowiada na pytania w prywatnym czacie. Każda funkcja ma włącznik
  * w panelu — te, które się nie sprawdzą, wyłącza się pojedynczo (decyzja właściciela 24.10.2026).
  *
- * NA CZAS TESTÓW KAŻDA WIADOMOŚĆ IDZIE TYLKO PRYWATNIE, do kontaktu z ustawień. Adres grupy odrzuca zapis
- * ustawień (helperValid_), odczyt (helperSettings_) i każda wysyłka (helperSend_) — B74.
+ * DOKĄD (helperDest_): prywatnie, do kontaktu z ustawień — chyba że to PRODUKCJA, a funkcja jest „gotowa" (`ready`,
+ * decyzja właściciela 28.10.2026): wtedy do „Grafiku". Na teście wszystko prywatnie. Kontaktem nigdy nie jest grupa —
+ * jej adres odrzuca zapis ustawień (helperValid_), odczyt (helperSettings_) i wysyłka (helperDest_) — B74, B85.
+ *
+ * JEDEN AKTYWNY (28.10.2026): test i produkcja dzielą jedną instancję bramki — pracuje zawsze jeden pomocnik, a pierwszeństwo
+ * ma produkcja; pomocnik testu czeka, dopóki ma od niej ważny sygnał „pracuję" (helperLeaseSend_ → doPost → helperLeaseIn_).
  *
  * NUMERY TELEFONÓW NIE OPUSZCZAJĄ SERWERA (decyzja właściciela 27.10.2026) — ani do panelu, ani w tekście wiadomości
  * (podgląd w panelu to ten sam tekst). Osobę wskazuje numer osoby „#17" (helperNr_), a do jej telefonu prowadzi karta
@@ -19,15 +23,13 @@
  * wiadomości o swoich porach (helperSchedule_) → zapis stanu. Jeden przebieg naraz (helperClaim_).
  * Pomocnik nie pisze do arkusza i nie trzyma blokady aplikacji w czasie wywołań bramki. Błąd bramki zostaje
  * w dzienniku pomocnika (panel), nie wychodzi z wyzwalacza — inaczej Google słałby maila co 10 minut.
- * Stan we właściwościach skryptu, każda z sufitem HELPER_BYTES (limit 9 KB na wartość).
- *
- * Kolejka powiadomień jest jedna na instancję bramki, a test i produkcja dzielą jedną instancję: pomocnik
- * może być włączony tylko w jednym środowisku — dwa czytające zjadałyby sobie powiadomienia (HELPER.md).
+ * Stan we właściwościach skryptu, każda z sufitem HELPER_BYTES (limit 9 KB na wartość). Stan, klasy i numery osób są
+ * osobne w każdym środowisku (osobne projekty Apps Script).
  */
 
 /* ---------- słowa: dni i pory — odpowiedzi ankiety i pytania właściciela (tekst po volNorm_: małe litery, bez ogonków) ---------- */
 
-const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;      // prywatny czat — jedyny dozwolony odbiorca w fazie testów
+const HELPER_PRIVATE = /^\d{6,15}@c\.us$/;      // prywatny czat — jedyny dozwolony kontakt (grupa tylko jako „Grafik")
 const HELPER_GROUP = /^\d+(-\d+)?@g\.us$/;
 
 const HELPER_WD = ['niedziela', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota'];
@@ -235,10 +237,21 @@ function helperSettings_() {
   try { s = JSON.parse(prop_(PROP_HELPER) || '{}') || {}; } catch (e) { s = {}; }
   const out = Object.assign({}, DEFAULT_HELPER, s);
   out.features = Object.assign({}, DEFAULT_HELPER.features, s.features && typeof s.features === 'object' ? s.features : {});
+  out.ready = helperReady_(s.ready, out.features);
   out.weekDays = Array.isArray(s.weekDays) ? s.weekDays.slice() : DEFAULT_HELPER.weekDays.slice();
   if (!HELPER_PRIVATE.test(String(out.toId || ''))) { out.toId = ''; out.toName = ''; }
   if (!HELPER_GROUP.test(String(out.chatId || ''))) { out.chatId = ''; out.chatName = ''; }
   if (!out.chatId || !out.toId) out.enabled = false;
+  return out;
+}
+
+/**
+ * Funkcje „gotowe" (piszą do „Grafiku") — tylko na produkcji i tylko włączone: wyłączona funkcja po ponownym włączeniu
+ * wraca jako „w teście", nie prosto do grupy. Na teście zawsze wszystkie false (B85).
+ */
+function helperReady_(r, features) {
+  const out = {}, prod = env_() === 'prod';
+  HELPER_READY.forEach(k => { out[k] = prod && !!(r && typeof r === 'object' && r[k] === true) && !!(features && features[k]); });
   return out;
 }
 
@@ -248,7 +261,7 @@ function helperValid_(o) {
   const chatId = String(o.chatId == null ? '' : o.chatId).trim();
   if (chatId && !HELPER_GROUP.test(chatId)) throw new Error('„Grafik" to grupa — wybierz ją z listy („Pobierz grupy")');
   const toId = String(o.toId == null ? '' : o.toId).trim();
-  if (toId && !HELPER_PRIVATE.test(toId)) throw new Error('Na czas testów pomocnik pisze tylko prywatnie — wybierz kontakt z listy, nie grupę');
+  if (toId && !HELPER_PRIVATE.test(toId)) throw new Error('Kontakt to osoba, nie grupa — pomocnik pisze do niego tylko prywatnie (do „Grafiku" — funkcje „gotowe" na produkcji)');
   const int = (v, lo, hi, msg) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) throw new Error(msg); return n; };
   const min = int(o.min, 1, HELPER_LIMITS.MIN_MAX, 'Minimum osób: od 1 do ' + HELPER_LIMITS.MIN_MAX);
   const evening = int(o.evening, 0, 23, 'Godzina „wieczorem" musi być z zakresu 0–23');
@@ -272,7 +285,8 @@ function helperValid_(o) {
   if (enabled && !toId) throw new Error('Wybierz kontakt, do którego pomocnik ma pisać');
   const one = v => clean_(String(v || '').replace(/[\r\n]+/g, ' '), 100);
   return { enabled, chatId, chatName: chatId ? one(o.chatName) : '', toId, toName: toId ? one(o.toName) : '',
-           min, evening, morning, weekDays, names: text(o.names, HELPER_LIMITS.NAME_MAP, 'Imiona'), features };
+           min, evening, morning, weekDays, names: text(o.names, HELPER_LIMITS.NAME_MAP, 'Imiona'), features,
+           ready: helperReady_(o.ready, features) };
 }
 
 /** Wyzwalacz: co HELPER_TICK_MIN minut, gdy pomocnik włączony. */
@@ -287,6 +301,8 @@ function installHelperTrigger_(s) {
 /**
  * Zapis ustawień z panelu (PIN) i przełożenie wyzwalacza. Idempotentne (RETRIABLE). Kontakt przychodzi jako klucz
  * (`toKey` — contactKey_, jak w liście dnia), nie adres z numerem; `toId` wprost — tylko karta sprzed 27.10.
+ * Na produkcji od razu sygnał dla testu (jeden aktywny): włączony — „pracuję", wyłączony — „koniec"; bez czekania
+ * na pierwszy przebieg. Brak `ready` (karta sprzed 28.10) — tryby funkcji zostają, jakie były.
  */
 function setHelperSettings(settings, pin) {
   requirePin_(pin);
@@ -296,12 +312,14 @@ function setHelperSettings(settings, pin) {
     o.toId = key ? contactOfKey_(key, [helperSettings_().toId, dayReportSettings_().chatId]) : '';
     if (key && !o.toId) throw new Error('Tego kontaktu nie ma na liście — „Pobierz kontakty" jeszcze raz');
   }
+  if (o.ready == null) o.ready = helperSettings_().ready;
   const s = helperValid_(o);
   if (s.enabled && !greenApi_()) throw new Error(GREEN_MISSING);
   withLock_(() => {
     setProp_(PROP_HELPER, JSON.stringify(s));
     installHelperTrigger_(s);
   });
+  helperLeaseSend_(s.enabled);
   return helperPanel_();
 }
 
@@ -429,11 +447,94 @@ function helperRelease_() {
  * Wyzwalacz co HELPER_TICK_MIN minut. Publiczna (wyzwalacz nie woła funkcji z „_"), więc dostępna też
  * z przeglądarki — dlatego niczego nie przyjmuje: wywołana z zewnątrz robi to samo co wyzwalacz, a raporty
  * mają znaczniki „wysłany", więc nie da się nią zasypać właściciela wiadomościami. Nigdy nie rzuca.
+ * Na teście z ważnym sygnałem produkcji nic nie robi — pracuje tamten pomocnik (jeden aktywny).
  */
 function helperTick() {
   const s = helperSettings_();
-  if (!s.enabled || !greenApi_()) return null;
+  if (!s.enabled || !greenApi_() || helperWaits_()) return null;
   try { return helperRun_(s, false); } catch (e) { return null; }
+}
+
+/* ---------- jeden aktywny pomocnik: pierwszeństwo ma produkcja (28.10.2026, decyzja właściciela) ----------
+   Test i produkcja dzielą jedną instancję bramki, a kolejka powiadomień jest jedna: dwa czytające zjadałyby sobie
+   powiadomienia (każdy znałby pół głosów), a właściciel dostawałby każdy skład dwa razy. Pracuje więc jeden. Włączony
+   pomocnik produkcji przy każdym przebiegu i przy zapisie ustawień wysyła do aplikacji testowej (jej doPost,
+   HELPER_TEST_APP) sygnał „pracuję do …" (HELPER_LEASE_MIN minut), wyłączony — „koniec". Pomocnik testu z ważnym
+   sygnałem czeka: nie czyta kolejki, nic nie wysyła, „Sprawdź teraz" odmawia. Przełącznikiem jest więc „włączony"
+   w panelu produkcji: wyłączony — w ciągu HELPER_TICK_MIN minut pracuje test (o ile tam włączony), włączony — test ustępuje.
+   Sygnał jest podpisany tokenem bramki (HMAC): wspólny token = wspólna instancja = wspólna kolejka. Podpisu nie podrobi
+   nikt bez tokenu, a środowiska z osobnymi instancjami (osobne kolejki) nawzajem się nie wstrzymują. Brak sygnału —
+   produkcja bez pomocnika (sprzed 1.5) albo bez przebiegów dłużej niż HELPER_LEASE_MIN — test pracuje.
+   Pomocnik po przerwie (czekał, był wyłączony) doczytuje historię czatu (HELPER_STALE_MIN, helperRun_). */
+
+/** Podpis sygnału: HMAC-SHA256 tokenem bramki (jak contactKey_). '' — bramka nieustawiona. */
+function helperLeaseSig_(until, at) {
+  const g = greenApi_();
+  if (!g) return '';
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('g13-helper-lease|' + g.id + '|' + until + '|' + at, g.token));
+}
+
+/**
+ * Produkcja → test: `on` — „pracuję do …", inaczej „koniec". Nigdy nie rzuca; wynik {at, on, ok, err} zostaje dla panelu
+ * (PROP_HELPER_LEASE_SENT). Na teście nic — test nikogo nie wstrzymuje.
+ */
+function helperLeaseSend_(on) {
+  if (env_() !== 'prod') return null;
+  const at = Date.now(), until = on ? at + HELPER_LEASE_MIN * 60000 : 0;
+  const out = { at, on: !!on, ok: false, err: '' };
+  try {
+    const sig = helperLeaseSig_(until, at);
+    if (!sig) throw new Error(GREEN_MISSING);
+    const r = UrlFetchApp.fetch('https://script.google.com/macros/s/' + HELPER_TEST_APP + '/exec', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({ g13: 'helperLease', until, at, sig }) });
+    let b = null;
+    try { b = JSON.parse(r.getContentText()); } catch (e) { b = null; }
+    out.ok = !!(b && b.ok === true);
+    if (!out.ok) out.err = b && b.err ? String(b.err).slice(0, 100) : 'aplikacja testowa odpowiedziała kodem ' + r.getResponseCode();
+  } catch (e) {
+    out.err = noPhones_(String(e && e.message || e)).slice(0, 100);
+  }
+  try { setProp_(PROP_HELPER_LEASE_SENT, JSON.stringify(out)); } catch (e) { /* panel pokaże poprzedni */ }
+  return out;
+}
+
+/**
+ * Test ← produkcja (doPost, WebApp.gs). Publiczne (aplikacja bez logowania), więc treści nie ufa: podpis tokenem tej samej
+ * instancji bramki, sygnał świeży (`at` najwyżej 15 min od zegara), `until` 0 albo najwyżej HELPER_LEASE_MIN minut naprzód,
+ * nie starszy niż zapisany (spóźniony „pracuję" nie nadpisze późniejszego „koniec"). Zapisuje tylko {until, at, rx}.
+ * Na produkcji odmawia (produkcja nie czeka na nikogo). Nigdy nie rzuca — odpowiedź {ok} albo {ok: false, err}.
+ */
+function helperLeaseIn_(raw) {
+  try {
+    if (env_() === 'prod') return { ok: false, err: 'to produkcja — sygnał przyjmuje tylko test' };
+    let b = null;
+    try { b = JSON.parse(String(raw || '')); } catch (e) { b = null; }
+    if (!b || b.g13 !== 'helperLease') return { ok: false, err: 'nieznane zapytanie' };
+    const now = Date.now(), at = Number(b.at), until = Number(b.until);
+    if (!(Math.abs(now - at) <= 15 * 60000) || !(until === 0 || (until > at && until - at <= HELPER_LEASE_MIN * 60000)))
+      return { ok: false, err: 'nieważny sygnał' };
+    const sig = helperLeaseSig_(until, at);
+    if (!sig || String(b.sig || '') !== sig) return { ok: false, err: 'zły podpis — inna instancja bramki albo inny token' };
+    const cur = helperLease_();
+    if (cur && cur.at > at) return { ok: true, old: true };
+    setProp_(PROP_HELPER_LEASE, JSON.stringify({ until, at, rx: now }));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, err: 'błąd zapisu sygnału' };
+  }
+}
+
+/** Sygnał z produkcji, który test właśnie ma: {until, at, rx} albo null. Na produkcji zawsze null. */
+function helperLease_() {
+  if (env_() === 'prod') return null;
+  const l = helperJson_(PROP_HELPER_LEASE, null);
+  return l && typeof l === 'object' && Number(l.at) > 0 ? l : null;
+}
+/** Czy pomocnik testu czeka — ma ważny sygnał „pracuję" z produkcji. */
+function helperWaits_() {
+  const l = helperLease_();
+  return !!(l && Number(l.until) > Date.now());
 }
 
 /** Przebieg: kolejka bramki → wiadomości → zapis. `manual` — „Sprawdź teraz" z panelu: zajęty = błąd z komunikatem. */
@@ -445,8 +546,14 @@ function helperRun_(s, manual) {
   const t0 = Date.now(), run = { events: 0, grafik: 0, sent: 0, err: '', manual: !!manual };
   let st = null;
   try {
+    // produkcja: sygnał dla testu przed czytaniem kolejki — test ustępuje, zanim sięgnie po nią drugi raz. Także „Sprawdź
+    // teraz" przy wyłączonym: ten przebieg też czyta kolejkę, więc test czeka HELPER_LEASE_MIN, a potem doczytuje historię
+    helperLeaseSend_(true);
     st = helperLoad_();
     if (!st.since) st.since = Date.now();
+    // po przerwie (czekał na produkcję, był wyłączony) — to, co przyszło w międzyczasie, zdjął z kolejki drugi pomocnik:
+    // historia czatu przy najbliższych wiadomościach (helperSchedule_)
+    if (st.stat && Date.now() - st.stat.at > HELPER_STALE_MIN * 60000) st.catchUp = true;
     try {
       helperGate_(s, st, !!manual);
     } catch (e) {
@@ -1010,11 +1117,25 @@ function helperLastWeekText_(s, st, ctx) {
 /* ---------- wysyłka ---------- */
 
 /**
- * Wiadomość do właściciela. TYLKO prywatny czat z ustawień (B74) — sprawdzane tu jeszcze raz, niezależnie od
- * ustawień. Sufity: HELPER_SEND_MAX na przebieg, HELPER_DAY_MAX na dzień (ponad — wpis w dzienniku, bez wysyłki).
+ * Dokąd idzie wiadomość funkcji `feature` (klucz z HELPER_READY albo nic): funkcja „gotowa" na PRODUKCJI — do „Grafiku"
+ * (s.chatId, decyzja właściciela 28.10.2026); wszystko inne — funkcja w teście, odpowiedź na pytanie, ostrzeżenie, podgląd
+ * z panelu, cokolwiek na teście — prywatnie, do kontaktu z ustawień. Adresy sprawdzane tu jeszcze raz, niezależnie od
+ * ustawień: kontakt tylko prywatny, „Grafik" tylko grupa (B74, B85).
  */
-function helperSend_(s, st, text, run) {
-  if (!HELPER_PRIVATE.test(String(s.toId || ''))) throw new Error('Pomocnik pisze tylko prywatnie — w ustawieniach nie ma kontaktu');
+function helperDest_(s, feature) {
+  const group = !!(feature && env_() === 'prod' && s.ready && s.ready[feature] === true);
+  const to = String((group ? s.chatId : s.toId) || '');
+  if (group && !HELPER_GROUP.test(to)) throw new Error('Pomocnik nie zna grupy „Grafik" — wybierz ją w ustawieniach');
+  if (!group && !HELPER_PRIVATE.test(to)) throw new Error('Pomocnik pisze tylko prywatnie — w ustawieniach nie ma kontaktu');
+  return { to, group };
+}
+
+/**
+ * Wiadomość funkcji `feature` (helperDest_: „gotowa" na produkcji — do „Grafiku", inaczej prywatnie do kontaktu z ustawień).
+ * Sufity wspólne: HELPER_SEND_MAX na przebieg, HELPER_DAY_MAX na dzień (ponad — wpis w dzienniku, bez wysyłki).
+ */
+function helperSend_(s, st, text, run, feature) {
+  const dest = helperDest_(s, feature);
   const day = today_();
   if (st.sent.day !== day) st.sent = { day, n: 0 };
   if (run.sent >= HELPER_SEND_MAX || st.sent.n >= HELPER_DAY_MAX) {
@@ -1022,11 +1143,11 @@ function helperSend_(s, st, text, run) {
     return false;
   }
   const head = (env_() === 'prod' ? '' : '🧪 ') + '🤖 *Pomocnik Grafiku*\n';
-  const res = greenCall_('sendMessage', { chatId: s.toId, message: (head + text).slice(0, HELPER_LIMITS.MESSAGE) });
+  const res = greenCall_('sendMessage', { chatId: dest.to, message: (head + text).slice(0, HELPER_LIMITS.MESSAGE) });
   if (!res || !res.idMessage) throw new Error('Bramka WhatsAppa nie potwierdziła wysłania');
   run.sent++;
   st.sent.n++;
-  helperLog_(st, 'sent', text.split('\n')[0]);
+  helperLog_(st, 'sent', (dest.group ? 'do Grafiku: ' : '') + text.split('\n')[0]);
   return true;
 }
 
@@ -1111,28 +1232,29 @@ function helperSchedule_(s, st, run) {
     } catch (e) { helperLog_(st, 'err', 'odpowiedź: ' + (e && e.message || e)); }
   });
 
+  // dalej wiadomości funkcji — każda z kluczem funkcji: „gotowa" na produkcji idzie do „Grafiku" (helperDest_)
   const queue = st.queue.splice(0, st.queue.length);
   if (f.newPoll) queue.forEach(id => {
     const p = st.polls.filter(x => x.id === id)[0];
-    if (p) helperOnce_(st, 'poll|' + id, run, () => { helperSend_(s, st, helperPollText_(st, p), run); });
+    if (p) helperOnce_(st, 'poll|' + id, run, () => { helperSend_(s, st, helperPollText_(st, p), run, 'newPoll'); });
   });
 
   if (f.morning && inWin(s.morning)) helperOnce_(st, 'mo|' + T, run, () => {
     const info = helperDay_(s, st, T);
-    if (helperProblems_(s, st, info).length) helperSend_(s, st, helperDayText_(s, st, T, ctx), run);
+    if (helperProblems_(s, st, info).length) helperSend_(s, st, helperDayText_(s, st, T, ctx), run, 'morning');
   });
   if (f.lastWeek && wd === 1 && inWin(s.morning)) helperOnce_(st, 'lw|' + T, run, () => {
-    helperSend_(s, st, helperLastWeekText_(s, st, ctx), run);
+    helperSend_(s, st, helperLastWeekText_(s, st, ctx), run, 'lastWeek');
   });
 
   if (f.evening && inWin(s.evening)) helperOnce_(st, 'ev|' + T, run, () => {
     const D = addDays_(T, 1), info = helperDay_(s, st, D);
     if (!f.eveningAlways && !helperProblems_(s, st, info).length) return;
     const top = wd === 0 && !info.poll ? '⚠️ *Nie widzę jeszcze ankiety na nowy tydzień* (w historii czatu też jej nie ma)\n' : '';
-    helperSend_(s, st, top + helperDayText_(s, st, D, ctx), run);
+    helperSend_(s, st, top + helperDayText_(s, st, D, ctx), run, 'evening');
   });
   if (f.week && s.weekDays.indexOf(wd) >= 0 && inWin(s.evening)) helperOnce_(st, 'wk|' + T, run, () => {
-    helperSend_(s, st, helperWeekText_(s, st), run);
+    helperSend_(s, st, helperWeekText_(s, st), run, 'week');
   });
   if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => { helperMembers_(s, st, run, true); });
 }
@@ -1155,7 +1277,7 @@ function helperMembers_(s, st, run, send) {
   if (plus.length) L.push('👋 nowe osoby: ' + plus.map(w => helperName_(s, st, w)).join(', ')
     + ' — nie zobaczą ankiety wysłanej przed dołączeniem; niech napiszą dostępność w czacie');
   if (minus.length) L.push('🚪 wyszli: ' + minus.map(w => helperName_(s, st, w)).join(', '));
-  helperSend_(s, st, L.join('\n'), run);
+  helperSend_(s, st, L.join('\n'), run, 'members');
 }
 
 /* ---------- pytania w prywatnym czacie ---------- */
@@ -1352,14 +1474,27 @@ function helperRosterPanel_(st, s) {
 
 /* ---------- panel ---------- */
 
-/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik, członkowie. Bez numerów telefonów. */
+/**
+ * Jeden aktywny (panel): na teście — sygnał z produkcji {until, at, waits}; na produkcji — ostatni sygnał wysłany do testu
+ * {at, on, ok, err}. null — jeszcze żadnego.
+ */
+function helperLeasePanel_() {
+  if (env_() === 'prod') {
+    const x = helperJson_(PROP_HELPER_LEASE_SENT, null);
+    return x && typeof x === 'object' ? { at: Number(x.at) || 0, on: !!x.on, ok: !!x.ok, err: String(x.err || '').slice(0, 100) } : null;
+  }
+  const l = helperLease_();
+  return l ? { at: Number(l.at) || 0, until: Number(l.until) || 0, waits: helperWaits_() } : null;
+}
+
+/** Panel (bez pytania bramki): ustawienia, stan przebiegów, ankiety, dziennik, członkowie, sygnał. Bez numerów telefonów. */
 function helperPanel_() {
   const st = helperLoad_(), s = helperSettings_();
   // kontakt jako klucz i nazwa — adres prywatnego czatu to numer telefonu (contactKey_, Poll.gs)
   const pub = Object.assign({}, s, { toKey: contactKey_(s.toId) });
   delete pub.toId;
   return {
-    settings: pub, configured: !!greenApi_(), env: env_(),
+    settings: pub, configured: !!greenApi_(), env: env_() === 'prod' ? 'prod' : 'test', lease: helperLeasePanel_(),
     trigger: ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'helperTick'),
     stat: st.stat, log: st.log.slice(-HELPER_LIMITS.PANEL_LOG).reverse(),
     gate: st.gate ? { ok: !!st.gate.ok, at: st.gate.at, from: st.gate.from || 0,
@@ -1373,12 +1508,17 @@ function helperPanel_() {
   };
 }
 
-/** „Sprawdź teraz" (PIN): przebieg od razu — kolejka i wiadomości, które właśnie wypadają. Nie w RETRIABLE. */
+/**
+ * „Sprawdź teraz" (PIN): przebieg od razu — kolejka i wiadomości, które właśnie wypadają. Nie w RETRIABLE.
+ * Na teście, gdy pracuje pomocnik produkcji — odmowa: przebieg zjadłby mu powiadomienia z kolejki (jeden aktywny).
+ */
 function helperRunNow(pin) {
   requirePin_(pin);
   const s = helperSettings_();
   if (!s.chatId || !s.toId) throw new Error('Najpierw wybierz i zapisz grupę i kontakt');
   if (!greenApi_()) throw new Error(GREEN_MISSING);
+  if (helperWaits_()) throw new Error('Pracuje pomocnik produkcji (sygnał ' + helperWhen_(helperLease_().at) + ') — ten czeka. '
+    + 'Żeby sprawdzić go tutaj, wyłącz pomocnika w Panelu produkcji.');
   const run = helperRun_(s, true);
   return { run, panel: helperPanel_() };
 }

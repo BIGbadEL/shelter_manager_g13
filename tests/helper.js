@@ -35,8 +35,10 @@ const DOGS = [
 const HIST = [['2026-10-09', 'Draco', 'Ilona', '10:00'], ['2026-10-12', 'Draco', 'Dawid', '11:00'], ['2026-10-12', 'Lego', 'Ania', '11:30'],
               ['2026-10-19', 'Lego', 'Ania', '10:10'], ['2026-10-19', 'Barwik', 'Basia', '10:20'], ['2026-10-21', 'Hańcza', 'Ania', '10:00']];
 
-/** Wszystkie wiadomości wysłane we wszystkich scenariuszach — na końcu: każda do właściciela, żadna do grupy (B74). */
+/** Wszystkie wiadomości wysłane we wszystkich scenariuszach na TEŚCIE — na końcu: każda do właściciela, żadna do grupy (B74). */
 const ALL_SENT = [];
+/** ...i na PRODUKCJI (props.env 'prod') — do grupy tylko funkcje „gotowe" (B85). */
+const PROD_SENT = [];
 
 let seq = 0;
 const ts = iso => Math.floor(Date.parse(iso) / 1000);
@@ -52,11 +54,18 @@ function build(o){
     props: Object.assign({ pin: TEST_PIN, walksImported: '2026-01-01' }, o.gateway === false ? {} : GREEN, o.props),
   });
   const gw = { queue: [], receipt: 0, deleted: [], sent: [], cards: [], received: 0, members: [ANIA, BASIA], weather: null, fail: null,
-               history: [], historyCalls: [], contacts: [],
+               history: [], historyCalls: [], contacts: [], leases: [], peer: null,
                settings: { incomingWebhook: 'yes', pollMessageWebhook: 'yes', outgoingAPIMessageWebhook: 'yes', outgoingMessageWebhook: 'yes', webhookUrl: '' } };
+  const SENT = o.props && o.props.env === 'prod' ? PROD_SENT : ALL_SENT;
   env.http.handler = (url, opts) => {
     if(gw.fail){ const r = gw.fail(url, opts); if(r) return r; }
     if(/open-meteo/.test(url)) return gw.weather ? { code: 200, body: JSON.stringify(gw.weather) } : { code: 500, body: '' };
+    // sygnał pomocnika do aplikacji testowej (jeden aktywny): `gw.peer` — środowisko testowe, które go dostaje (jego doPost)
+    if(/^https:\/\/script\.google\.com\/macros\/s\//.test(url)){
+      gw.leases.push({ url, method: opts.method, body: JSON.parse(opts.payload) });
+      if(!gw.peer) return { code: 404, body: '<html>Nie znaleziono</html>' };
+      return { code: 200, body: gw.peer.api.doPost({ postData: { contents: opts.payload } }).getContent() };
+    }
     if(/\/receiveNotification\//.test(url)){
       gw.received++;
       const head = gw.queue[0];
@@ -70,7 +79,7 @@ function build(o){
     }
     if(/\/sendMessage\//.test(url)){
       const p = JSON.parse(opts.payload);
-      gw.sent.push(p); ALL_SENT.push(p);
+      gw.sent.push(p); SENT.push(p);
       return { code: 200, body: JSON.stringify({ idMessage: 'OUT' + gw.sent.length }) };
     }
     // karta kontaktu jak sendContact: numer liczbą, 11–16 cyfr, choć jedno imię
@@ -78,7 +87,7 @@ function build(o){
       const p = JSON.parse(opts.payload), c = p.contact || {};
       if(typeof c.phoneContact !== 'number' || !/^\d{11,16}$/.test(String(c.phoneContact)) || !(c.firstName || c.lastName))
         return { code: 400, body: '{"message":"Validation failed"}' };
-      gw.cards.push(p); ALL_SENT.push(p);
+      gw.cards.push(p); SENT.push(p);
       return { code: 200, body: JSON.stringify({ idMessage: 'CARD' + gw.cards.length }) };
     }
     if(/\/getGroupData\//.test(url)) return { code: 200, body: JSON.stringify({ groupId: GRAFIK, subject: 'Grafik', participants: gw.members.map(id => ({ id })) }) };
@@ -774,10 +783,151 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     JSON.stringify(rb.list) + ' n=' + ids.n);
 })();
 
-/* ---------- B74 (ciąg dalszy): w żadnym scenariuszu nic nie poszło do grupy ---------- */
-console.log('B74b: żadna wiadomość pomocnika nie poszła do grupy — każda do prywatnego czatu właściciela');
-check('wszystkie wiadomości (' + ALL_SENT.length + ') — do ' + OWNER, ALL_SENT.length > 10 && ALL_SENT.every(p => p.chatId === OWNER),
+/* ---------- B85: funkcje „gotowe" piszą do „Grafiku" — tylko na produkcji (decyzja właściciela 28.10) ---------- */
+(()=>{
+  console.log('B85: pomocnik — tryb funkcji: na produkcji „gotowa" pisze do Grafiku, „w teście" do kontaktu; na teście wszystko prywatnie; pytania, karty i podgląd zawsze prywatnie');
+  const READY = { evening: true, week: true, morning: false, newPoll: false, members: false, lastWeek: false };
+  // na teście tryb „gotowa" przepada — tu nic nie pisze do grupy (B74)
+  const test = build();
+  const tp = on(test, { ready: READY });
+  check('test: „gotowe" przepadają przy zapisie — wszystko prywatnie', Object.keys(tp.settings.ready).every(k => tp.settings.ready[k] === false)
+    && test.api.helperSettings_().ready.evening === false, JSON.stringify(tp.settings.ready));
+  test.props.helper = JSON.stringify(Object.assign({}, JSON.parse(test.props.helper), { ready: READY }));   // ręcznie wpisane we właściwość
+  check('test: „gotowe" wpisane ręcznie we właściwość też przepadają przy odczycie', test.api.helperSettings_().ready.evening === false);
+
+  const env = build({ now: '2026-10-25T10:20:00+02:00', props: { env: 'prod' } });
+  const panel = on(env, { min: 2, weekDays: [0], ready: Object.assign({}, READY, { lastWeek: true }), features: { lastWeek: false, weather: false } });
+  check('produkcja: zapis trybów — gotowe: skład na jutro, przegląd tygodnia; wyłączona funkcja nie jest „gotowa" (po włączeniu wraca do testu)',
+    panel.settings.ready.evening === true && panel.settings.ready.week === true && panel.settings.ready.morning === false && panel.settings.ready.lastWeek === false,
+    JSON.stringify(panel.settings.ready));
+  const old = Object.assign({}, env.conf.DEFAULT_HELPER, { enabled: true, chatId: GRAFIK, chatName: 'Grafik', toId: OWNER, toName: 'Grzesiek',
+    min: 2, weekDays: [0], features: { lastWeek: false, weather: false } });
+  delete old.ready;
+  const kept = env.api.setHelperSettings(old, TEST_PIN).settings.ready;
+  check('...zapis bez `ready` (karta sprzed 28.10) — tryby zostają, jakie były', kept.evening === true && kept.week === true && kept.morning === false, JSON.stringify(kept));
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           vote('P1', BASIA, ['Poniedziałek', 'Wtorek'], '2026-10-25T10:16:00+02:00', { name: 'Basia' }),
+           text(OWNER, 'Grzesiek', 'jutro', '2026-10-25T10:18:00+02:00', OWNER));
+  env.tick();
+  const morning = env.gw.sent.slice();
+  check('nowa ankieta („w teście") i odpowiedź na pytanie — do właściciela', morning.length === 2 && morning.every(p => p.chatId === OWNER)
+    && /Nowa ankieta w Grafiku/.test(morning.map(p => p.message).join(' ')), JSON.stringify(morning.map(p => p.chatId + ' ' + p.message.slice(0, 50))));
+  env.tick('2026-10-25T20:05:00+02:00');
+  const evening = env.gw.sent.slice(morning.length);
+  const toGroup = evening.filter(p => p.chatId === GRAFIK), toOwner = evening.filter(p => p.chatId === OWNER);
+  check('wieczorem: skład na jutro i przegląd tygodnia („gotowe") — do Grafiku', toGroup.length === 2 && /Jutro — poniedziałek 26\.10/.test(toGroup[0].message)
+    && toGroup.some(p => /Przegląd tygodnia/.test(p.message)) && !toOwner.some(p => /Jutro|Przegląd/.test(p.message)), JSON.stringify(evening.map(p => p.chatId + ' ' + p.message.slice(0, 50))));
+  check('...z nagłówkiem bota, bez 🧪 (produkcja), bez numerów telefonów', toGroup.every(p => /^🤖 \*Pomocnik Grafiku\*\n/.test(p.message) && !/4860\d|@c\.us|@lid/.test(p.message)),
+    toGroup.map(p => p.message.slice(0, 30)).join(' | '));
+  check('...dziennik: „do Grafiku: …"', env.st().log.filter(l => l.k === 'sent' && /^do Grafiku: /.test(l.m)).length === 2, JSON.stringify(env.st().log.map(l => l.m)));
+  env.push(text(OWNER, 'Grzesiek', 'tydzień', '2026-10-25T20:10:00+02:00', OWNER), text(OWNER, 'Grzesiek', 'kto 1', '2026-10-25T20:11:00+02:00', OWNER));
+  env.api.getHelperMembers(TEST_PIN);
+  const n = env.gw.sent.length, c = env.gw.cards.length;
+  env.tick('2026-10-25T20:20:00+02:00');
+  check('pytanie o przegląd tygodnia (gotowy) — odpowiedź do pytającego, nie do Grafiku; karta kontaktu — do właściciela',
+    env.gw.sent.slice(n).length === 1 && env.gw.sent.slice(n).every(p => p.chatId === OWNER) && env.gw.cards.slice(c).length === 1 && env.gw.cards.slice(c).every(p => p.chatId === OWNER),
+    JSON.stringify(env.gw.sent.slice(n).map(p => p.chatId)));
+  const n2 = env.gw.sent.length;
+  env.api.helperPreview(TEST_PIN, 'jutro', true);
+  check('„Wyślij mi to" z podglądu — do właściciela, także dla funkcji gotowej', env.gw.sent.slice(n2).length === 1 && env.gw.sent[n2].chatId === OWNER);
+  // grupa jako kontakt nie przejdzie i na produkcji; „Grafik" tylko jako grupa
+  check('produkcja: kontakt = grupa — odmowa; „Grafik" = osoba — odmowa', /tylko prywatnie/.test(throws(() => on(env, { toId: GRAFIK, ready: READY })))
+    && /grupa/.test(throws(() => on(env, { chatId: OWNER, ready: READY }))));
+})();
+
+/* ---------- B86: jeden aktywny pomocnik — pierwszeństwo ma produkcja (28.10) ---------- */
+(()=>{
+  console.log('B86: pomocnik — jeden aktywny: produkcja wysyła testowi podpisany sygnał, test czeka (kolejka nietknięta), po „koniec" albo wygaśnięciu przejmuje i doczytuje historię');
+  const T = build({ now: '2026-10-26T10:00:00+02:00' });
+  const P = build({ now: '2026-10-26T10:00:00+02:00', props: { env: 'prod' } });
+  P.gw.peer = T;
+  T.gw.queue = P.gw.queue;                                  // jedna instancja bramki — jedna kolejka
+  const both = iso => { T.setNow(iso); P.setNow(iso); };
+  on(T, { weekDays: [], features: { newPoll: false, members: false, weather: false } });
+  T.push(text(ANIA, 'Ania', 'Hej', '2026-10-26T09:58:00+02:00'));
+  T.tick();
+  check('bez produkcji (sygnału nie było) test pracuje: czyta kolejkę', T.gw.received > 0 && T.gw.queue.length === 0 && !T.api.helperWaits_());
+
+  both('2026-10-26T10:05:00+02:00');
+  on(P, { weekDays: [], features: { newPoll: false, members: false, weather: false } });
+  const sig = P.gw.leases[0];
+  check('włączenie na produkcji — od razu sygnał „pracuję" do aplikacji testowej (POST, adres wdrożenia testowego)', P.gw.leases.length === 1
+    && sig.url === 'https://script.google.com/macros/s/' + P.conf.HELPER_TEST_APP + '/exec' && sig.method === 'post'
+    && sig.body.until === P.now() + P.conf.HELPER_LEASE_MIN * 60000, JSON.stringify(sig));
+  check('...w sygnale nie ma tokenu bramki (tylko podpis)', !/tok3n5ecret/.test(JSON.stringify(P.gw.leases)) && /^[\w-]{40,}=*$/.test(sig.body.sig), sig.body.sig);
+  check('...test go przyjął: czeka do ' + P.conf.HELPER_LEASE_MIN + ' min; produkcja to widzi w panelu', T.api.helperWaits_() === true
+    && JSON.parse(T.props.helperLease).until === sig.body.until && P.api.helperPanel_().lease.ok === true && P.api.helperPanel_().lease.on === true,
+    JSON.stringify(P.api.helperPanel_().lease));
+  P.push(text(BASIA, 'Basia', 'Cześć', '2026-10-26T10:08:00+02:00'));
+  both('2026-10-26T10:10:00+02:00');
+  const got = T.gw.received;
+  check('test z ważnym sygnałem: przebieg nic nie robi — kolejka nietknięta, nic nie wysłane', T.tick() === null && T.gw.received === got && P.gw.queue.length === 1 && T.gw.sent.length === 0);
+  check('„Sprawdź teraz" na teście — odmowa z powodem', /Pracuje pomocnik produkcji.*Panelu produkcji/.test(throws(() => T.api.helperRunNow(TEST_PIN))));
+  check('panel testu: czeka, sygnał z produkcji', T.api.helperPanel_().lease.waits === true && T.api.helperPanel_().env === 'test');
+  P.tick();
+  check('przebieg produkcji: czyta kolejkę i odnawia sygnał', P.gw.queue.length === 0 && P.gw.leases.length === 2 && JSON.parse(T.props.helperLease).at === P.now());
+
+  // podróbki i stare sygnały — test nie da się wstrzymać bez tokenu bramki
+  const forged = Object.assign({}, P.gw.leases[1].body, { until: P.now() + 29 * 60000 });
+  const post = body => JSON.parse(T.api.doPost({ postData: { contents: JSON.stringify(body) } }).getContent());
+  check('podpis nie pasuje do treści — odmowa, sygnał bez zmian', post(forged).ok === false && JSON.parse(T.props.helperLease).until === P.gw.leases[1].body.until);
+  check('śmieci i nieznane zapytania — odmowa bez wyjątku', post({ x: 1 }).ok === false && JSON.parse(T.api.doPost({ postData: { contents: '}{' } }).getContent()).ok === false
+    && JSON.parse(T.api.doPost(undefined).getContent()).ok === false);
+  const other = build({ now: '2026-10-26T10:10:00+02:00', props: { greenApiToken: 'innyToken' } });
+  P.gw.peer = other;
+  P.tick('2026-10-26T10:12:00+02:00');
+  check('inna instancja bramki (inny token — osobna kolejka): sygnał odrzucony, ten test się nie wstrzymuje; produkcja widzi błąd',
+    other.api.helperWaits_() === false && P.api.helperPanel_().lease.ok === false && /podpis/.test(P.api.helperPanel_().lease.err), JSON.stringify(P.api.helperPanel_().lease));
+  P.gw.peer = T;
+  check('produkcja nie przyjmuje sygnału (nikt jej nie wstrzyma)', JSON.parse(P.api.doPost({ postData: { contents: JSON.stringify(P.gw.leases[1].body) } }).getContent()).ok === false);
+
+  // wyłączenie na produkcji: „koniec" — test pracuje od najbliższego przebiegu
+  both('2026-10-26T10:20:00+02:00');
+  on(P, { enabled: false });
+  const end = P.gw.leases[P.gw.leases.length - 1].body;
+  check('wyłączenie na produkcji — sygnał „koniec": test już nie czeka', end.until === 0 && T.api.helperWaits_() === false && P.api.helperPanel_().lease.on === false);
+  check('spóźniony „pracuję" sprzed „koniec" — nie wstrzymuje testu', post(P.gw.leases[1].body).ok === true && T.api.helperWaits_() === false);
+  T.setNow('2026-10-26T10:40:00+02:00');
+  check('sygnał sprzed ponad 15 min — odmowa (zapisanego nie da się powtórzyć później)', post(P.gw.leases[1].body).ok === false);
+
+  P.push(text(ANIA, 'Ania', 'Hej znowu', '2026-10-26T10:21:00+02:00'));
+  T.gw.history = [pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Wtorek'], '2026-10-26T10:09:00+02:00', { name: 'Ania' })]
+    .map(b => ({ type: b.typeWebhook === 'incomingMessageReceived' ? 'incoming' : 'outgoing', idMessage: b.idMessage, timestamp: b.timestamp, typeMessage: b.messageData.typeMessage,
+                 chatId: GRAFIK, senderId: b.senderData.sender, senderName: b.senderData.senderName || '', pollMessageData: b.messageData.pollMessageData }));
+  const h0 = T.gw.historyCalls.length;
+  T.tick('2026-10-26T14:00:00+02:00');
+  check('test przejmuje: czyta kolejkę (to, co przyszło po „koniec")', P.gw.queue.length === 0, JSON.stringify(P.gw.queue));
+  check('...po przerwie (ponad ' + T.conf.HELPER_STALE_MIN + ' min bez przebiegu) doczytuje historię czatu — także poza porą wiadomości; zna głos oddany, gdy pracowała produkcja',
+    T.gw.historyCalls.length === h0 + 1 && votersOn(T, 'P1', '2026-10-27').indexOf(ANIA) >= 0, JSON.stringify(T.gw.historyCalls));
+  T.tick('2026-10-26T14:10:00+02:00');
+  check('...kolejny zwykły przebieg (10 min później) — bez historii', T.gw.historyCalls.length === h0 + 1);
+  T.tick('2026-10-26T20:05:00+02:00');
+  check('...i pisze (prywatnie, z 🧪) skład na jutro z tym głosem', T.gw.sent.some(p => p.chatId === OWNER && /^🧪 🤖/.test(p.message) && /Jutro — wtorek 27\.10/.test(p.message)
+    && /👥 .*Ania/.test(p.message)), T.msgs().map(m => m.slice(0, 60)).join(' | '));
+
+  // produkcja włączona, ale bez przebiegów (np. bez wyzwalacza): sygnał wygasa po HELPER_LEASE_MIN — test nie czeka w nieskończoność
+  both('2026-10-27T09:00:00+02:00');
+  on(P, { weekDays: [], features: { newPoll: false, members: false, weather: false } });
+  check('ponowne włączenie produkcji — test znów czeka', T.api.helperWaits_() === true);
+  T.setNow('2026-10-27T09:' + (P.conf.HELPER_LEASE_MIN + 1) + ':00+02:00');
+  check('po ' + P.conf.HELPER_LEASE_MIN + ' min bez sygnału — test pracuje', T.api.helperWaits_() === false && T.tick() !== null);
+  // aplikacja testowa nie odpowiada — przebieg produkcji idzie dalej, błąd w panelu
+  P.gw.peer = null;
+  const r = P.tick('2026-10-27T09:40:00+02:00');
+  check('aplikacja testowa nie odpowiada — przebieg produkcji idzie dalej, w panelu błąd sygnału', r !== null && P.api.helperPanel_().lease.ok === false
+    && /404/.test(P.api.helperPanel_().lease.err), JSON.stringify(P.api.helperPanel_().lease));
+  check('test nigdy nie wysyła sygnału (nikogo nie wstrzymuje)', T.gw.leases.length === 0);
+})();
+
+/* ---------- B74 (ciąg dalszy): na teście w żadnym scenariuszu nic nie poszło do grupy ---------- */
+console.log('B74b: na teście żadna wiadomość pomocnika nie poszła do grupy — każda do prywatnego czatu właściciela; na produkcji do grupy tylko funkcje „gotowe" (B85)');
+check('test: wszystkie wiadomości (' + ALL_SENT.length + ') — do ' + OWNER, ALL_SENT.length > 10 && ALL_SENT.every(p => p.chatId === OWNER),
   JSON.stringify(ALL_SENT.filter(p => p.chatId !== OWNER).map(p => p.chatId)));
+const groupPosts = PROD_SENT.filter(p => p.chatId !== OWNER);
+check('produkcja: do grupy (' + groupPosts.length + ') tylko skład na jutro i przegląd tygodnia z B85, karty kontaktu — nigdy',
+  groupPosts.length === 2 && groupPosts.every(p => p.chatId === GRAFIK && !p.contact && /^🤖 \*Pomocnik Grafiku\*\n(\*Jutro|\*Przegląd tygodnia)/.test(p.message)),
+  JSON.stringify(groupPosts.map(p => p.chatId + ' ' + String(p.message).slice(0, 40))));
 
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

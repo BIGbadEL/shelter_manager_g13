@@ -30,13 +30,15 @@ const PROP_HELPER = 'helper';                  // pomocnik Grafiku: ustawienia (
 const PROP_HELPER_POLLS = 'helperPolls';       // ...ankiety z „Grafiku" i głosy (nowsze)
 const PROP_HELPER_POLLS2 = 'helperPolls2';     // ...starsze ankiety (jedna właściwość ma 9 KB)
 const PROP_HELPER_PEOPLE = 'helperPeople';     // ...osoby (numer → nazwa z WhatsAppa) i powiązania numerów
-const PROP_HELPER_NOTES = 'helperNotes';       // ...wiadomości z czatu o najbliższych dniach, nieobecności, wypisania
+const PROP_HELPER_NOTES = 'helperNotes';       // ...wypisania z ankiety na najbliższe dni (do 27.10 też notatki z czatu)
 const PROP_HELPER_STATE = 'helperState';       // ...znaczniki wysłanych wiadomości, punkt odniesienia zmian, skład grupy
 const PROP_HELPER_LOG = 'helperLog';           // ...dziennik do panelu
 const PROP_HELPER_ROSTER = 'helperRoster';     // ...lista członków z ostatniego „Pobierz członków" (numer, imię)
 const PROP_HELPER_ROLES = 'helperRoles';       // ...klasy osób: numer → 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
 const PROP_HELPER_IDS = 'helperIds';           // ...numery osób (#17): adres WhatsAppa → numer, licznik — nie do przeglądarki
 const PROP_HELPER_BUSY = 'helperBusy';         // ...przebieg w toku (znacznik czasu) — jeden naraz
+const PROP_HELPER_LEASE = 'helperLease';       // ...test: sygnał „pracuję" z produkcji {until, at, rx} — jeden aktywny pomocnik
+const PROP_HELPER_LEASE_SENT = 'helperLeaseSent'; // ...produkcja: ostatni sygnał wysłany do testu {at, on, ok, err} (panel)
 const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
 const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)
 // Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:

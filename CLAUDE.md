@@ -32,7 +32,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | WhatsApp (bramka Green API): ankieta tygodniowa (ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel) i lista dnia do prowadzącej po nocnym czyszczeniu (1.3) |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
-| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): kolejka powiadomień bramki → ankiety, głosy, czat → wiadomości PRYWATNIE do właściciela (`helperTick` co 10 min), panel, pytania w prywatnym czacie |
+| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): kolejka powiadomień bramki → ankiety, głosy → wiadomości prywatnie do właściciela, a na produkcji funkcje „gotowe" do „Grafiku" (`helperTick` co 10 min); jeden aktywny (sygnał produkcji dla testu — `doPost` w `WebApp.gs`), panel, pytania w prywatnym czacie |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
@@ -300,7 +300,7 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
   Panel: `getDiagnostics().diag`. Bez imion i treści.
-- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B80, S145; decyzja właściciela 24.10.2026:
+- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B86, S145–S147; decyzja właściciela 24.10.2026:
   „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
   bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
   odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa
@@ -322,14 +322,25 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (`sendHelperContact(nr, pin)`, wprost, NIE RETRIABLE — dwa wywołania = dwie karty) i „kto 17" w czacie; udostępniony botowi
   kontakt (`contactMessage`, `waid=` w vCard) dostaje odpowiedź z numerem osoby i klasą. W składzie dnia klasy przy
   imionach, „brak fioletowego" (tylko gdy ktoś jest fioletowy) i „kandydat bez fioletowego" (`helperSquadRoles_`). Zastąpiło pola
-  „Fioletowi" / „Nowi". **Na czas testów pisze TYLKO prywatnie** — adres
-  grupy jako odbiorcę odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`) i wysyłka (`helperSend_`, B74);
-  **nie dokładaj wysyłki do grupy bez decyzji właściciela**. `helperTick` jest publiczne (wyzwalacz), więc nic nie
+  „Fioletowi" / „Nowi". **Dokąd pisze** (decyzja właściciela 28.10 — testowanie na danych produkcji): kontakt z ustawień
+  (`toId`) to zawsze czat prywatny — adres grupy jako kontakt odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`)
+  i wysyłka (`helperDest_`, B74). **Na teście wszystko prywatnie.** Na produkcji każda funkcja z własną wiadomością
+  (`HELPER_READY` = `ready` w ustawieniach) ma tryb „w teście" (do kontaktu) albo **„gotowa" — do „Grafiku"** (`s.chatId`);
+  `helperSend_(s, st, text, run, feature)` bierze adres z `helperDest_`, a wiadomości bez funkcji (odpowiedzi, karty, ostrzeżenie
+  bramki, podgląd) idą zawsze do kontaktu (B85, S147). Wyłączona funkcja nie jest „gotowa" (po włączeniu wraca do testu), zapis
+  bez `ready` (karta sprzed 28.10) zostawia tryby, a zapis, po którym coś zaczyna pisać do grupy, przeglądarka najpierw
+  potwierdza. **Nie dokładaj innych dróg do grupy bez decyzji właściciela.** `helperTick` jest publiczne (wyzwalacz), więc nic nie
   przyjmuje; raporty mają znaczniki „wysłany" (`helperOnce_`), sufity `HELPER_SEND_MAX` / `HELPER_DAY_MAX`, jeden
   przebieg naraz (`helperBusy`). Pomocnik nie pisze do arkusza i nie bierze `withLock_` (stan we właściwościach, każda
   część ≤ `HELPER_BYTES`; arkusz czyta leniwie, tylko gdy składa raport — `helperCtx_`); błąd bramki zostaje w jego
-  dzienniku (panel), wyzwalacz nie rzuca. **Kolejka jest jedna na instancję, a test i produkcja dzielą instancję —
-  włączony tylko w jednym środowisku.** Głosy: powiadomienie dotyczy jednej osoby (dokumentacja bramki) — jedna
+  dzienniku (panel), wyzwalacz nie rzuca. **Kolejka jest jedna na instancję, a test i produkcja dzielą instancję — pracuje
+  zawsze jeden pomocnik, pierwszeństwo ma produkcja** (decyzja właściciela 28.10, HELPER.md „Produkcja i test", B86): włączony
+  pomocnik produkcji przy każdym przebiegu i zapisie ustawień wysyła aplikacji testowej sygnał „pracuję" (`helperLeaseSend_` →
+  POST do `HELPER_TEST_APP` = wdrożenie z `deploy:test`, T8 → `doPost` → `helperLeaseIn_`; `HELPER_LEASE_MIN`), wyłączony —
+  „koniec"; pomocnik testu z ważnym sygnałem czeka (`helperWaits_`: wyzwalacz nic nie robi, „Sprawdź teraz" odmawia).
+  Sygnał podpisany tokenem bramki (HMAC; wspólny token = wspólna kolejka), świeży, nie starszy od zapisanego; produkcja go nie
+  przyjmuje. Po przerwie dłuższej niż `HELPER_STALE_MIN` pomocnik doczytuje historię czatu. Stan (członkowie, klasy, numery
+  osób) jest osobny w każdej aplikacji. **`doPost` to jedyne wejście POST** — publiczne, przyjmuje tylko ten sygnał. Głosy: powiadomienie dotyczy jednej osoby (dokumentacja bramki) — jedna
   w odpowiedziach = jej wybory, nikt = wycofała wszystko, dwie i więcej = pełny stan; numer głosującego bywa w innym
   formacie niż nadawcy (`@lid`) — `alias`; głos to stan osoby z czasem (`vt`) — starszy niż znany nic nie zmienia.
   **Bramka nie oddaje bieżącego wyniku ankiety** — tylko zdarzenia osób z czasu, gdy powiadomienia w instancji były
@@ -530,6 +541,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   zapisywana przy „Zobacz", ✕ i otwarciu listy przyciskiem. **Bez pamięci przeglądarki paska nie ma**
   (`storageOk`) — nie zapamiętałby schowania i wisiałby przy każdym otwarciu. Całość w `try/catch`: dodatek
   nie może zatrzymać startu listy.
+- **Panel w zwijanych sekcjach** (1.5, 28.10, prośba właściciela: „panel jest już za duży"; S147). `panelSec(key, title, body,
+  {badge, off})`: nagłówek-przycisk (`data-act="panelSec"`) i treść; rozwinięte w `state.panelOpen` (do przeładowania), na start
+  wszystko zwinięte. **Zwinięta treść zostaje w stronie** (klasa `hidden`) — szkice, pola i odpowiedzi serwera działają jak dotąd.
+  Sekcje: lista i e-mail, WhatsApp, pomocnik — produkcja, pomocnik — test (działa sekcja z `env` tej aplikacji, druga `off`:
+  wyszarzona, bez pól), członkowie, diagnostyka (nieudane `getDiagnostics` rozwija ją sama). Bez trybu edycji Panel to sama
+  diagnostyka, bez sekcji.
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -612,7 +629,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1920 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **1978 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -638,7 +655,9 @@ wpis w drodze (wysłany, odpowiedź jeszcze nie wróciła) jest naraz w `app.dia
 się STAŁO, czekają na to (`until`, najwyżej 3 s), nie stałą pauzę; że się NIE stało — stały czas. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
-serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku) — S145c czeka na skrócony `T.helperWait`.
+serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku, Panel w sekcjach) — S145c czeka na skrócony
+`T.helperWait`. **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
+klikają pola jak dotąd; nowy test, który sprawdza, co widać, rozwija sekcję stuknięciem w nagłówek (`openSec`).
 **Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B80): bramka na niby z kolejką jak
 prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
 żadna wiadomość ze wszystkich scenariuszy nie poszła do grupy.
@@ -746,7 +765,10 @@ w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px
 z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
 reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`; S145d — bramka bez powiadomień w panelu),
 S146 członkowie w panelu (pobranie, „Imię (#17)" / sam „#17", bez numerów telefonu, 📲 wprost bez powtórki, klasa jednym
-stuknięciem po numerze osoby od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr),
+stuknięciem po numerze osoby od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr), S147 Panel w zwijanych
+sekcjach (kolejność, zwinięte na start, rozwinięte przeżywa przerysowanie, bez trybu edycji bez sekcji, nieudane pobranie rozwija
+diagnostykę) i pomocnik w dwóch sekcjach (sekcja drugiego środowiska wyszarzona; test czeka na produkcję; na produkcji tryb
+funkcji „w teście" / „gotowa" z pytaniem przed pierwszym „gotowa", sygnał dla testu w panelu; `HELPER_READY` = serwer),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -799,11 +821,18 @@ powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejk
 bez numerów w odpowiedzi, klasa po numerze osoby, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
 B84 numer osoby i karta kontaktu (nadany po kolei, nie z numeru telefonu, stały po wyjściu i powrocie, „#17 = Ania", „#17" w składzie
 i w „ludzie", 📲 i „kto 17" — karta tylko do właściciela, konto bez numeru, przebieg w toku, udostępnione kontakty, sufit kart
-i sufit zapamiętanych numerów),
+i sufit zapamiętanych numerów), B85 tryb funkcji (na teście „gotowa" przepada — przy zapisie i przy odczycie; na produkcji
+„gotowa" do „Grafiku", „w teście" do kontaktu, wyłączona nie jest „gotowa", zapis bez `ready` zostawia tryby; pytania, karty
+i podgląd zawsze do kontaktu; nagłówek bez 🧪, w dzienniku „do Grafiku:"), B86 jeden aktywny (sygnał przy zapisie i przebiegu
+produkcji, POST na adres wdrożenia testowego, bez tokenu; test z ważnym sygnałem nie rusza kolejki, „Sprawdź teraz" odmawia;
+podróbka, śmieci, inny token, sygnał sprzed 15 min, spóźniony „pracuję" po „koniec" — odrzucone; produkcja nie przyjmuje;
+„koniec" i wygaśnięcie — test przejmuje kolejkę i doczytuje historię; aplikacja testowa nie odpowiada — przebieg produkcji
+idzie dalej, błąd w panelu), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
-tylko wdrożenie testowe; odczyt stanu startowego i `served` z kawałków prawdziwej strony; mediana i 90% — RELEASE.md).
+tylko wdrożenie testowe; odczyt stanu startowego i `served` z kawałków prawdziwej strony; mediana i 90% — RELEASE.md),
+T8 sygnał pomocnika idzie do wdrożenia testowego (`HELPER_TEST_APP` w `Config.gs` = cel `deploy:test`, nie produkcja).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -1087,7 +1116,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
 - **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
   ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
   testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie
-  wiadomości prywatnie do właściciela, na podstawie prawdziwego „Grafiku". Na produkcji wyłączony (domyślnie). **Do zrobienia
+  wiadomości prywatnie do właściciela, na podstawie prawdziwego „Grafiku" (od 28.10 — także na produkcji, niżej). Na produkcji
+  wyłączony (domyślnie). **Do zrobienia
   przez właściciela przed testem:** w konsoli Green API powiadomienia przychodzące, o ankietach i o wiadomościach wysłanych
   (API i telefon), pusty adres webhooka (panel → „Sprawdź bramkę"); potem w panelu TESTU grupa „Grafik", kontakt, „włączony".
   **Test 24–25.10:** pomocnik włączony 24.10 wieczorem, ale w bramce wszystkie cztery powiadomienia były wyłączone — pusta
@@ -1103,6 +1133,14 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   „Pomocnik Grafiku"); o obecności mówi tylko ankieta — bez 🔀, 🚫 i „nieobecni", treści czatu bot nie czyta (@49, 27.10). Do wiadomości: stare grupy WhatsAppa mają w adresie
   numer twórcy („48600111222-1600000000@g.us") — lista grup („Pobierz grupy") pokazuje adresy grup; grupy społeczności
   („120363…@g.us") numeru nie mają.
+  **28.10 — pomocnik na danych produkcji** (decyzje właściciela; Konwencje, HELPER.md „Produkcja i test"): właściciel chce
+  testować bota na danych produkcji, więc **pomocnik jedzie z 1.5 na produkcję** (wyłączony, dopóki nie włączy go w panelu
+  produkcji). Na produkcji tryb funkcji „w teście" (do kontaktu) / „gotowa" (do „Grafiku"); **pracuje zawsze jeden** — pierwszy
+  projekt (oba naraz, test z historii czatu) właściciel odrzucił: „niech jeden będzie aktywny"; pierwszeństwo ma produkcja,
+  test czeka na jej sygnał. Panel w zwijanych sekcjach, pomocnik produkcji i testu w osobnych (druga wyszarzona). Do czasu
+  wydania 1.5 na produkcji sygnału nie ma, więc pomocnik testu pracuje jak dotąd. **Po wydaniu do sprawdzenia** (HELPER.md,
+  punkt 6): czy sygnał dochodzi (panel produkcji „doszedł ✓", panel testu „Czeka"), przejęcie po wyłączeniu na produkcji,
+  pierwsza wiadomość funkcji „gotowej" w „Grafiku"; członków i klasy trzeba pobrać i ustawić w panelu produkcji od nowa.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,

@@ -2,13 +2,21 @@
 
 Bot czyta z grupy **„Grafik"** ankietę tygodniową — **jedyne źródło prawdy o tym, kto przychodzi** (decyzja właściciela
 27.10.2026: „tam, gdzie ktoś jest zaznaczony, tam ma być"; treści wiadomości z czatu bot nie analizuje, bierze z nich tylko
-nazwę nadawcy) — i składa z tego, razem z danymi aplikacji, krótkie wiadomości dla prowadzących. **Na czas testów każda wiadomość idzie wyłącznie prywatnie
-do właściciela** (kontakt wybrany w panelu) — nigdy do grupy. Kod tego pilnuje: adres odbiorcy musi być
-prywatnym czatem (`…@c.us`), adres grupy (`…@g.us`) jest odrzucany przy zapisie ustawień i drugi raz przy
-każdej wysyłce (B74). Funkcje, które się nie sprawdzą, wyłącza się pojedynczo w panelu — „lepiej więcej niż
-mniej" (decyzja właściciela 24.10.2026).
+nazwę nadawcy) — i składa z tego, razem z danymi aplikacji, krótkie wiadomości dla prowadzących.
 
-Kod: `Helper.gs`. Panel: „Pomocnik Grafiku (test)". Testy: B74–B84 (`tests/helper.js`), S145–S146 (`tests/scenarios21.js`).
+**Dokąd pisze** (decyzja właściciela 28.10.2026 — „wersja produkcyjna nie musi być produkcyjna"): na **teście** każda
+wiadomość idzie wyłącznie prywatnie, do kontaktu z ustawień (właściciel). Na **produkcji** każda funkcja z własną wiadomością
+ma tryb: **w teście** — prywatnie do kontaktu z ustawień (testowanie na danych produkcji; „prawie zawsze będę wybierał siebie"),
+**gotowa** — do „Grafiku", do wszystkich. Odpowiedzi na pytania, karty kontaktu, ostrzeżenia i podgląd z panelu — zawsze
+tylko do kontaktu. Kod tego pilnuje: kontakt musi być prywatnym czatem (`…@c.us`) — adres grupy jako kontakt odrzuca zapis
+ustawień, odczyt i każda wysyłka (B74); do „Grafiku" idzie wyłącznie funkcja „gotowa", wyłącznie na produkcji i wyłącznie do
+grupy z ustawień (`helperDest_`, B85). **Pracuje zawsze jeden pomocnik, a pierwszeństwo ma produkcja** (niżej, „Produkcja
+i test"). Funkcje, które się nie sprawdzą, wyłącza się pojedynczo w panelu — „lepiej więcej niż mniej" (decyzja właściciela
+24.10.2026).
+
+Kod: `Helper.gs` (wejście sygnału — `doPost` w `WebApp.gs`). Panel: sekcje „Pomocnik Grafiku — produkcja" i „— test"
+(działa sekcja tego środowiska, druga jest wyszarzona) i „Członkowie". Testy: B74–B86 (`tests/helper.js`), S145–S147
+(`tests/scenarios21.js`), T8 (`tests/tooling.js`).
 
 ## Skąd ten pomysł — co się dzieje w „Grafiku"
 
@@ -28,6 +36,13 @@ Próbka czatu (eksport 16.03–24.10.2026, ~1200 wiadomości) — powtarzające 
 | upały → ankiety „rano / wieczór" | lato | **pogoda** w składzie dnia (Open-Meteo, bez klucza) |
 
 ## Funkcje (każda z osobnym włącznikiem w panelu)
+
+Na produkcji funkcje 1–6 mają zamiast włącznika tryb: **wyłączona / w teście → do kontaktu / gotowa → do Grafiku**
+(`ready`, `HELPER_READY`). Wyłączona funkcja po ponownym włączeniu wraca jako „w teście", nie prosto do grupy. Zapis, po którym
+któraś funkcja zaczyna pisać do „Grafiku", najpierw pyta (do kogo i co pójdzie). Do „Grafiku" idzie **dokładnie ten sam tekst**,
+który widać w podglądzie: imiona z kontaktów telefonu bota i z pola „Imiona", klasy 🟣 🟠 🌱, „wypisali się", „#17" przy osobie
+bez imienia (numer osoby, nie numer telefonu). Pogoda i „codziennie" to części składu dnia, a pytania (8) idą zawsze do
+pytającego — te mają zwykły włącznik.
 
 1. **Skład na jutro** (`evening`) — codziennie o godzinie „wieczorem" (domyślnie 20): kto jest w ankiecie na
    jutro, ⚠️ gdy mniej niż „minimum osób" (domyślnie 3), wypisani z ankiety od wczoraj, klasy przy imionach (🟣 🟠 🌱)
@@ -125,13 +140,42 @@ zmieniają), B78, B79, B82. **Nie przywracać bez decyzji właściciela.**
   „co najmniej N os.", „≥" w przeglądzie i od kiedy pomocnik zna głosy; pełny obraz — od następnej ankiety (B81, B82).
   Głos to stan osoby z czasem (`vt`): starszy niż już znany nic nie zmienia, więc historia i kolejka mogą podawać te same
   głosy w dowolnej kolejności.
-- **Kolejka jest jedna na instancję**, a test i produkcja dzielą jedną instancję: **pomocnik może być włączony
-  tylko w jednym środowisku** (dwa czytające zjadałyby sobie powiadomienia). Na czas testów — na teście;
-  wersja produkcyjna nic z kolejki nie czyta.
+- **Kolejka jest jedna na instancję**, a test i produkcja dzielą jedną instancję — dlatego pracuje zawsze jeden pomocnik
+  (niżej, „Produkcja i test").
 - **Limit planu Developer** dotyczy też odbierania: „powiadomienia tylko z 3 czatów w miesiącu". W październiku
   komplet to grupa próbna, „Grafik" i właściciel. Czat spoza tej trójki (np. ogłoszenia społeczności) dostaje
   `quotaExceeded` — pomocnik go pomija. **Od 1.11 trzy pierwsze czaty, które się odezwą, zajmą limit** — jeśli
   bot jest w innych grupach, warto go z nich wypisać albo przejść na plan płatny.
+
+## Produkcja i test — pracuje jeden (28.10.2026)
+
+Właściciel chciał testować bota na danych produkcji, a nowe funkcje dalej najpierw na teście — dwie wersje aplikacji przy
+pracującym bocie. Test i produkcja dzielą jedną instancję bramki, a kolejka powiadomień jest jedna: dwa pomocniki zjadałyby
+sobie powiadomienia (każdy znałby połowę głosów), a właściciel dostawałby każdy skład dwa razy. Pierwszy pomysł — oba pracują,
+test czyta tylko historię czatu — właściciel odrzucił: **ma pracować jeden**. Rozwiązanie:
+
+- **Pierwszeństwo ma produkcja.** Włączony pomocnik produkcji przy każdym przebiegu (co 10 min) i przy zapisie ustawień
+  wysyła aplikacji testowej sygnał **„pracuję do …"** (`helperLeaseSend_` → POST do wdrożenia testowego `HELPER_TEST_APP` →
+  `doPost` → `helperLeaseIn_`), ważny `HELPER_LEASE_MIN` (30) minut; wyłączony — sygnał **„koniec"**.
+- **Pomocnik testu z ważnym sygnałem czeka**: przebieg z wyzwalacza nic nie robi (kolejki nie czyta, nic nie wysyła),
+  „Sprawdź teraz" odmawia z powodem. Panel testu: „Czeka — pracuje pomocnik produkcji (sygnał 18:40, ważny do 19:10)".
+- **Przełącznikiem jest „włączony" w panelu produkcji**: wyłączony — w ciągu 10 min pracuje pomocnik testu (o ile tam
+  włączony), włączony — test ustępuje od najbliższego przebiegu. Bez sygnału (produkcja bez pomocnika — wersja sprzed 1.5 —
+  albo bez przebiegów dłużej niż 30 min, np. bez wyzwalacza) test pracuje.
+- **Sygnał jest podpisany tokenem bramki** (HMAC-SHA256 — `Utilities`, jak klucz kontaktu): wspólny token = wspólna
+  instancja = wspólna kolejka. Bez tokenu podpisu nikt nie podrobi (wejście `doPost` jest publiczne jak cała aplikacja),
+  a środowiska z osobnymi instancjami nawzajem się nie wstrzymują. W sygnale nie ma tokenu, tylko podpis. Sygnał starszy niż
+  15 min, z terminem dalej niż 30 min naprzód albo starszy od już zapisanego (spóźniony „pracuję" po „koniec") — odrzucony.
+  Produkcja sygnału nie przyjmuje (na nikogo nie czeka), test go nie wysyła.
+- **Po przerwie pomocnik doczytuje historię czatu** (ostatni przebieg dawniej niż `HELPER_STALE_MIN` — czekał albo był
+  wyłączony): to, co przyszło w międzyczasie, zdjął z kolejki drugi. Głos to stan osoby z czasem, więc historia uzupełnia
+  ankietę bez szkody.
+- **Panel produkcji** pokazuje, czy sygnał doszedł („doszedł ✓" albo „nie doszedł — …: bot testowy może pracować
+  równocześnie"), **panel testu** — czy czeka. Sekcja drugiego środowiska jest wyszarzona: jej ustawienia są w drugiej aplikacji.
+- **Stan jest osobny w każdej aplikacji**: lista członków, klasy (🟣 🟠 🌱), numery osób (#17 na teście to inna osoba niż #17
+  na produkcji), ankiety i głosy. Pomocnik produkcji zaczyna od zera — członków trzeba pobrać i sklasyfikować w jego panelu.
+- W Wykonaniach testu sygnał to wywołania `doPost` (co 10 min, gdy na produkcji pomocnik włączony) — osobno od `doGet`
+  i `getData`, które mierzy test wydania.
 
 ## Dane i prywatność
 
@@ -144,12 +188,16 @@ i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na Whats
 (lista dnia i pomocnik — `getDayReportContacts`) też bez numeru (27.10, decyzja właściciela): pozycja to nazwa, a wartość — klucz
 kontaktu (`contactKey_`, HMAC z sekretem projektu); zapisany odbiorca w panelu to klucz i nazwa, adres zostaje na serwerze.
 Tekst błędów bramki, który idzie do panelu, ma numery zamaskowane (`noPhones_`).
-Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów).
+Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów); sygnał produkcji dla testu ma podpis
+zrobiony tokenem, nie token. **Wiadomość funkcji „gotowej" czyta cała grupa** — imiona w niej to nazwy z kontaktów telefonu bota
+i z pola „Imiona", więc nazwy kontaktów powinny nadawać się do „Grafiku" (bez prywatnych dopisków).
 
 ## Bezpieczniki
 
-- Wiadomość tylko do kontaktu prywatnego z ustawień (B74), najwyżej `HELPER_SEND_MAX` na przebieg
-  i `HELPER_DAY_MAX` na dzień. Karta kontaktu — też tylko tam, osobno najwyżej `HELPER_CARD_MAX` na dzień.
+- Wiadomość do kontaktu prywatnego z ustawień (B74); do „Grafiku" tylko funkcja „gotowa", tylko na produkcji, tylko do
+  grupy z ustawień (`helperDest_` sprawdza to przy każdej wysyłce, B85). Najwyżej `HELPER_SEND_MAX` na przebieg
+  i `HELPER_DAY_MAX` na dzień (wspólnie). Karta kontaktu — tylko do kontaktu, osobno najwyżej `HELPER_CARD_MAX` na dzień.
+- Pracuje jeden pomocnik naraz — sygnał produkcji, podpisany tokenem bramki (B86, wyżej).
 - Numery osób nadają dwa miejsca (przebieg i „Pobierz członków"), więc zawsze pod blokadą skryptu ze świeżym odczytem
   (`helperNrsAdd_`); przebieg bierze ją na chwilę i tylko wtedy, gdy ktoś nowy nie ma numeru (bez flush i pamięci podręcznej).
 - Jeden przebieg naraz (`helperBusy`, `HELPER_BUSY_MS`) — wyzwalacz i „Sprawdź teraz" się nie dublują.
@@ -169,8 +217,12 @@ Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je 
 5. Numer osoby i karta (27.10, @46): „Pobierz członków" — czy wszyscy mają numer i 📲 (brak 📲 = grupa podała konto `@lid`
    bez kontaktu w telefonie bota); 📲 i „kto 17" — czy karta dochodzi z nazwą „Imię #17" i otwiera właściwą osobę;
    udostępniony botowi kontakt — czy odpowiedź przychodzi (`contactMessage` z `waid=` w vCard — tak mówi dokumentacja).
+6. Jeden aktywny (28.10) — dopiero gdy pomocnik jest na produkcji (wydanie 1.5): po włączeniu w panelu produkcji — „Sygnał dla
+   bota testowego … doszedł ✓" (POST z Apps Script do wdrożenia testowego: przekierowanie Google i `doPost` są do sprawdzenia
+   na żywo), w panelu testu „Czeka — pracuje pomocnik produkcji", w Wykonaniach testu `doPost` co 10 min; wyłączenie na
+   produkcji — test pisze (z 🧪) w ciągu 10 min. Funkcja „gotowa" — pierwsza wiadomość w „Grafiku" z produkcji.
 
 ## Poza zakresem (na później)
 
-Wysyłanie do „Grafiku" (alerty dla wszystkich, zamiast prywatnie), przypinanie ankiety przez bota, wybieg
-i rezerwacje wybiegu, odpowiadanie wolontariuszom.
+Przypinanie ankiety przez bota, wybieg i rezerwacje wybiegu, odpowiadanie wolontariuszom (pytania zadaje tylko kontakt
+z ustawień). Wysyłanie do „Grafiku" weszło 28.10 jako tryb „gotowa" (wyżej).

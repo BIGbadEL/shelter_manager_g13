@@ -103,5 +103,10 @@ check('podsumowanie: mediana, 90%, najdłużej, progi, błędy, pamięć',
   sum.med === 1200 && sum.p90 === 5200 && sum.max === 5200 && sum.over3 === 2 && sum.over5 === 1 && sum.errors === 1 && sum.cached === 9 && sum.sheet === 1,
   JSON.stringify(sum));
 
+console.log('T8: pomocnik produkcji wysyła sygnał „pracuję" do wdrożenia testowego — HELPER_TEST_APP (Config.gs) = cel deploy:test');
+const testApp = (fs.readFileSync(path.join(ROOT, 'Config.gs'), 'utf8').match(/const HELPER_TEST_APP = '([^']+)'/) || [])[1];
+check('HELPER_TEST_APP = wdrożenie z deploy:test, nie produkcyjne', !!testApp && testApp === redeployId(S['deploy:test']) && testApp !== redeployId(S['deploy:prod']),
+  testApp + ' / ' + redeployId(S['deploy:test']));
+
 console.log(failures ? `\n${failures} FAIL` : '\nWszystko zielone.');
 process.exit(failures ? 1 : 0);

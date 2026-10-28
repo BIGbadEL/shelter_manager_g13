@@ -202,6 +202,9 @@ function makeContext(opts){
       },
       createHtmlOutputFromFile: () => ({ getContent: () => '' }),
     },
+    // odpowiedź doPost (sygnał pomocnika — jeden aktywny): tekst i typ, jak ContentService
+    ContentService: { MimeType: { JSON: 'JSON' },
+      createTextOutput(text){ const out = { _text: String(text), _mime: '', setMimeType(m){ out._mime = m; return out; }, getContent: () => out._text }; return out; } },
     // HMAC, base64 i UUID jak w Apps Script (klucz kontaktu bez numeru telefonu — contactKey_): bajty ze znakiem (-128..127)
     Utilities: { formatDate,
       computeHmacSha256Signature: (value, key) => Array.from(require('crypto').createHmac('sha256', String(key)).update(String(value), 'utf8').digest())
@@ -293,12 +296,13 @@ function makeContext(opts){
                           catalogLocked_, bootState_, cacheBump_,
                           setHelperSettings, helperSettings_, helperTick, helperRunNow, helperPreview, getHelperGateway, helperPanel_,
                           helperRange_, helperOptDay_, helperLoad_,
-                          getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_, noPhones_ };
+                          getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_, noPhones_,
+                          doPost, helperWaits_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,
                            CACHE_PREFIX, CACHE_KEY, DEFAULT_HELPER, HELPER_LIMITS, HELPER_FEATURES, HELPER_SEND_MAX, HELPER_DAY_MAX, HELPER_CARD_MAX,
-                           HELPER_TICK_MIN, HELPER_BYTES };
+                           HELPER_TICK_MIN, HELPER_BYTES, HELPER_READY, HELPER_LEASE_MIN, HELPER_STALE_MIN, HELPER_TEST_APP };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0;
                                          lockKeepsDogs_ = false; volLock_ = null; };

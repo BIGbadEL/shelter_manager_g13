@@ -199,9 +199,12 @@ const POLL_LIMITS = { QUESTION: 200, OPTION: 100, OPTIONS_MIN: 2, OPTIONS_MAX: 1
 const POLL_WINDOW_H = 3;
 
 /**
- * Pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) — bot czyta grupę „Grafik" (ankieta i czat)
- * i pisze PRYWATNIE do właściciela: skład dnia, przegląd tygodnia… Wyłączony, dopóki
- * prowadząca go nie włączy. `features` — włącznik każdej funkcji (panel). min — ilu osób trzeba na dzień
+ * Pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) — bot czyta grupę „Grafik" (ankieta) i składa
+ * wiadomości: skład dnia, przegląd tygodnia… Wyłączony, dopóki prowadząca go nie włączy. `features` — włącznik
+ * każdej funkcji (panel). `ready` — funkcje „gotowe" (28.10.2026, decyzja właściciela): na PRODUKCJI piszą do „Grafiku",
+ * pozostałe włączone — „w teście" — do kontaktu z ustawień (toId, zwykle właściciel); na teście `ready` przepada i wszystko
+ * idzie prywatnie. Tryb mają tylko funkcje z własną wiadomością (HELPER_READY): pogoda i „codziennie" to części składu
+ * dnia, a odpowiedzi na pytania idą zawsze do pytającego. min — ilu osób trzeba na dzień
  * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
  * weekDays — dni przeglądu tygodnia (0 = niedziela), names — imiona dla osób bez nazwy („#17 = Ania" — numer osoby
  * z listy członków, albo „…123 = Ania" — końcówka numeru telefonu).
@@ -212,8 +215,22 @@ const DEFAULT_HELPER = {
   min: 3, evening: 20, morning: 7, weekDays: [0, 3], names: '',
   features: { evening: true, eveningAlways: true, morning: true, week: true, newPoll: true,
               members: true, lastWeek: true, weather: true, commands: true },
+  ready: { evening: false, morning: false, week: false, newPoll: false, members: false, lastWeek: false },
 };
 const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
+const HELPER_READY = Object.keys(DEFAULT_HELPER.ready);
+/**
+ * Jeden aktywny pomocnik (28.10.2026, decyzja właściciela; Helper.gs, „jeden aktywny"): test i produkcja dzielą jedną
+ * instancję bramki z jedną kolejką powiadomień, więc pracuje zawsze jeden, a pierwszeństwo ma produkcja. Włączony
+ * pomocnik produkcji wysyła do aplikacji testowej podpisany sygnał „pracuję" — przy każdym przebiegu i przy zapisie
+ * ustawień, ważny HELPER_LEASE_MIN minut — a przy wyłączeniu „koniec"; pomocnik testu z ważnym sygnałem czeka.
+ * HELPER_TEST_APP — wdrożenie testowe, ten sam identyfikator co `deploy:test` w package.json (T8 pilnuje obu).
+ * Przerwa w przebiegach dłuższa niż HELPER_STALE_MIN (czekał na produkcję, był wyłączony) — pomocnik doczytuje historię
+ * czatu: to, co przyszło w międzyczasie, zdjął z kolejki drugi.
+ */
+const HELPER_TEST_APP = 'AKfycbwyC8yTGXWJQmIUL-j0YNv77E1S8qEYCqtsTB54bxK9SWQhWmq2njdByJFpfIWOtw04IQ';
+const HELPER_LEASE_MIN = 30;
+const HELPER_STALE_MIN = 30;
 /**
  * Sufity pomocnika. Właściwość ma limit 9 KB na wartość — każda część stanu najwyżej HELPER_BYTES bajtów,
  * listy najwyżej tyle pozycji. NAME_MAP — pole panelu „Imiona" (ta sama liczba w Script.html — S145b),

@@ -27,6 +27,16 @@ function doGet() {
 }
 
 /**
+ * Jedyne wejście POST: sygnał pomocnika Grafiku z produkcji do testu („pracuję" / „koniec" — jeden aktywny pomocnik,
+ * helperLeaseIn_ w Helper.gs). Nic innego nie przyjmuje; odpowiedź to krótki JSON. Publiczne jak cała aplikacja — dlatego
+ * sygnał jest podpisany tokenem bramki.
+ */
+function doPost(e) {
+  const res = helperLeaseIn_(e && e.postData ? e.postData.contents : '');
+  return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Stan startowy wpisany wprost w stronę (<script type="application/json" id="boot">).
  *
  * Bez tego telefon po załadowaniu strony musiał jeszcze raz zapytać serwer o dane —
