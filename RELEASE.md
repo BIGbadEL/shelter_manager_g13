@@ -30,7 +30,9 @@ okno czasu. Surowe wyniki w pliku JSONL (ścieżka na początku).
 - `doGet` w oknie sondy;
 - `getData` w **cichym oknie**: jedna otwarta karta aplikacji, 10 min bez żadnego zapisu (~40 odczytów).
   Odczyty w trakcie serii zapisów są wolniejsze i nieporównywalne (13.10: 2,1 s przy zapisach,
-  wobec ok. 1,7 s bez nich);
+  wobec ok. 1,7 s bez nich). **Karta musi być widoczna**: przy zasłoniętym oknie Chrome (np. komputer bez nikogo) lista
+  się nie odświeża (`document.hidden`). Wtedy rozszerzenie trzyma kartę w ruchu seriami `wait`, po najwyżej ~80 s na
+  serię, bo dłuższa przekracza limit narzędzia (29.10);
 - zapisy (`reserve`, `markWalked`, `setFree`, …) w oknie testu funkcjonalnego.
 
 Dla każdej funkcji: mediana, 90%, najdłużej, stany inne niż „Ukończono".
@@ -94,7 +96,8 @@ Kolejność:
   - konsola strony bez błędów.
 - [ ] **Rezerwacja z imieniem:** kafelek zarezerwowany, kolor osoby, potem „Zwolnij".
 - [ ] **„Wrócił ✓"**, potem „Cofnij".
-- [ ] **Pies na dwa spacery:** 1/2 i 2/2 osobno (rezerwacja, spacer, cofnięcie).
+- [ ] **Pies na dwa spacery:** 1/2 i 2/2 osobno (rezerwacja, spacer, cofnięcie); pole „Twoje imię" w 1/2 i 2/2
+  z „OK" w ramce pola przy 360 px (od 1.5).
 - [ ] **Strzałka na jutro:** rezerwacja z wyprzedzeniem, powrót na dziś.
 - [ ] **Trzy rezerwacje naraz** (pomiar c): każda zapisana, lista się nie rozjeżdża.
 - [ ] **Spacer grupowy** — na telefonie (Chrome nie umie przytrzymać: przeciągnięcie w miejscu trwa krócej
@@ -116,10 +119,12 @@ PIN wpisuje właściciel.
   - edycja: imię, 2 spacery, grupa innej grupy, notatka;
   - zaraz po edycji akcja na jego spacerze widzi zmianę.
 - [ ] **Zadanie:** dodanie na dziś i na jutro, odhaczenie.
-- [ ] **Panel:**
-  - liczniki, Dziennik spowolnień;
-  - ustawienia maila (bez zapisu);
-  - WhatsApp: stan konta, bez wysyłek.
+- [ ] **Panel** (od 1.5 w zwijanych sekcjach — rozwinąć stuknięciem w nagłówek, drugie zwija):
+  - Diagnostyka: liczniki, Dziennik spowolnień;
+  - Lista i e-mail: ustawienia maila (bez zapisu);
+  - WhatsApp: stan konta, bez wysyłek;
+  - pomocnik Grafiku (od 1.5): na teście sekcja „— produkcja" wyszarzona, „— test" działa — stan (czeka na produkcję albo
+    pracuje), „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu.
 - [ ] **Sprzątanie:** usunięcie psa próbnego i zadań, wyjście z trybu edycji.
 
 ## 3. Wynik
@@ -142,7 +147,38 @@ mierzony bez warunku cichego okna (zwykły ruch testu).
 | 1.3 | 9.10.2026 | @31–@32 (1.3 + „Co nowego") | 2,20 / 3,14 s / 13 | 1,75 s | 1,69 s | 1,9 / 3,7 / 5,7 s |
 | 1.4 (przed testem wydania) | 9.10.2026, 17:32 | @33 | 1,23 / 1,70 s / 3 | 0,79 s | 1,73 s | 1,8 / 2,8 / 2,8 s |
 | 1.4 (pierwszy test wydania) | 13.10.2026, 17:04–18:10 | @34 | 1,22 / 1,87 s / 2 | 0,81 s | **2,20 s** (cicho, n=30; powtórka 18:00: 2,22 s, n=28) | 2,0 / 2,8 / 4,2 s |
-| **1.4 (test wydania z poprawką B73)** | 23.10.2026, 18:00–18:27 | @37 | 1,05 / 1,67 s / 0 | 0,74 s | 1,78 s (cicho, n=40; 90% 2,23 s) | 1,4 / 2,2 / 2,8 s |
+| 1.4 (test wydania z poprawką B73) | 23.10.2026, 18:00–18:27 | @37 | 1,05 / 1,67 s / 0 | 0,74 s | 1,78 s (cicho, n=40; 90% 2,23 s) | 1,4 / 2,2 / 2,8 s |
+| **1.5** | 29.10.2026, 07:29–11:45 | @52 | 1,14 / 1,77 s / 0 | 0,82 s | 1,80 s (cicho, n=40; 90% **3,01 s**) | **4,0 / 4,6 / 6,0 s**; po 30 min **2,3 / 3,3 / 4,0 s** |
+
+**29.10 — dwa progi przekroczone; wydanie przyjęte przez właściciela (decyzja 29.10, po analizie niżej).** Wobec 1.4:
+- strona +9% (90%: +6%), `doGet` +10%;
+- `getData` w cichym oknie: mediana +1%, ale **90% +35%** (3,01 wobec 2,23 s; 4 z 40 odczytów ≥3 s: 3,0 / 3,2 / 3,3 / 8,6 s);
+- **trzy rezerwacje naraz ponad progiem w obu próbach**: 08:06 — 4,0 / 4,6 / 6,0 s, 08:36 — 2,3 / 3,3 / 4,0 s. Druga mieści się
+  w rozrzucie 1.4 (13.10: 2,0 / 2,8 / 4,2 s). Trzy zwolnienia naraz: 2,4 / 2,9 / 9,6 s i 2,5 / 2,9 / 4,4 s;
+- pojedyncze zapisy w normie: `reserve` 2,0 s, `setFree` 1,96 s (mediany), `markWalked` 2,5 s (jeden pomiar).
+
+Dlaczego to nie kod 1.5:
+- 1.5 nie zmienia kodu `getData`, `doGet` ani zapisów (dochodzą `Helper.gs`, stałe, `doPost`, pola panelu);
+- wolne odczyty z cichego okna nie mają wpisu serwera w Dzienniku spowolnień, więc nasz kod szedł krócej niż 3 s
+  (8,6 s — telefon widział 9,1 s; czas minął przed startem naszego kodu). Tak samo zwolnienie 9,6 s (08:06);
+- w trzech naraz kolejne zapisy dochodzą co tyle samo co w 1.4 (08:36: +1,0 / +0,7 s, 1.4: +0,8 / +0,6 s). Różnica siedzi w pierwszym zapisie: 2,3 s
+  wobec 1,4 s, a dzisiejszy pojedynczy zapis to ~2,0 s. Pierwszy zapis trójki 23.10 był krótszy niż mediana pojedynczej
+  rezerwacji tamtego dnia (2,2 s). Dziennik, trzecia rezerwacja 08:36: blokada 1,9 s, praca 0,5 s, zapis 0,7 s;
+- Google był tego dnia wolniejszy: `reportDiag` (bez arkusza) 0,72–0,92 s zamiast ~0,5 s, `helperTick` 7,7–16,8 s.
+
+Jedyny zmierzony koszt wydania: kod serwera +70% (`.gs` 154 → 262 KB, głównie `Helper.gs`). Pasuje do +80 ms w `doGet`
+i mieści się w progach. Pierwsze ciche okno (07:49–07:59) dało tylko 13 odczytów (1,62 s, 90% 2,41 s), bo zasłonięte okno
+Chrome nie odświeża listy. Drugie (11:35–11:45) szło z kartą trzymaną w ruchu przez rozszerzenie (sekcja 1b).
+
+Test w Chrome bez błędów:
+- nowe w 1.5: „OK" w polu 2/2 w ramce; Panel w sekcjach (rozwijanie, zwijanie, wyszarzona sekcja „— produkcja" z opisem,
+  sekcja „— test": stan, „Sprawdź bramkę", podgląd „jutro" i „tydzień"); członkowie bez numerów telefonów; „Co nowego";
+- rezerwacja, „Wrócił ✓", „Cofnij", 1/2 i 2/2, jutro, „Bierze TTB", trzy naraz, miniony dzień (16.10: numery, spacer
+  grupowy), dwie karty;
+- zmiana psa w panelu (notatka, 2 spacery) u wolontariusza po ~15 s, rezerwacja 2/2 zaraz po edycji przyjęta; pies przywrócony.
+
+Pominięte: „Skopiuj treść" (schowek właściciela, kod bez zmian od 1.2), dodanie i usunięcie psa oraz zadania (okienka
+potwierdzenia, właściciel poza komputerem). Spacer grupowy — na telefonie.
 
 **23.10 — w normie.** Wobec 1.3: strona −52%, `doGet` −58%, `getData` +5% (próg 15%), trzy rezerwacje naraz krócej.
 Wobec 13.10 `getData` −19% (90%: 3,47 → 2,23 s). Dziennik spowolnień bez ani jednego wpisu z testu (nic ≥3 s w naszym

@@ -27,6 +27,16 @@ function doGet() {
 }
 
 /**
+ * Jedyne wejście POST: sygnał pomocnika Grafiku z produkcji do testu („pracuję" / „koniec" — jeden aktywny pomocnik,
+ * helperLeaseIn_ w Helper.gs). Nic innego nie przyjmuje; odpowiedź to krótki JSON. Publiczne jak cała aplikacja — dlatego
+ * sygnał jest podpisany tokenem bramki.
+ */
+function doPost(e) {
+  const res = helperLeaseIn_(e && e.postData ? e.postData.contents : '');
+  return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Stan startowy wpisany wprost w stronę (<script type="application/json" id="boot">).
  *
  * Bez tego telefon po załadowaniu strony musiał jeszcze raz zapytać serwer o dane —
@@ -168,16 +178,19 @@ function readState_(parts, keep) {
  * Dane do panelu diagnostycznego (tylko tryb edycji — stąd PIN). `poll` — ankieta tygodniowa
  * (Poll.gs, bez tokenu bramki i bez pytania bramki — stan konta bota idzie osobno, getPollState);
  * jej awaria nie może zabrać panelu, więc wtedy `null`. `diag` — dziennik spowolnień (Diag.gs).
+ * `helper` — pomocnik Grafiku (Helper.gs, 1.5), też bez pytania bramki.
  */
 function getDiagnostics(pin) {
   requirePin_(pin);
   const t = triggerInfo_();
-  let poll = null, dayReport = null;
+  let poll = null, dayReport = null, helper = null;
   try { poll = pollPanel_(); } catch (e) { poll = null; }
   try { dayReport = dayReportPanel_(); } catch (e) { dayReport = null; }
+  try { helper = helperPanel_(); } catch (e) { helper = null; }
   return {
     poll: poll,
     dayReport: dayReport,
+    helper: helper,
     diag: diagLog_(),
     resetHour: resetHour_(),
     triggerInstalled: t.installed,

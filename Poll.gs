@@ -155,18 +155,19 @@ function greenApi_() {
 
 /**
  * Wywołanie bramki: `method` (sendPoll, getContacts…), `body` — POST z JSON-em, bez niego GET,
- * `query` — dopisek do adresu. Token jest w samym adresie, więc żaden komunikat błędu (także błąd
- * sieci z UrlFetchApp, który potrafi zacytować adres) nie wychodzi z niego nietknięty.
+ * `query` — dopisek do adresu, `http` — inna metoda HTTP ('delete': deleteNotification, pomocnik Grafiku).
+ * Pusta odpowiedź = null (receiveNotification przy pustej kolejce). Token jest w samym adresie, więc żaden
+ * komunikat błędu (także błąd sieci z UrlFetchApp, który potrafi zacytować adres) nie wychodzi z niego nietknięty.
  * Błąd bez odpowiedzi bramki (timeout, zerwane połączenie) ma `unknown = true`: żądanie mogło
  * dojść i zostać wykonane — dla wysyłki to „nie wiadomo", nie „nie wyszła" (review PR #5, runda 2).
  */
-function greenCall_(method, body, query) {
+function greenCall_(method, body, query, http) {
   const g = greenApi_();
   if (!g) throw new Error(GREEN_MISSING);
   if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(g.url)) throw new Error('greenApiUrl musi być adresem https://… z konsoli Green API');
   if (!/^\d+$/.test(g.id)) throw new Error('greenApiInstance to sam numer instancji (idInstance)');
-  const hide = s => String(s).split(g.token).join('…');
-  const opts = { method: body ? 'post' : 'get', muteHttpExceptions: true };
+  const hide = s => noPhones_(String(s).split(g.token).join('…'));   // błąd idzie do panelu i do przeglądarki
+  const opts = { method: http || (body ? 'post' : 'get'), muteHttpExceptions: true };
   if (body) { opts.contentType = 'application/json'; opts.payload = JSON.stringify(body); }
   let res;
   try {
@@ -193,6 +194,7 @@ function greenCall_(method, body, query) {
     if (code >= 500) err.unknown = true;
     throw err;
   }
+  if (!text.trim()) return null;
   try { return JSON.parse(text); } catch (e) { throw new Error('Bramka WhatsAppa: nieczytelna odpowiedź'); }
 }
 
@@ -441,8 +443,9 @@ function getPollState(pin) {
    na bota ani przez niego nie pada, wynik w panelu, włącznik w panelu. */
 
 const DAY_REPORT_CHAT = /^\d{6,15}@c\.us$/;      // prywatny czat WhatsAppa: numer z kierunkowym + @c.us
+const PICK_CONTACTS_MAX = 300;                    // kontaktów na liście „Pobierz kontakty" (adresy ~20 bajtów — 6 KB z 9 KB właściwości)
 
-/** Zapisane ustawienia: {enabled, chatId, chatName}; włączone tylko z kontaktem. */
+/** Zapisane ustawienia: {enabled, chatId, chatName}; włączone tylko z kontaktem. Adres z numerem — tylko na serwerze. */
 function dayReportSettings_() {
   let s = null;
   try { s = JSON.parse(prop_(PROP_DAY_REPORT) || 'null'); } catch (e) { s = null; }
@@ -451,29 +454,99 @@ function dayReportSettings_() {
   return { enabled: !!s.enabled && !!chatId, chatId, chatName: chatId ? String(s.chatName || '').slice(0, 100) : '' };
 }
 
-/** Ustawienia z panelu (PIN). Idempotentne — w RETRIABLE. Reguły jak dayReportProblem w Script.html. */
+/**
+ * Ustawienia z panelu (PIN). Idempotentne — w RETRIABLE. Reguły jak dayReportProblem w Script.html. Kontakt przychodzi
+ * jako klucz (`chatKey` — contactKey_), nie adres z numerem: zapisany odbiorca albo kontakt z ostatniego „Pobierz kontakty".
+ * `chatId` wprost — tylko karta sprzed 27.10 (dostała adres z serwera wcześniej). Taka karta, otwarta jeszcze w chwili
+ * wdrożenia, nowego panelu nie rozumie i przysyła pusty `chatId` — to „nie znam", nie „wyczyść" (w 1.4 nie dało się wyczyścić
+ * wybranego kontaktu): zapisany kontakt zostaje (review PR #8; ta sama zasada co przy grupie psa — brak pola = bez zmian).
+ */
 function setDayReportSettings(settings, pin) {
   requirePin_(pin);
   const o = settings && typeof settings === 'object' ? settings : {};
-  const chatId = String(o.chatId || '').trim();
+  const key = String(o.chatKey || '').trim(), saved = dayReportSettings_();
+  const old = !('chatKey' in o) && !String(o.chatId || '').trim() && saved.chatId;
+  const chatId = key ? contactOfKey_(key, [saved.chatId, helperSettings_().toId]) : old ? saved.chatId : String(o.chatId || '').trim();
+  if (key && !chatId) throw new Error('Tego kontaktu nie ma na liście — „Pobierz kontakty" jeszcze raz');
   if (chatId && !DAY_REPORT_CHAT.test(chatId)) throw new Error('Nieprawidłowy kontakt — wybierz go z listy („Pobierz kontakty")');
   if (o.enabled && !chatId) throw new Error('Wybierz kontakt prowadzącej, zanim włączysz wysyłanie');
-  const s = { enabled: !!o.enabled, chatId, chatName: chatId ? clean_(String(o.chatName || '').replace(/[\r\n]+/g, ' '), 100) : '' };
+  const name = old ? saved.chatName : o.chatName;
+  const s = { enabled: !!o.enabled, chatId, chatName: chatId ? clean_(String(name || '').replace(/[\r\n]+/g, ' '), 100) : '' };
   withLock_(() => setProp_(PROP_DAY_REPORT, JSON.stringify(s)));
   return dayReportPanel_();
 }
 
+/* ---------- kontakty w panelu bez numerów telefonów (decyzja właściciela 27.10.2026) ----------
+   Adres prywatnego czatu WhatsAppa to numer telefonu („48600111222@c.us"), więc do przeglądarki zamiast niego idzie
+   klucz kontaktu (contactKey_): HMAC-SHA256 z sekretem projektu (`keySecret` — powstaje przy pierwszym użyciu, nie wychodzi
+   z serwera). Bez sekretu z klucza numeru się nie odtworzy — zwykły skrót z numeru (FNV, SHA) dałoby się odwrócić
+   przeszukaniem numerów. Zapis ustawień zamienia klucz z powrotem na adres (contactOfKey_): zapisany odbiorca albo
+   kontakt z ostatniego „Pobierz kontakty" (`pickContacts` — same adresy, na serwerze). Lista dnia i pomocnik Grafiku
+   biorą odbiorcę z tej samej listy. */
+
 /**
- * Kontakty z telefonu bota — do wyboru prowadzącej w panelu (PIN). Tylko zapisane w kontaktach
- * (`contactName`): bez tego lista zawierałaby każdego, kto jest w społeczności. Numer do opisu pozycji.
+ * Sekret kluczy kontaktów — z pamięci wykonania (props_, jeden odczyt właściwości na wykonanie; review PR #8: dawniej osobne
+ * wywołanie usługi na każdy kontakt, do 300 przy „Pobierz kontakty"). Przy pierwszym użyciu powstaje pod blokadą, ze świeżym
+ * odczytem (dwa wykonania naraz nie zrobią dwóch różnych), i trafia też do pamięci wykonania (setProp_).
+ */
+function keySecret_() {
+  const known = prop_(PROP_KEY_SECRET);
+  if (known) return known;
+  let s = '';
+  const make = () => {
+    s = PropertiesService.getScriptProperties().getProperty(PROP_KEY_SECRET) || '';
+    if (s) { if (propsMemo_) propsMemo_[PROP_KEY_SECRET] = s; return; }
+    s = Utilities.getUuid() + Utilities.getUuid();
+    setProp_(PROP_KEY_SECRET, s);
+  };
+  if (lockDepth_ > 0) { make(); return s; }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { make(); } finally { lock.releaseLock(); }
+  return s;
+}
+/** Klucz kontaktu dla przeglądarki: 'k' + 16 znaków HMAC adresu; '' — bez kontaktu. */
+function contactKey_(id) {
+  if (!id) return '';
+  const sig = Utilities.computeHmacSha256Signature(String(id), keySecret_());
+  return 'k' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '').slice(0, 16);
+}
+/** Adres kontaktu o kluczu `key`: spośród `known` (zapisani odbiorcy) i ostatniego „Pobierz kontakty"; '' — nie ma. */
+function contactOfKey_(key, known) {
+  let pick = [];
+  try { pick = JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP_PICK_CONTACTS) || '[]'); } catch (e) { pick = []; }
+  const all = (known || []).concat(Array.isArray(pick) ? pick : []);
+  return all.find(id => id && contactKey_(id) === key) || '';
+}
+/**
+ * Numery telefonów w tekście → „…": adresy czatów (z numerem w środku) i ciągi co najmniej 9 cyfr, także ze spacjami
+ * i kreskami („+48 600 111 222"); daty („2026-10-26" — 8 cyfr, także z godziną: „2026-10-26 18:40" — review PR #8) zostają.
+ * Numer zaraz po dacie — dalej „…". Tekst bramki idzie do panelu i do przeglądarki.
+ */
+function noPhones_(s) {
+  const run = t => t.replace(/\+?\d[\d -]{6,}\d/g, m => {
+    const d = m.match(/^\d{4}-\d{2}-\d{2}(?!\d)/);              // data na początku ciągu — nie numer, reszta osobno
+    if (d) return d[0] + run(m.slice(d[0].length));
+    return m.replace(/\D/g, '').length >= 9 ? '…' : m;
+  });
+  return run(String(s).replace(/\d{6,}(-\d+)?@(c\.us|lid|g\.us|s\.whatsapp\.net)/g, '…'));
+}
+
+/**
+ * Kontakty z telefonu bota — do wyboru odbiorcy w panelu (PIN): lista dnia (prowadząca) i pomocnik Grafiku. Tylko zapisane
+ * w kontaktach (`contactName`): bez tego lista zawierałaby każdego, kto jest w społeczności. Do przeglądarki — klucz i nazwa,
+ * bez numeru; adresy zostają na serwerze (`pickContacts`), żeby zapis ustawień zamienił klucz z powrotem na adres.
  */
 function getDayReportContacts(pin) {
   requirePin_(pin);
-  const list = greenCall_('getContacts', null, '?group=false');
-  return (Array.isArray(list) ? list : [])
+  const res = greenCall_('getContacts', null, '?group=false');
+  const list = (Array.isArray(res) ? res : [])
     .filter(c => c && c.type === 'user' && DAY_REPORT_CHAT.test(String(c.id)) && String(c.contactName || '').trim())
-    .map(c => ({ id: String(c.id), name: String(c.contactName).trim().slice(0, 100), phone: '+' + String(c.id).split('@')[0] }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+    .map(c => ({ id: String(c.id), name: String(c.contactName).trim().slice(0, 100) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pl'))
+    .slice(0, PICK_CONTACTS_MAX);
+  setProp_(PROP_PICK_CONTACTS, JSON.stringify(list.map(c => c.id)));
+  return list.map(c => ({ key: contactKey_(c.id), name: c.name }));
 }
 
 /** '2026-10-08' -> '08.10.2026' — jak plDate w Script.html. */
@@ -590,14 +663,18 @@ function lastHistDay_() {
   return max;
 }
 
-/** Panel: ustawienia, ostatnia próba i stan listy ostatniego dnia z Historii. Bez pytania bramki. */
+/**
+ * Panel: ustawienia (kontakt jako klucz i nazwa — bez adresu z numerem), ostatnia próba i stan listy ostatniego dnia
+ * z Historii. Bez pytania bramki.
+ */
 function dayReportPanel_() {
   let last = null, sent = {};
   try { last = JSON.parse(prop_(PROP_DAY_REPORT_LAST) || 'null'); } catch (e) { last = null; }
   try { sent = JSON.parse(prop_(PROP_DAY_REPORT_SENT) || '{}') || {}; } catch (e) { sent = {}; }
-  const day = lastHistDay_(), m = day ? sent[day] : null;
+  if (last && last.msg) last.msg = noPhones_(last.msg);
+  const day = lastHistDay_(), m = day ? sent[day] : null, s = dayReportSettings_();
   return {
-    settings: dayReportSettings_(), configured: !!greenApi_(), last,
+    settings: { enabled: s.enabled, chatKey: contactKey_(s.chatId), chatName: s.chatName }, configured: !!greenApi_(), last,
     day: day ? { date: day, label: plDate_(day), status: pollMarkState_(m), at: m ? m.at : '' } : null,
   };
 }

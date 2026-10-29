@@ -28,11 +28,12 @@
    *   readStale — odczyt w drodze dłużej niż to uznajemy za zgubiony: odświeżanie przestaje na niego czekać
    *              (20 s, nie 60 — 1.3: zastój Google dotyka pojedynczego wykonania, równoległe idą po 1,5 s,
    *              więc drugi odczyt prawie zawsze przechodzi; dziennik wykonań produkcji 2–9.10.2026),
-   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle.
+   *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle,
+   *   helperWait — przyciski pomocnika Grafiku czekają na odpowiedź najwyżej tyle (przebieg trwa do ~3 min).
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
     diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
-    refresh:15000, readStale:20000, wake:15000 }, window.__G13_TIMING || {});
+    refresh:15000, readStale:20000, wake:15000, helperWait:240000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -59,11 +60,18 @@
     pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
     pollChats:null,        // grupy konta bota z bramki („Pobierz grupy"): [{id, name}]; null = jeszcze nie pobrane
     pollChatsLoading:false,
-    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatId, chatName, enabled}
-    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{id, name, phone}]; null = jeszcze nie pobrane
+    dayReportDraft:null,   // lista dnia do prowadzącej (1.3), niezapisana: {chatKey, chatName, enabled}
+    dayReportContacts:null, // kontakty z telefonu bota („Pobierz kontakty"): [{key, name}] — bez numerów; null = jeszcze nie pobrane
     dayReportContactsLoading:false,
+    helperDraft:null,      // pomocnik Grafiku (1.5), niezapisany — kształt jak helperSaved()
+    helperBusy:'',         // przycisk pomocnika w toku: 'run' | 'gate' | 'preview' | 'send' | ''
+    helperGate:null,       // „Sprawdź bramkę": [{key, label, ok}] albo {error}
+    helperPreview:null,    // podgląd wiadomości: {kind, text}
+    rosterChat:'',         // grupa, z której „Pobierz członków" bierze listę ('' = z ostatniej listy albo „Grafik")
+    rosterFilter:'all',    // widok listy członków: all | none | p | o | k
     env:null,              // 'prod' albo cokolwiek innego; null = jeszcze nie wiemy
     diag:null,             // dane serwerowe do zakładki "Panel"
+    panelOpen:{},          // rozwinięte sekcje Panelu: klucz sekcji -> true (panelSec); do przeładowania strony
     select:null,           // zaznaczanie spacerów do grupy: {date, anchor, gid, ids, seen} ('pies:spacer') albo null
   };
   const viewEl = document.getElementById('view');
@@ -485,7 +493,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -1805,9 +1813,26 @@
       </div>`;
   }
 
+  /**
+   * Sekcja Panelu (28.10, prośba właściciela: „panel jest już za duży"): nagłówek-przycisk i treść, domyślnie zwinięta.
+   * Zwinięta treść zostaje w stronie (ukryta) — szkice, pola i odpowiedzi serwera działają jak dotąd, a przerysowanie
+   * panelu nie gubi, co jest rozwinięte (state.panelOpen). `badge` — krótki stan w nagłówku. `off` — sekcja drugiego
+   * środowiska (pomocnik): wyszarzona, bez rozwijania, treść to jedno-dwa zdania, jak ma się do tej.
+   */
+  function panelSec(key, title, body, o){
+    o = o || {};
+    const badge = o.badge ? `<span class="psec-badge">${esc(o.badge)}</span>` : '';
+    if(o.off) return `<section class="psec off" data-sec="${key}"><div class="psec-h"><span class="psec-t">${esc(title)}</span>${badge}</div>
+      <div class="psec-b">${body}</div></section>`;
+    const open = !!state.panelOpen[key];
+    return `<section class="psec${open ? ' open' : ''}" data-sec="${key}">
+      <button class="psec-h" data-act="panelSec" data-sec="${key}" aria-expanded="${open}"><span class="psec-t">${esc(title)}</span>${badge}<span class="psec-arrow" aria-hidden="true">${open ? '▾' : '▸'}</span></button>
+      <div class="psec-b${open ? '' : ' hidden'}">${body}</div></section>`;
+  }
+
   function renderDiagView(){
     const d = state.diag && !state.diag.failed ? state.diag : null;
-    const settings = state.admin ? `
+    const settings = state.admin ? panelSec('app', 'Lista i e-mail do schroniska', `
       <div class="panelbox">
         <h3>Ustawienia</h3>
         <div class="adminrow">
@@ -1850,7 +1875,12 @@
         nie otworzy poczty. [DATA] (w temacie i treści) zamienia się na dzień (np. 02.10.2026), [LISTA] —
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
-      </div>${d && d.poll ? renderPollBox(d.poll) : ''}${d && d.dayReport ? renderDayReportBox(d.dayReport) : ''}` : '';
+      </div>`)
+      + (d && (d.poll || d.dayReport) ? panelSec('wa', 'WhatsApp — ankieta i lista dnia',
+          (d.poll ? renderPollBox(d.poll) : '') + (d.dayReport ? renderDayReportBox(d.dayReport) : ''),
+          {badge: [d.poll ? 'ankieta ' + (d.poll.settings && d.poll.settings.enabled ? 'wł.' : 'wył.') : '',
+                   d.dayReport ? 'lista ' + (d.dayReport.settings && d.dayReport.settings.enabled ? 'wł.' : 'wył.') : ''].filter(Boolean).join(' · ')}) : '')
+      + (d && d.helper ? renderHelperSections(d.helper) : '') : '';
 
     const serverRows = d ? `
       <div class="diagrow"><b>środowisko</b><span>${esc(d.env || '')}</span></div>
@@ -1872,7 +1902,7 @@
       `<div class="diagrow"><span>${c.t}</span><b>${esc(c.fn)}</b><span>${c.ms} ms</span><span>${esc(c.outcome)}</span></div>`
     ).join('') || '<div class="diagrow"><span>Brak wywołań w tej sesji.</span></div>';
 
-    return `${settings}
+    const diag = `
       <div class="panelbox">
         <h3>Stan serwera</h3>
         <div class="diag">${serverRows}</div>${retry}
@@ -1884,6 +1914,9 @@
         <div class="diag">${rows}</div>
         <div class="diagrow"><b>w locie / w kolejce</b><span>${inflight.size} / ${queue.length}</span></div>
       </div>`;
+    // bez trybu edycji (5 stuknięć w datę) Panel to sama diagnostyka — bez sekcji do rozwijania
+    return state.admin ? settings + panelSec('diag', 'Diagnostyka — serwer, spowolnienia, wywołania', diag,
+      {badge: state.diag && state.diag.failed ? 'nie udało się pobrać' : ''}) : diag;
   }
 
   /** Stan serwera do panelu. Nieudane pobranie mówi o sobie — wcześniej „Pobieram…" wisiało do końca. */
@@ -1898,6 +1931,7 @@
       })
       .withFailureHandler(err=>{
         state.diag = {failed: (err && err.message ? err.message.replace(/^Error:\s*/,'') : '') || 'brak połączenia'};
+        state.panelOpen.diag = true;                       // komunikat i „Spróbuj jeszcze raz" są w tej sekcji — od razu na wierzchu
         if(state.view==='diag') safeRender();
       })
       .getDiagnostics(state.pin);
@@ -2190,25 +2224,27 @@
   /* ---------- lista dnia do prowadzącej na WhatsAppie (1.3) ----------
      Po nocnym czyszczeniu bot wysyła prowadzącej treść „📋 Skopiuj treść" każdego domkniętego dnia ze
      spacerami (serwer: dayReportText_ — ta sama reguła co mailText, S139). Ustawienia jak ankieta: szkic
-     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty"). */
+     w stanie, „Niezapisane zmiany", kontakt z listy kontaktów telefonu bota („Pobierz kontakty").
+     Kontakt to klucz i nazwa (`chatKey` — contactKey_ w Poll.gs): numer telefonu nie opuszcza serwera (decyzja
+     właściciela 27.10), więc przeglądarka go nie zna i nie pokazuje. */
   const DAY_REPORT_FIELDS = ['reportChat','reportEnabled'];
   function dayReportSaved(){
     const s = (state.diag && state.diag.dayReport && state.diag.dayReport.settings) || {};
-    return {chatId: s.chatId || '', chatName: s.chatName || '', enabled: !!s.enabled};
+    return {chatKey: s.chatKey || '', chatName: s.chatName || '', enabled: !!s.enabled};
   }
   function dayReportForm(){ return state.dayReportDraft || dayReportSaved(); }
   function dayReportDirty(){ return !!state.dayReportDraft && JSON.stringify(state.dayReportDraft) !== JSON.stringify(dayReportSaved()); }
   /** Te same reguły co setDayReportSettings na serwerze — komunikat od razu. '' = w porządku. */
   function dayReportProblem(f, configured){
-    if(f.enabled && !f.chatId) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
+    if(f.enabled && !f.chatKey) return 'Wybierz kontakt prowadzącej, zanim włączysz wysyłanie';
     if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
     return '';
   }
-  /** Pola panelu -> szkic. Nazwa kontaktu z wybranej pozycji (bez numeru — numer jest w opisie pozycji). */
+  /** Pola panelu -> szkic: klucz kontaktu i nazwa z wybranej pozycji. */
   function readDayReportForm(){
     const chat = viewEl.querySelector('#reportChat'), en = viewEl.querySelector('#reportEnabled');
     const opt = chat && chat.selectedIndex >= 0 ? chat.options[chat.selectedIndex] : null;
-    return {chatId: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
+    return {chatKey: chat ? chat.value : '', chatName: opt && chat.value ? (opt.dataset.name || opt.textContent) : '', enabled: !!(en && en.checked)};
   }
   function showDayReportDirty(){
     const d = dayReportDirty();
@@ -2218,11 +2254,11 @@
   function renderDayReportBox(r){
     const f = dayReportForm(), s = r.settings;
     const list = (state.dayReportContacts || []).slice();
-    if(f.chatId && !list.some(c => c.id === f.chatId)) list.unshift({id: f.chatId, name: f.chatName || f.chatId, phone: '+' + f.chatId.split('@')[0]});
-    const opts = (f.chatId ? '' : `<option value="">— wybierz kontakt —</option>`)
-      + list.map(c => `<option value="${esc(c.id)}" data-name="${esc(c.name)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)} (${esc(c.phone)})</option>`).join('');
+    if(f.chatKey && !list.some(c => c.key === f.chatKey)) list.unshift({key: f.chatKey, name: f.chatName || 'zapisany kontakt'});
+    const opts = (f.chatKey ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + list.map(c => `<option value="${esc(c.key)}" data-name="${esc(c.name)}"${c.key===f.chatKey ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const dirty = dayReportDirty();
-    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || s.chatId)}.`
+    const state1 = s.enabled ? `Włączone: po nocnym czyszczeniu lista każdego zamkniętego dnia ze spacerami idzie do ${esc(s.chatName || 'wybranego kontaktu')}.`
       : 'Wysyłanie po czyszczeniu jest wyłączone.';
     const L = r.last;
     const last = !L ? ''
@@ -2249,7 +2285,8 @@
         ${sendBtn}
         <div class="hint">Treść to dokładnie to, co kopiuje „📋 Skopiuj treść" w minionym dniu (szablon maila wyżej, z datą i listą
         psów). Każdy dzień idzie najwyżej raz; dzień bez spacerów — nic. Czyszczenie nie czeka na bota — gdy bramka zawiedzie,
-        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota.</div>
+        wynik stoi tutaj, a „Wyślij listę" wyśle ją jeszcze raz. Na liście kontaktów są tylko osoby zapisane w telefonie bota,
+        po nazwie — numery telefonów nie wychodzą z serwera.</div>
       </div>`;
   }
   /** „Pobierz kontakty": kontakty z telefonu bota z bramki (czytanie — bez kolejki). */
@@ -2273,6 +2310,281 @@
   function applyDayReportPanel(panel){
     if(!panel || !state.diag || state.diag.failed) return;
     state.diag.dayReport = panel;
+  }
+
+  /* ---------- pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) ----------
+     Bot czyta z „Grafiku" ankietę i składa wiadomości. Panel ma dwie sekcje — produkcja i test (renderHelperSections):
+     działa ta ze środowiska tej aplikacji, druga jest wyszarzona. Pracuje zawsze jeden pomocnik, pierwszeństwo ma produkcja
+     (sygnał — Helper.gs, „jeden aktywny"). Na produkcji każda funkcja z własną wiadomością ma tryb: „w teście" — do kontaktu
+     z ustawień, „gotowa" — do „Grafiku"; na teście wszystko prywatnie. Ustawienia jak ankieta: szkic w stanie
+     (state.helperDraft), „Niezapisane zmiany", te same reguły co serwer (helperProblem). Grupa i kontakt z tych samych list
+     co ankieta i lista dnia („Pobierz grupy", „Pobierz kontakty"). „Sprawdź teraz", „Sprawdź bramkę" i podgląd idą wprost
+     (nie przez kolejkę): przebieg potrafi trwać ponad 2 minuty. */
+  const HELPER_MIN_MAX = 10;                        // tyle, ile HELPER_LIMITS.MIN_MAX w Config.gs (S145 pilnuje)
+  const HELPER_NAME_MAP_MAX = 600;                  // HELPER_LIMITS.NAME_MAP
+  const HELPER_FEATURES = [
+    ['evening', 'skład na jutro — wieczorem'], ['eveningAlways', '…codziennie (wyłączone: tylko gdy coś nie gra)'],
+    ['morning', 'dziś rano — gdy coś nie gra'],
+    ['week', 'przegląd tygodnia'], ['newPoll', 'nowa ankieta (daty, przypięcie)'], ['members', 'nowe osoby w grupie'],
+    ['lastWeek', 'miniony tydzień — poniedziałek rano'], ['weather', 'pogoda'], ['commands', 'odpowiedzi na pytania w prywatnym czacie'],
+  ];
+  // funkcje z własną wiadomością — na produkcji z trybem „w teście" / „gotowa"; tyle, ile HELPER_READY w Config.gs (S147 pilnuje)
+  const HELPER_READY = ['evening', 'morning', 'week', 'newPoll', 'members', 'lastWeek'];
+  const HELPER_MODES = [['off', 'wyłączona'], ['test', 'w teście → do kontaktu'], ['group', 'gotowa → do Grafiku']];
+  const HELPER_LABEL = {};
+  HELPER_FEATURES.forEach(([k, label]) => { HELPER_LABEL[k] = label; });
+  const HELPER_KINDS = [['jutro', 'jutro'], ['dzis', 'dziś'], ['tydzien', 'tydzień'], ['miniony', 'miniony tydzień'], ['stan', 'stan']];
+  const HELPER_WD = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
+
+  /** Zapisane ustawienia w kształcie formularza. */
+  function helperSaved(){
+    const s = (state.diag && state.diag.helper && state.diag.helper.settings) || {};
+    const f = s.features || {}, r = s.ready || {};
+    const features = {}, ready = {};
+    HELPER_FEATURES.forEach(([k]) => { features[k] = f[k] !== false; });
+    HELPER_READY.forEach(k => { ready[k] = r[k] === true && features[k]; });
+    return {chatId: s.chatId || '', chatName: s.chatName || '', toKey: s.toKey || '', toName: s.toName || '',
+            min: Number(s.min) || 3, evening: Number(s.evening) || 0, morning: Number(s.morning) || 0,
+            weekDays: (s.weekDays || []).map(Number).sort(), names: s.names || '',
+            features, ready, enabled: !!s.enabled};
+  }
+  /** Tryb funkcji w formularzu: 'off' (wyłączona), 'test' (do kontaktu), 'group' (gotowa — do Grafiku, tylko produkcja). */
+  function helperMode(f, k){ return !f.features[k] ? 'off' : f.ready && f.ready[k] ? 'group' : 'test'; }
+  function helperForm(){ return state.helperDraft || helperSaved(); }
+  function helperDirty(){ return !!state.helperDraft && JSON.stringify(state.helperDraft) !== JSON.stringify(helperSaved()); }
+  /**
+   * Te same reguły co helperValid_ / setHelperSettings na serwerze — komunikat od razu. '' = w porządku. „Tylko prywatnie"
+   * sprawdza sam serwer: kontakt to klucz (`toKey`), a lista kontaktów ma wyłącznie czaty prywatne.
+   */
+  function helperProblem(f, configured){
+    if(!(f.min >= 1 && f.min <= HELPER_MIN_MAX)) return 'Minimum osób: od 1 do ' + HELPER_MIN_MAX;
+    if(String(f.names).replace(/\r\n?/g, '\n').trim().length > HELPER_NAME_MAP_MAX) return 'Imiona — najwyżej ' + HELPER_NAME_MAP_MAX + ' znaków';
+    if(f.enabled && !f.chatId) return 'Wybierz grupę „Grafik", zanim włączysz pomocnika';
+    if(f.enabled && !f.toKey) return 'Wybierz kontakt, do którego pomocnik ma pisać';
+    if(f.enabled && !configured) return 'Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu (opis przy ankiecie)';
+    return '';
+  }
+  /** Pola panelu -> szkic (nazwy grupy i kontaktu z wybranej pozycji). Funkcja z trybem (produkcja) — z listy wyboru. */
+  function readHelperForm(){
+    const el = id => viewEl.querySelector('#' + id);
+    const pick = id => { const s = el(id), o = s && s.selectedIndex >= 0 ? s.options[s.selectedIndex] : null; return {id: s ? s.value : '', name: o && s.value ? (o.dataset.name || o.textContent) : ''}; };
+    const chat = pick('helperChat'), to = pick('helperTo');
+    const features = {}, ready = {};
+    HELPER_FEATURES.forEach(([k]) => {
+      const m = el('helperM_' + k), c = el('helperF_' + k);
+      features[k] = m ? m.value !== 'off' : !!(c && c.checked);
+    });
+    HELPER_READY.forEach(k => { const m = el('helperM_' + k); ready[k] = !!m && m.value === 'group'; });
+    const weekDays = [0,1,2,3,4,5,6].filter(n => { const c = el('helperWd' + n); return !!(c && c.checked); });
+    const num = (id, def) => { const x = el(id); return x ? Number(x.value) : def; };
+    const txt = id => { const x = el(id); return x ? x.value : ''; };
+    return {chatId: chat.id, chatName: chat.name, toKey: to.id, toName: to.name, min: num('helperMin', 3),
+            evening: num('helperEvening', 20), morning: num('helperMorning', 7), weekDays,
+            names: txt('helperNames'), features, ready,
+            enabled: !!(el('helperEnabled') && el('helperEnabled').checked)};
+  }
+  function showHelperDirty(){
+    const d = helperDirty();
+    viewEl.querySelectorAll('.helperdirty, [data-act="helperReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    invalidateHtml();
+  }
+
+  function renderHelperBox(h){
+    const f = helperForm(), s = h.settings || {};
+    const chats = (state.pollChats || []).slice();
+    if(f.chatId && !chats.some(c => c.id === f.chatId)) chats.unshift({id: f.chatId, name: f.chatName || f.chatId});
+    const chatOpts = (f.chatId ? '' : `<option value="">— wybierz grupę —</option>`)
+      + chats.map(c => `<option value="${esc(c.id)}"${c.id===f.chatId ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const people = (state.dayReportContacts || []).slice();
+    if(f.toKey && !people.some(c => c.key === f.toKey)) people.unshift({key: f.toKey, name: f.toName || 'zapisany kontakt'});
+    const toOpts = (f.toKey ? '' : `<option value="">— wybierz kontakt —</option>`)
+      + people.map(c => `<option value="${esc(c.key)}" data-name="${esc(c.name)}"${c.key===f.toKey ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    let minOpts = '';
+    for(let n = 1; n <= HELPER_MIN_MAX; n++) minOpts += `<option value="${n}"${n===f.min ? ' selected' : ''}>${n}</option>`;
+    const days = [1,2,3,4,5,6,0].map(n => `<label class="check"><input type="checkbox" id="helperWd${n}"${f.weekDays.indexOf(n) >= 0 ? ' checked' : ''}> ${HELPER_WD[n]}</label>`).join('');
+    // produkcja: funkcja z własną wiadomością — lista trybów; reszta (i wszystko na teście) — zwykły włącznik
+    const prod = h.env === 'prod';
+    const feats = HELPER_FEATURES.map(([k, label]) => prod && HELPER_READY.indexOf(k) >= 0
+      ? `<div class="hmode"><label for="helperM_${k}">${esc(label)}</label><select id="helperM_${k}">${HELPER_MODES.map(([v, l]) =>
+          `<option value="${v}"${helperMode(f, k) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`
+      : `<label class="check"><input type="checkbox" id="helperF_${k}"${f.features[k] ? ' checked' : ''}> ${esc(label)}</label>`).join('');
+    const dirty = helperDirty(), busy = state.helperBusy;
+    const st = h.stat;
+    const g = h.gate;
+    const l = h.lease, waits = !prod && !!(l && l.waits);
+    const hm = t => { const x = new Date(Number(t) || 0); return x.getHours() + ':' + String(x.getMinutes()).padStart(2, '0'); };
+    const toGroup = prod ? HELPER_READY.filter(k => s.ready && s.ready[k]).map(k => HELPER_LABEL[k]) : [];
+    const status = !h.configured
+      ? `<div class="pollstate">Bramka WhatsAppa nie jest ustawiona — opis przy ankiecie tygodniowej.</div>`
+      : `<div class="pollstate${s.enabled && h.trigger && !waits && !(g && !g.ok) ? ' ok' : ''}">${!s.enabled
+          ? 'Wyłączony.' + (prod ? ' Pracować może bot testowy (o ile tam jest włączony).' : '')
+          // jeden aktywny: z ważnym sygnałem produkcji test nie czyta kolejki i nic nie wysyła
+          : waits ? 'Czeka — pracuje pomocnik produkcji (sygnał ' + esc(hm(l.at)) + ', ważny do ' + esc(hm(l.until)) + ').'
+          : 'Włączony — przebieg co 10 min, pisze do ' + esc(s.toName || 'wybranego kontaktu')
+            + (prod ? (toGroup.length ? '; do Grafiku: ' + esc(toGroup.join(', ')) : '; do Grafiku nic — wszystkie funkcje w teście') : '')
+            + (h.trigger ? '' : ' · BRAK wyzwalacza — zapisz jeszcze raz')}</div>`
+        // bez powiadomień w bramce pomocnik nic nie widzi (test 24–25.10: pisał „brak ankiety", a ankieta była)
+        + (g && !g.ok ? `<div class="pollstate">Nie widzi „Grafiku" — w konsoli Green API wyłączone: ${esc(g.missing.join('; '))}. Do włączenia wysyła tylko to ostrzeżenie (raz dziennie).</div>`
+          : g ? `<div class="hint">Powiadomienia w bramce włączone (od ${esc(diagWhen(g.from))}).</div>` : '')
+        // produkcja: czy test dostał sygnał — bez niego oba pomocniki mogą pracować naraz
+        + (prod && l ? `<div class="hint${l.ok ? '' : ' pollerr'}">Sygnał dla bota testowego („${l.on ? 'pracuję' : 'koniec'}", ${esc(diagWhen(l.at))}): ${l.ok
+            ? 'doszedł ✓' : 'nie doszedł — ' + esc(l.err) + (l.on ? '. Jeśli bot testowy jest włączony, może pracować równocześnie.' : '')}</div>` : '')
+        + (!prod && s.enabled && l && !waits ? `<div class="hint">Ostatni sygnał z produkcji: ${esc(diagWhen(l.at))} (${l.until ? 'wygasł' : '„koniec"'}) — pracuje ten.</div>` : '');
+    const last = st ? `<div class="hint">Ostatni przebieg: ${esc(diagWhen(st.at))} — powiadomień ${st.events} (z Grafiku ${st.grafik}), wiadomości ${st.sent}${st.err ? '' : '.'}</div>`
+      + (st.err ? `<div class="hint pollerr">Błąd: ${esc(st.err)}</div>` : '') : '';
+    const knows = `<div class="hint">Wie o: ankiet ${h.polls.length}, osób ${h.people}, skład grupy ${h.members == null ? '—' : h.members + ' os.'}</div>`;
+    const gate = !state.helperGate ? ''
+      : state.helperGate.error ? `<div class="hint pollerr">Bramka: ${esc(state.helperGate.error)}</div>`
+      : `<div class="helpergate">${state.helperGate.map(g => `<div class="${g.ok ? 'gateok' : 'gatebad'}">${g.ok ? '✓' : '✗'} ${esc(g.label)}</div>`).join('')}</div>`
+        + (state.helperGate.every(g => g.ok) ? '' : `<div class="hint">Brakujące ustawienia włącza się w konsoli Green API (instancja → Ustawienia); zmiana działa po kilku minutach.</div>`);
+    const kinds = HELPER_KINDS.map(([k, label]) => `<button class="btn ghost" data-act="helperPreview" data-kind="${k}"${busy ? ' disabled' : ''}>${label}</button>`).join('');
+    const pv = state.helperPreview;
+    const preview = pv ? `<pre class="helperpre" data-helper-preview>${esc(pv.text)}</pre>
+        <div class="adminrow"><button class="btn outline" data-act="helperSendPreview"${busy ? ' disabled' : ''}>Wyślij mi to na WhatsAppie</button></div>` : '';
+    const polls = h.polls.length ? `<div class="mailfl">Ankiety, które zna</div>` + h.polls.map(p =>
+      `<div class="hint">„${esc(p.q)}" — głosujących ${p.voters}${p.partial ? ' (niepełna: sprzed włączenia powiadomień w bramce — wcześniejszych głosów nie znam)' : ''}${p.wrong ? ' · ⚠️ daty w pytaniu' : ''}<br>${esc(p.days)}</div>`).join('') : '';
+    const log = h.log && h.log.length ? `<div class="mailfl">Dziennik pomocnika</div><div class="diag">` + h.log.map(l =>
+      `<div class="diaglog"><div><span>${esc(diagWhen(l.at))}</span> <b>${esc({sent:'wysłane', err:'błąd', warn:'uwaga', in:'z Grafiku', info:'informacja'}[l.k] || l.k)}</b>${l.n > 1 ? ' ×' + l.n : ''}</div><div>${esc(l.m)}</div></div>`).join('') + `</div>` : '';
+    const intro = prod
+      ? `Bot czyta z „Grafiku" ankietę — o tym, kto przychodzi, mówi tylko ona; treści czatu nie analizuje — i składa wiadomości.
+         Każda funkcja ma tryb: <b>w teście</b> — pisze tylko do kontaktu niżej (zwykle Ty), <b>gotowa</b> — pisze do „Grafiku",
+         do wszystkich. Odpowiedzi na pytania, karty kontaktu i ostrzeżenia — zawsze tylko do kontaktu. Pracuje zawsze jeden pomocnik,
+         a ten ma pierwszeństwo: gdy jest włączony, testowy czeka.`
+      : `Bot czyta z „Grafiku" ankietę — o tym, kto przychodzi, mówi tylko ona; treści czatu nie analizuje — i pisze <b>tylko
+         prywatnie</b> do kontaktu niżej, z 🧪 na początku. Pracuje zawsze jeden pomocnik, a pierwszeństwo ma produkcja: gdy tam jest
+         włączony, ten czeka (produkcja daje mu znać przy każdym przebiegu) — test i produkcja dzielą kolejkę bramki.`;
+    return `
+      <div class="panelbox">
+        <div class="hint" style="margin-top:0">${intro}</div>
+        ${status}${last}${knows}
+        <label class="mailfl" for="helperChat">Grupa „Grafik"</label>
+        <div class="pollchat"><select id="helperChat">${chatOpts}</select>
+          <button class="btn outline" data-act="pollChats"${state.pollChatsLoading ? ' disabled' : ''}>${state.pollChatsLoading ? 'Pobieram…' : 'Pobierz grupy'}</button></div>
+        <label class="mailfl" for="helperTo">${prod ? 'Kontakt — funkcje w teście, odpowiedzi i karty kontaktu (zwykle Ty), z telefonu bota'
+          : 'Pisze do — kontakt z telefonu bota (tylko prywatnie)'}</label>
+        <div class="pollchat"><select id="helperTo">${toOpts}</select>
+          <button class="btn outline" data-act="reportContacts"${state.dayReportContactsLoading ? ' disabled' : ''}>${state.dayReportContactsLoading ? 'Pobieram…' : 'Pobierz kontakty'}</button></div>
+        <div class="pollwhen"><label for="helperMin">Minimum osób na dzień</label><select id="helperMin">${minOpts}</select></div>
+        <div class="pollwhen"><label for="helperEvening">Wieczorem o</label><select id="helperEvening">${hourOptions(f.evening)}</select>
+          <label for="helperMorning">rano o</label><select id="helperMorning">${hourOptions(f.morning)}</select></div>
+        <div class="mailfl">Przegląd tygodnia (wieczorem) w</div>
+        <div class="pollchecks days">${days}</div>
+        <label class="mailfl" for="helperNames">Imiona dla osób bez nazwy — „#17 = Ania" (numer osoby z listy członków) albo „…123 = Ania" (końcówka numeru telefonu), każde w linijce</label>
+        <textarea id="helperNames" class="mailtpl" rows="3" maxlength="${HELPER_NAME_MAP_MAX}">${esc(f.names)}</textarea>
+        <div class="mailfl">${prod ? 'Co wysyła i dokąd' : 'Co wysyła'}</div>
+        <div class="pollchecks helperfeat">${feats}</div>
+        <div class="pollchecks"><label class="check"><input type="checkbox" id="helperEnabled"${f.enabled ? ' checked' : ''}> włączony</label></div>
+        <div class="helperdirty${dirty ? '' : ' hidden'}">Niezapisane zmiany — pomocnik działa według zapisanych ustawień.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="helperSave">Zapisz</button>
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="helperReset">Przywróć zapisane</button></div>
+        <div class="adminrow" style="margin-top:8px">
+          <button class="btn outline" data-act="helperGate"${busy ? ' disabled' : ''}>${busy === 'gate' ? 'Sprawdzam…' : 'Sprawdź bramkę'}</button>
+          <button class="btn outline" data-act="helperRun"${busy ? ' disabled' : ''}>${busy === 'run' ? 'Pracuję…' : 'Sprawdź teraz'}</button></div>
+        ${gate}
+        <div class="mailfl">Podgląd wiadomości (z tego, co już wie)</div>
+        <div class="adminrow">${kinds}</div>
+        ${preview}${polls}${log}
+        <div class="hint">„Sprawdź teraz" czyta kolejkę od razu i wysyła to, co właśnie wypada (do 2–3 min)${prod ? ''
+          : ' — nie wtedy, gdy pracuje produkcja (ten czeka)'}. Pytania w prywatnym czacie z botem: „jutro", „dziś", „sobota", „31.10", „tydzień",
+        „nieaktywni", „pomoc" — odpowiedź przy najbliższym przebiegu (odpowiada pomocnik, który akurat pracuje).${prod ? ` Do „Grafiku"
+        idzie dokładnie ten tekst, co w podglądzie: imiona z kontaktów bota i z „Imiona", klasy 🟣 🟠 🌱, wypisani.` : ''}</div>
+      </div>`;
+  }
+  function applyHelperPanel(panel){
+    if(!panel || !state.diag || state.diag.failed) return;
+    state.diag.helper = panel;
+  }
+
+  /**
+   * Pomocnik w dwóch sekcjach — produkcja i test (prośba właściciela 28.10): działa ta ze środowiska tej aplikacji, druga
+   * jest wyszarzona — jej ustawienia są w drugiej aplikacji (osobny projekt Apps Script), tu tylko, jak ma się do tej
+   * (jeden aktywny, pierwszeństwo produkcji) i co mówi sygnał. Pod nimi członkowie — lista tej aplikacji.
+   */
+  function renderHelperSections(h){
+    const prod = h.env === 'prod', s = h.settings || {}, l = h.lease;
+    const mine = renderHelperBox(h);
+    const badge = !s.enabled ? 'wyłączony' : !prod && l && l.waits ? 'czeka — pracuje produkcja' : 'włączony';
+    const otherProd = `<div class="hint">Ustawiasz go w Panelu aplikacji produkcyjnej. Ma pierwszeństwo: gdy tam jest włączony, ten
+      (testowy) czeka — kolejka bramki jest wspólna. Tam każda funkcja ma tryb „w teście" (do wybranego kontaktu) albo „gotowa"
+      (do „Grafiku"). ${l && l.waits ? 'Teraz pracuje (sygnał ' + esc(diagWhen(l.at)) + ').'
+        : l ? 'Teraz nie pracuje (ostatni sygnał ' + esc(diagWhen(l.at)) + ').' : 'Sygnału z produkcji jeszcze nie było — tam pomocnik jest wyłączony albo go nie ma.'}</div>`;
+    const otherTest = `<div class="hint">Ustawiasz go w Panelu aplikacji testowej. Pisze tylko prywatnie, z 🧪. Pracuje wtedy, gdy tu
+      pomocnik jest wyłączony — dopóki tu jest włączony, testowy czeka (sygnał przy każdym przebiegu).${l ? ' Ostatni sygnał: '
+        + esc(diagWhen(l.at)) + (l.ok ? ' ✓' : ' — nie doszedł') + '.' : ''}</div>`;
+    return (prod ? panelSec('botProd', 'Pomocnik Grafiku — produkcja', mine, {badge})
+                 : panelSec('botProd', 'Pomocnik Grafiku — produkcja', otherProd, {off: true, badge: 'w aplikacji produkcyjnej'}))
+      + (prod ? panelSec('botTest', 'Pomocnik Grafiku — test', otherTest, {off: true, badge: 'w aplikacji testowej'})
+              : panelSec('botTest', 'Pomocnik Grafiku — test', mine, {badge}))
+      + panelSec('members', 'Członkowie — fioletowy / pomarańczowy / kandydat', renderRosterBox(h),
+          {badge: h.roster && h.roster.counts ? h.roster.counts.all + ' os.' : ''});
+  }
+
+  /* ---------- członkowie: fioletowy / pomarańczowy / kandydat (pomocnik Grafiku) ----------
+     Lista ze składu grupy z bramki („Pobierz członków" — getHelperMembers, wprost), stuknięcie w klasę zapisuje ją od
+     razu (setHelperRole przez kolejkę, RETRIABLE; nieudany zapis wraca do poprzedniej klasy), drugie stuknięcie zdejmuje.
+     Osoba to imię i jej numer osoby „(#17)" — numer telefonu nie opuszcza serwera (decyzja właściciela 27.10). Do telefonu
+     prowadzi „📲": bot wysyła kartę kontaktu na WhatsAppa właściciela (sendHelperContact, wprost — dwa razy = dwie karty). */
+  const ROLE_BTNS = [['p', 'fioletowy'], ['o', 'pomarańczowy'], ['k', 'kandydat']];
+  const ROSTER_FILTERS = [['all', 'wszyscy'], ['none', 'bez klasy'], ['p', '🟣 fioletowi'], ['o', '🟠 pomarańczowi'], ['k', '🌱 kandydaci']];
+  function rosterCounts(r){
+    r.counts = {all: r.list.length, none: 0, p: 0, o: 0, k: 0};
+    r.list.forEach(x => { r.counts[x.role || 'none']++; });
+  }
+  function renderRosterBox(h){
+    const r = h.roster, s = h.settings || {}, busy = state.helperBusy;
+    const sel = state.rosterChat || (r && r.chatId) || s.chatId || '';
+    const chats = (state.pollChats || []).slice();
+    if(sel && !chats.some(c => c.id === sel)) chats.unshift({id: sel, name: (r && r.chatId === sel && r.chatName) || (sel === s.chatId && s.chatName) || sel});
+    const chatOpts = (sel ? '' : `<option value="">— wybierz grupę —</option>`)
+      + chats.map(c => `<option value="${esc(c.id)}"${c.id===sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const head = `
+        <label class="mailfl" for="rosterChat">Z grupy — „Grafik" albo grupa ogłoszeń społeczności (wtedy cała społeczność)</label>
+        <div class="pollchat"><select id="rosterChat">${chatOpts}</select>
+          <button class="btn outline" data-act="rosterLoad"${busy ? ' disabled' : ''}>${busy === 'roster' ? 'Pobieram…' : 'Pobierz członków'}</button></div>`;
+    let body = `<div class="hint">Lista jeszcze nie pobrana — wybierz grupę i stuknij „Pobierz członków".</div>`;
+    if(r){
+      const f = state.rosterFilter || 'all';
+      const chips = ROSTER_FILTERS.map(([k, label]) => `<button class="rchip${f===k ? ' on' : ''}" data-act="rosterFilter" data-f="${k}">${label} ${r.counts[k] || 0}</button>`).join('');
+      const rows = r.list.filter(x => f === 'all' || (f === 'none' ? !x.role : x.role === f)).map(x => {
+        const nr = posInt(x.nr);
+        const who = x.name ? esc(x.name) + (nr ? ` <span class="rnr">(#${nr})</span>` : '') : nr ? '#' + nr : 'bez nazwy';
+        const card = nr && x.card ? `<button class="rrole rcard" data-act="rosterCard" data-nr="${nr}"${busy ? ' disabled' : ''} title="Karta kontaktu na Twój WhatsApp" aria-label="Wyślij mi kartę kontaktu #${nr} na WhatsAppa">📲</button>` : '';
+        const roles = nr ? ROLE_BTNS.map(([k, label]) => `<button class="rrole r${k}${x.role===k ? ' on' : ''}" data-act="rosterRole" data-nr="${nr}" data-role="${k}" aria-pressed="${x.role===k}">${label}</button>`).join('') : '';
+        return `
+          <li class="rrow"><span class="rname${x.name ? '' : ' unnamed'}">${who}${x.grafik === false ? ' <span class="rnot">poza Grafikiem</span>' : ''}</span>
+            <span class="rroles">${card}${roles}</span></li>`;
+      }).join('')
+        || `<li class="rrow"><span class="rname unnamed">Nikogo w tym widoku.</span></li>`;
+      body = `<div class="hint">„${esc(r.chatName || r.chatId)}" — ${r.counts.all} os., pobrane ${esc(diagWhen(r.at))}.</div>
+        <div class="rchips">${chips}</div><ul class="roster">${rows}</ul>`;
+    }
+    return `
+      <div class="panelbox">
+        ${head}${body}
+        <div class="hint">Stuknięcie w klasę zapisuje ją od razu, drugie — zdejmuje. Skład dnia od pomocnika ma przy imionach 🟣 🟠 🌱
+        i ostrzega o kandydacie bez fioletowego (kandydat nie może być sam). Imię z kontaktów telefonu bota (po dodaniu nowych
+        kontaktów — „Pobierz członków" jeszcze raz), inaczej z WhatsAppa; bez imienia — sam numer osoby (imię wpiszesz wyżej,
+        w „Imiona": „#17 = Ania"). <b>#17</b> to numer osoby nadany przez bota, nie numer telefonu — ten nie wychodzi z serwera.
+        📲 — bot wyśle Ci kartę kontaktu tej osoby na WhatsAppa (czat z botem); tam też „kto 17", a kontakt udostępniony botowi
+        dostaje odpowiedź, kto to na liście. Klasa i numer zostają przy osobie także po ponownym pobraniu. Lista, klasy i numery
+        osób są osobne w każdej aplikacji (produkcja, test) — ta lista to lista ${h.env === 'prod' ? 'produkcji' : 'testu'}.</div>
+      </div>`;
+  }
+  /**
+   * Wywołanie pomocnika wprost (nie przez kolejkę — przebieg trwa do kilku minut, a kolejka po 12 s uznałaby go
+   * za zgubiony). `busy` blokuje przyciski; gdy odpowiedź nie przyjdzie wcale (bug nr 8) — puszcza po T.helperWait.
+   */
+  function helperCall(busy, fn, args, ok){
+    if(state.helperBusy) return;
+    state.helperBusy = busy;
+    render('nav');
+    let done = false;
+    const end = () => { if(done) return; done = true; state.helperBusy = ''; if(state.view==='diag') safeRender('nav'); };
+    const timer = setTimeout(() => { if(!done){ toast('Pomocnik długo nie odpowiada — sprawdź dziennik za chwilę'); end(); } }, T.helperWait);
+    google.script.run
+      .withSuccessHandler(res => { clearTimeout(timer); if(done) return; try{ ok(res); } finally { end(); } })
+      .withFailureHandler(err => { clearTimeout(timer); if(done) return; toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się'); end(); })
+      [fn](...args);
   }
 
   /** 'H:mm' -> minuty, żeby 9:05 stanęło przed 10:00 (porównanie napisów by się pomyliło). */
@@ -2949,6 +3261,12 @@
   const keepDayReport = e => { if(DAY_REPORT_FIELDS.indexOf(e.target.id) < 0) return; state.dayReportDraft = readDayReportForm(); showDayReportDirty(); };
   viewEl.addEventListener('input', keepDayReport);
   viewEl.addEventListener('change', keepDayReport);
+  // pomocnik Grafiku — szkic w stanie, jak ankieta (wszystkie pola mają id od „helper")
+  const keepHelper = e => { if(!/^helper/.test(e.target.id || '') || !state.diag || !state.diag.helper) return; state.helperDraft = readHelperForm(); showHelperDirty(); };
+  viewEl.addEventListener('input', keepHelper);
+  viewEl.addEventListener('change', keepHelper);
+  // grupa listy członków — wybór trzymany w stanie (przerysowanie panelu go nie gubi)
+  viewEl.addEventListener('change', e => { if(e.target.id === 'rosterChat'){ state.rosterChat = e.target.value; invalidateHtml(); } });
 
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
@@ -3046,6 +3364,7 @@
         if(isFuture(date)) toast('Zaplanowane ' + taskPlanned({date}));
       }});
     }
+    if(act==='panelSec'){ const k = btn.dataset.sec; state.panelOpen[k] = !state.panelOpen[k]; render('nav'); }
     if(act==='diagRetry'){ state.diag = null; render('nav'); fetchDiag(); }
     if(act==='pollChats') loadPollChats();
     if(act==='pollReset'){ state.pollDraft = null; render('nav'); }
@@ -3109,9 +3428,9 @@
       const r = state.diag && state.diag.dayReport;
       if(!r || !r.day) return;
       if(dayReportDirty()){ toast('Najpierw zapisz zmiany — „Wyślij listę" wysyła według zapisanych ustawień'); return; }
-      if(!r.settings.chatId){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
+      if(!r.settings.chatKey){ toast('Najpierw wybierz i zapisz kontakt prowadzącej'); return; }
       if(!r.configured){ toast('Bramka WhatsAppa nie jest ustawiona — najpierw właściwości skryptu'); return; }
-      const who = r.settings.chatName || r.settings.chatId, st = r.day.status;
+      const who = r.settings.chatName || 'wybranego kontaktu', st = r.day.status;
       if(st === 'pending'){ toast('Lista z ' + r.day.label + ' właśnie się wysyła (od ' + r.day.at + ')'); return; }
       // już poszła albo nie wiadomo — prywatna wiadomość drugi raz nikomu nie szkodzi, ale pytamy
       const force = st === 'sent' || st === 'unknown';
@@ -3127,6 +3446,89 @@
           toast('Wysyłka trwa dłużej — sprawdzę za chwilę');
           setTimeout(()=>{ if(state.admin) fetchDiag(); }, T.pollRecheck);
         }});
+    }
+    if(act==='helperReset'){ state.helperDraft = null; render('nav'); }
+    if(act==='helperSave'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      const f = readHelperForm();
+      const problem = helperProblem(f, h.configured);   // od razu: zapis jest w RETRIABLE (jak ankieta)
+      if(problem){ toast(problem); return; }
+      // zapis, po którym coś zaczyna pisać do grupy — nowa funkcja „gotowa", „gotowe" do innej grupy albo włączenie pomocnika
+      // z zapisanymi „gotowymi" (review PR #8: zmiana grupy na ogłoszenia społeczności szła bez pytania) — najpierw pytanie
+      // z grupą i całą listą (co pójdzie, widać w podglądzie). Przy wyłączonym pomocniku nic nie idzie, więc bez pytania —
+      // padnie przy włączeniu (drugie review PR #8, decyzja właściciela 29.10: pytanie bez potrzeby uczy klikać „OK")
+      const saved = h.settings || {}, was = saved.ready || {};
+      const ready = HELPER_READY.filter(k => f.ready[k]);
+      const added = ready.filter(k => !was[k]);
+      const starts = f.enabled && (added.length || (ready.length && (f.chatId !== saved.chatId || !saved.enabled)));
+      if(starts && !ask('Do grupy „' + (f.chatName || 'Grafik') + '" — do wszystkich jej członków — zaczną iść: '
+        + ready.map(k => HELPER_LABEL[k]).join(', ') + '.\nTekst jak w podglądzie: imiona z kontaktów bota i z „Imiona", klasy 🟣 🟠 🌱, wypisani. Zapisać?')) return;
+      enqueue('setHelperSettings',[f,state.pin],{key:'helper',reconcile:res=>{
+        applyHelperPanel(res);
+        state.helperDraft = null;
+        toast(res && res.settings && res.settings.enabled ? 'Pomocnik zapisany i włączony — przebieg co 10 min' : 'Pomocnik zapisany', 'ok');
+        safeRender();
+      }});
+    }
+    if(act==='helperGate') helperCall('gate', 'getHelperGateway', [state.pin], list => { state.helperGate = Array.isArray(list) ? list : {error: 'nieczytelna odpowiedź'}; });
+    if(act==='helperRun'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      if(helperDirty()){ toast('Najpierw zapisz zmiany — przebieg idzie według zapisanych ustawień'); return; }
+      if(!h.settings.chatId || !h.settings.toKey){ toast('Najpierw wybierz i zapisz grupę i kontakt'); return; }
+      // nie w RETRIABLE i nie przez kolejkę: przebieg wysyła wiadomości i trwa do kilku minut
+      helperCall('run', 'helperRunNow', [state.pin], res => {
+        applyHelperPanel(res && res.panel);
+        const r = res && res.run;
+        toast(r ? 'Przebieg: powiadomień ' + r.events + ', wiadomości ' + r.sent + (r.err ? ' — błąd: ' + r.err : '') : 'Przebieg zrobiony', r && r.err ? '' : 'ok');
+      });
+    }
+    if(act==='helperPreview'){
+      const kind = btn.dataset.kind;
+      helperCall('preview', 'helperPreview', [state.pin, kind], res => { state.helperPreview = {kind, text: String(res && res.text || '')}; });
+    }
+    if(act==='rosterLoad'){
+      const h = state.diag && state.diag.helper;
+      if(!h) return;
+      const chat = (viewEl.querySelector('#rosterChat') || {}).value || state.rosterChat || h.settings.chatId;
+      if(!chat){ toast('Wybierz grupę („Pobierz grupy" wyżej)'); return; }
+      helperCall('roster', 'getHelperMembers', [state.pin, chat], res => {
+        if(state.diag && state.diag.helper) state.diag.helper.roster = res;
+        toast('Lista członków: ' + (res && res.counts ? res.counts.all : 0) + ' os.', 'ok');
+      });
+    }
+    if(act==='rosterFilter'){ state.rosterFilter = btn.dataset.f; render('nav'); }
+    if(act==='rosterRole'){
+      const cur = () => state.diag && state.diag.helper && state.diag.helper.roster;
+      const r = cur(), nr = posInt(btn.dataset.nr);
+      const find = () => cur() && cur().list.find(z => posInt(z.nr) === nr);
+      const x = nr && find();
+      if(!x) return;
+      const prev = x.role, role = prev === btn.dataset.role ? '' : btn.dataset.role;
+      x.role = role; rosterCounts(r);                // od razu na ekranie
+      render('nav');
+      enqueue('setHelperRole', [nr, role, state.pin], {key: 'role:' + nr,
+        reconcile: res => { const y = find(); if(y && res && typeof res.role === 'string'){ y.role = res.role; rosterCounts(cur()); } },
+        fail: () => {                                // nie zapisało się — wraca poprzednia klasa (komunikat daje kolejka)
+          const y = find();
+          if(y && y.role === role){ y.role = prev; rosterCounts(cur()); }
+          if(state.view==='diag') render('nav');
+        }});
+    }
+    if(act==='rosterCard'){
+      const nr = posInt(btn.dataset.nr);
+      if(!nr) return;
+      // wprost, nie przez kolejkę: dwa wywołania to dwie karty (nie w RETRIABLE); numer telefonu nie wraca do przeglądarki
+      helperCall('card', 'sendHelperContact', [nr, state.pin], () => { toast('Karta kontaktu #' + nr + ' — na Twoim WhatsAppie (czat z botem)', 'ok'); });
+    }
+    if(act==='helperSendPreview'){
+      const h = state.diag && state.diag.helper, pv = state.helperPreview;
+      if(!h || !pv) return;
+      if(!h.settings.toKey){ toast('Najpierw wybierz i zapisz kontakt'); return; }
+      const to = h.settings.toName || 'wybranego kontaktu';
+      if(!ask('Wysłać ten podgląd do ' + to + ' na WhatsAppie?')) return;
+      helperCall('send', 'helperPreview', [state.pin, pv.kind, true], () => { toast('Wysłane do ' + to, 'ok'); });
     }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
@@ -3190,6 +3592,12 @@
    * w Index.html (T5, T6). Pusta data = wersja jeszcze niewydana.
    */
   const WHATS_NEW = [
+    { v: '1.5', date: '29 października 2026', items: [
+        'Pies na dwa spacery: po „Zarezerwuj” w polu 1/2 albo 2/2 przycisk „OK” mieści się w ramce, także na wąskim telefonie.',
+        'Eksperymentalnie: bot z grupy „Grafik” połączony z aplikacją — zna ankietę z „Grafiku” i listę psów z aplikacji i składa z nich podsumowania. Na razie w fazie testów.',
+      ], admin: [
+        'Panel podzielony na sekcje: stuknięcie w nagłówek rozwija sekcję, drugie ją zwija.',
+      ] },
     { v: '1.4', date: '23 października 2026', items: [
         'Przycisk „Co nowego” — ta lista: wszystkie zmiany w aplikacji w jednym miejscu, najnowsze na górze.',
         'Strona otwiera się szybciej i nie czeka, gdy Google zwalnia przy arkuszu — lista jest od razu i zaraz się odświeża.',

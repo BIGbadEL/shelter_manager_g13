@@ -32,12 +32,14 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `History.gs` | minione dni do podglądu + `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | WhatsApp (bramka Green API): ankieta tygodniowa (ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel) i lista dnia do prowadzącej po nocnym czyszczeniu (1.3) |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
+| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): kolejka powiadomień bramki → ankiety, głosy → wiadomości prywatnie do właściciela, a na produkcji funkcje „gotowe" do „Grafiku" (`helperTick` co 10 min); jeden aktywny (sygnał produkcji dla testu — `doPost` w `WebApp.gs`), panel, pytania w prywatnym czacie |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
 | `scripts/perf.js` / `scripts/executions.js` | test wydania: sonda otwierania strony testu (`npm run perf:test`) / Wykonania w oknie czasu (wkleja Claude in Chrome na stronie Wykonań) |
 | `SORTING.md` | **model spacerów, kafelków i kolejności listy** — czytaj przed każdą zmianą sortowania |
 | `RELEASE.md` | **test wydania** (pomiar + test funkcjonalny w Chrome, progi, lista, historia pomiarów) — przed każdym mergem do `main` |
+| `HELPER.md` | **pomocnik Grafiku** — co dzieje się w „Grafiku" (eksport czatu), funkcje, jak bot czyta grupę, bezpieczniki, co sprawdzić na teście |
 
 **Nazwy plików HTML w Apps Script muszą brzmieć dokładnie `Index`, `Styles`, `Script`** —
 `include()` odwołuje się do nich po nazwie.
@@ -270,7 +272,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (`dayReportSent`, ten sam schemat co ankieta: „w toku" pod blokadą → bramka bez blokady → wynik pod blokadą,
   `pollMarkState_`). Ustawienia `dayReport` {enabled, chatId, chatName}: `setDayReportSettings(s, pin)` (RETRIABLE),
   kontakt z `getDayReportContacts(pin)` — tylko zapisani w kontaktach telefonu bota (`contactName`; bez tego
-  lista miałaby każdego członka społeczności). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
+  lista miałaby każdego członka społeczności). **Kontakt w przeglądarce to klucz i nazwa, bez numeru** (27.10, B69, S140):
+  `contactKey_` = HMAC-SHA256 adresu z sekretem projektu (`keySecret` — powstaje sam, nie wychodzi z serwera; zwykły skrót
+  z numeru dałoby się odwrócić), adresy z „Pobierz kontakty" zostają na serwerze (`pickContacts`), zapis dostaje `chatKey`
+  (pomocnik — `toKey`) i zamienia go z powrotem na adres (`contactOfKey_`: zapisany odbiorca albo lista); `chatId`/`toId`
+  wprost — tylko karta sprzed 27.10. Panel (`dayReportPanel_`, `helperPanel_`) ma klucz i nazwę, adresu nie. Tekst błędów
+  bramki — z zamaskowanymi numerami (`noPhones_` w `greenCall_`, B70). „Wyślij listę" — `sendDayReportNow(pin, date, force)` dla
   ostatniego dnia z Historii (`lastHistDay_`); już wysłaną albo „nie wiadomo" — po potwierdzeniu (`force`;
   prywatna wiadomość drugi raz nikomu nie szkodzi). Nie w RETRIABLE. Panel: `getDiagnostics().dayReport`.
   **Limit planu Developer bramki: 3 czaty w miesiącu na instancję** (test i produkcja dzielą jedną darmową
@@ -293,6 +300,67 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
   Panel: `getDiagnostics().diag`. Bez imion i treści.
+- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B90, S145–S147b; decyzja właściciela 24.10.2026:
+  „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
+  bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
+  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa
+  ankieta, nowe osoby, miniony tydzień, pogoda, odpowiedzi na pytania w prywatnym czacie. Każda funkcja ma włącznik
+  (`features`). **Osobnych wiadomości o dopisaniach i wypisaniach z ankiety nie ma** — funkcja „zmiany w ankiecie"
+  usunięta 26.10 (decyzja właściciela: męcząca, sens bota to mniej powiadomień; wystarczą podsumowania wieczorem i rano,
+  B79 pilnuje ciszy w ciągu dnia) — nie przywracać bez pytania. **Członkowie i klasy** (26.10, prośba właściciela; B83, S146):
+  `getHelperMembers(pin, chatId)` — skład grupy z bramki („Grafik" albo ogłoszenia społeczności = cała społeczność) z imionami
+  z `getContacts`, zapisany w `helperRoster`; `setHelperRole(nr, role, pin)` — 'p' fioletowy / 'o' pomarańczowy / 'k' kandydat
+  / '' (RETRIABLE, `helperRoles`). **Numery telefonów nie opuszczają serwera** (decyzja właściciela 27.10, po dniu z pełnymi
+  numerami w panelu — test @45, cofnięte: „nie czuję się bezpiecznie trzymając dane wrażliwe tylko za PIN-em") — ani do panelu,
+  ani do tekstu wiadomości (podgląd w panelu to ten sam tekst). **Prośbę, która by to łamała, najpierw ostrzeż i każ potwierdzić.**
+  Osobę wskazuje **numer osoby „#17"** (B84, S146): nadany przez serwer po kolei przy pierwszym spotkaniu i zapamiętany
+  (`helperIds`, `helperNrsAdd_` — dwa miejsca nadają, więc pod blokadą skryptu ze świeżym odczytem; numery nie wracają do obiegu),
+  **nie z numeru telefonu** — dawny klucz `helperKey_` (FNV z numeru) dało się odwrócić w ok. 100 s. Panel: „Imię (#17)", bez
+  imienia „#17"; wiadomości: „#17" zamiast końcówki numeru; „Imiona" przyjmuje „#17 = Ania". Ten sam człowiek pod drugim adresem
+  (`@lid` z ankiety, `newChatId` z kontaktów bota) — ten sam numer (`helperSame_`). Do telefonu prowadzi **karta kontaktu**
+  (`helperSendCard_`, `sendContact` tylko do prywatnego czatu właściciela, sufit `HELPER_CARD_MAX`): „📲" w panelu
+  (`sendHelperContact(nr, pin)`, wprost, NIE RETRIABLE — dwa wywołania = dwie karty) i „kto 17" w czacie; udostępniony botowi
+  kontakt (`contactMessage`, `waid=` w vCard) dostaje odpowiedź z numerem osoby i klasą. W składzie dnia klasy przy
+  imionach, „brak fioletowego" (tylko gdy ktoś jest fioletowy) i „kandydat bez fioletowego" (`helperSquadRoles_`). Zastąpiło pola
+  „Fioletowi" / „Nowi". **Dokąd pisze** (decyzja właściciela 28.10 — testowanie na danych produkcji): kontakt z ustawień
+  (`toId`) to zawsze czat prywatny — adres grupy jako kontakt odrzuca zapis (`helperValid_`), odczyt (`helperSettings_`)
+  i wysyłka (`helperDest_`, B74). **Na teście wszystko prywatnie.** Na produkcji każda funkcja z własną wiadomością
+  (`HELPER_READY` = `ready` w ustawieniach) ma tryb „w teście" (do kontaktu) albo **„gotowa" — do „Grafiku"** (`s.chatId`);
+  `helperSend_(s, st, text, run, feature)` bierze adres z `helperDest_`, a wiadomości bez funkcji (odpowiedzi, karty, ostrzeżenie
+  bramki, podgląd) idą zawsze do kontaktu (B85, S147). Wyłączona funkcja nie jest „gotowa" (po włączeniu wraca do testu), zapis
+  bez `ready` (karta sprzed 28.10) zostawia tryby, a zapis, po którym coś zaczyna pisać do grupy, przeglądarka najpierw
+  potwierdza. **Nie dokładaj innych dróg do grupy bez decyzji właściciela.** `helperTick` jest publiczne (wyzwalacz), więc nic nie
+  przyjmuje; raporty mają znaczniki „wysłany" (`helperOnce_`), sufity `HELPER_SEND_MAX` / `HELPER_DAY_MAX`, jeden
+  przebieg naraz (`helperBusy`). Pomocnik nie pisze do arkusza i nie bierze `withLock_` (stan we właściwościach, każda
+  część ≤ `HELPER_BYTES`; arkusz czyta leniwie, tylko gdy składa raport — `helperCtx_`); błąd bramki zostaje w jego
+  dzienniku (panel), wyzwalacz nie rzuca. **Kolejka jest jedna na instancję, a test i produkcja dzielą instancję — pracuje
+  zawsze jeden pomocnik, pierwszeństwo ma produkcja** (decyzja właściciela 28.10, HELPER.md „Produkcja i test", B86): włączony
+  pomocnik produkcji przy każdym przebiegu i zapisie ustawień wysyła aplikacji testowej sygnał „pracuję" (`helperLeaseSend_` →
+  POST do `HELPER_TEST_APP` = wdrożenie z `deploy:test`, T8 → `doPost` → `helperLeaseIn_`; `HELPER_LEASE_MIN`), wyłączony —
+  „koniec"; pomocnik testu z ważnym sygnałem czeka (`helperWaits_`: wyzwalacz nic nie robi, „Sprawdź teraz" odmawia).
+  Sygnał podpisany tokenem bramki (HMAC; wspólny token = wspólna kolejka), świeży, nie starszy od zapisanego; produkcja go nie
+  przyjmuje. Po przerwie dłuższej niż `HELPER_STALE_MIN` pomocnik doczytuje historię czatu. Stan (członkowie, klasy, numery
+  osób) jest osobny w każdej aplikacji. **`doPost` to jedyne wejście POST** — publiczne, przyjmuje tylko ten sygnał. Głosy
+  (dokumentacja bramki: powiadomienie dotyczy jednej osoby — niesprawdzone, więc reguły działają przy obu): nikt w odpowiedziach =
+  nadawca wycofał wszystko, dwie i więcej = pełny stan, jedna = sam nadawca albo — gdy to nie może być on — jej wybory
+  i wycofanie samego nadawcy, **bez zdejmowania głosów innym** (drugie review PR #8, decyzja właściciela 29.10 — wersja
+  ostrożna); drugi adres nadawcy (`@lid` ↔ `@c.us`, `alias`) tylko innego rodzaju, niczyj i gdy nadawca nie ma jeszcze
+  obecnego głosu w ankiecie — wycofanie to nie głos (`helperSelf_`, B76); głos to stan osoby z czasem (`vt`) — starszy niż znany
+  nic nie zmienia. Ankieta poznana tylko z głosu i bez dat w pytaniu nie ma dni (`nodays`), dopóki nie przyjdzie sama (decyzja
+  właściciela 28.10, B88); wiadomość zatrzymana sufitem albo odrzucona przez bramkę (4xx) idzie w następnym przebiegu
+  (`helperOnce_`: callback zwraca wynik `helperSend_`, false = bez znacznika; nowa ankieta bez znacznika wraca do kolejki), a przy
+  osiągniętym sufcie nie jest nawet składana (B87); `helperTick` najwcześniej `HELPER_TICK_GAP_MIN` po poprzednim przebiegu (B90).
+  **Bramka nie oddaje bieżącego wyniku ankiety** — tylko zdarzenia osób z czasu, gdy powiadomienia w instancji były
+  włączone. Test 24–25.10: wszystkie wyłączone, pomocnik ślepy, a pisał „W Grafiku nie ma ankiety" — teraz
+  **`helperGate_`** (getSettings co przebieg, dopóki czegoś brakuje): bez powiadomień zamiast składów jedno ostrzeżenie
+  dziennie (B81); po włączeniu i przed raportem bez ankiety — **historia czatu** (`helperCatchUp_`, getChatHistory, te same
+  reguły co kolejka). Ankieta `partial` (poznana z głosu albo z historii sprzed włączenia powiadomień — `gate.from`):
+  „co najmniej N os.", „≥". Ankiety w dwóch właściwościach (`helperPolls`, `helperPolls2`). Daty ankiety z pytania i odpowiedzi (`helperRange_`, `helperOptDay_`): odpowiedź z dopiskiem
+  („Niedziela - AW") liczy się osobno, „Nie mogę" nigdzie. **O obecności mówi WYŁĄCZNIE ankieta** (27.10, decyzja właściciela:
+  „jedynym i świętym źródłem prawdy jest ankieta — tam, gdzie ktoś jest zaznaczony, tam ma być"): treści wiadomości z „Grafiku"
+  pomocnik nie analizuje ani nie trzyma — z czatu bierze tylko nazwę nadawcy (B77). Do 27.10 rozpoznawał w czacie dni, „będę /
+  nie dam rady" i nieobecności (cytaty „Z czatu", 🔀, 🚫, „nieobecni") — usunięte tego dnia, razem z heurystyką (`helperKind_`,
+  `helperDayRefs_`, `helperAbsence_`), która myliła się („nie wpadnę" jako „będzie"). **Nie przywracać bez pytania.**
 - **Psy innych grup** (1.3, B65–B67, S130–S137) — pomagamy wyprowadzać psy innych grup; stoją w naszym
   katalogu z grupą (`team` w `getData`, kolumna `grupa_psa`). `addDog(data…)` i `updateDog(id, data…)`
   przyjmują `data.team`; **brak pola (karta sprzed 1.3) = grupa zostaje, jaka była** — inaczej stara karta
@@ -480,6 +548,12 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   zapisywana przy „Zobacz", ✕ i otwarciu listy przyciskiem. **Bez pamięci przeglądarki paska nie ma**
   (`storageOk`) — nie zapamiętałby schowania i wisiałby przy każdym otwarciu. Całość w `try/catch`: dodatek
   nie może zatrzymać startu listy.
+- **Panel w zwijanych sekcjach** (1.5, 28.10, prośba właściciela: „panel jest już za duży"; S147). `panelSec(key, title, body,
+  {badge, off})`: nagłówek-przycisk (`data-act="panelSec"`) i treść; rozwinięte w `state.panelOpen` (do przeładowania), na start
+  wszystko zwinięte. **Zwinięta treść zostaje w stronie** (klasa `hidden`) — szkice, pola i odpowiedzi serwera działają jak dotąd.
+  Sekcje: lista i e-mail, WhatsApp, pomocnik — produkcja, pomocnik — test (działa sekcja z `env` tej aplikacji, druga `off`:
+  wyszarzona, bez pól), członkowie, diagnostyka (nieudane `getDiagnostics` rozwija ją sama). Bez trybu edycji Panel to sama
+  diagnostyka, bez sekcji.
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -562,7 +636,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1723 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **2025 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -582,10 +656,18 @@ Zestawy `scenarios12.js`–`scenarios15.js` są **asynchroniczne**: przytrzymani
 prawdziwy zegar (czeka ~650 ms), dokładnie jak na telefonie, a `scenarios14` czeka też na
 ciszę, zapowiedź i osłonę stuknięć — ze skróconymi czasami (`buildApp({timing:{…}})`);
 `scenarios15` czeka na zegar komunikatu (~3 s). `scenarios16`–`17` też są asynchroniczne; `17` (dziennik
-spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. `scenarios18` (psy innych
+spowolnień) skraca `T.diag*` i blokuje skrypt pętlą, żeby odegrać zamrożoną stronę. **`17` liczy wpisy po id** (`noted`):
+wpis w drodze (wysłany, odpowiedź jeszcze nie wróciła) jest naraz w `app.diagReports` i w kolejce telefonu, a pełny
+`npm test` pod obciążeniem (27.10) liczył go dwa razy — prawdziwe podwójne zanotowanie ma dwa różne id. Sprawdzenia, że coś
+się STAŁO, czekają na to (`until`, najwyżej 3 s), nie stałą pauzę; że się NIE stało — stały czas. `scenarios18` (psy innych
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
-serwera) też.
+serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku, Panel w sekcjach) — S145c czeka na skrócony
+`T.helperWait`. **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
+klikają pola jak dotąd; nowy test, który sprawdza, co widać, rozwija sekcję stuknięciem w nagłówek (`openSec`).
+**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B90): bramka na niby z kolejką jak
+prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
+żadna wiadomość ze wszystkich scenariuszy nie poszła do grupy.
 
 **`respondNext` odpowiada na PIERWSZE oczekujące wywołanie**, nie na to, o którym myślisz. Gdy
 w kolejce stoi kilka (odświeżenie + akcja), celuj po nazwie (`respondTo` w `scenarios13`/`15`).
@@ -600,7 +682,9 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   = `pointerdown` + `MouseEvent('click', {detail:1})` (patrz `tap()` w `scenarios14.js`).
   **`reportDiag` (dziennik spowolnień) harness obsługuje sam** — trafia do `app.diagReports`, NIE do
   `pending`, inaczej `respondNext` starszych testów odpowiadałby jemu; `opts.diagManual` — jak każde
-  inne wywołanie. `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
+  inne wywołanie; odpowiada w następnym obiegu zegara albo po `opts.diagDelay` ms (wpis „w drodze" na dłużej — S123).
+  `__force` ustawia start zapisu na 0, więc wpis „zerwane" z niego ma `ms` = znacznik czasu (tylko w teście).
+  `opts.served` (chwila oddania strony), `opts.url` (localStorage działa tylko pod
   prawdziwym adresem, nie na about:blank), `opts.storage` (localStorage przed startem), `__diag()` —
   kolejka dziennika. `let`/`const` skryptu nie są widoczne z `window.eval` (osobny zakres eval) —
   do stanu przez wystawione `__…`.
@@ -622,7 +706,7 @@ i niczego nie sprawdzał — wyścig, który miał łapać, był w kodzie (przeg
   stała liczba wierszy, zapis niżej rzuca błędem, rośnie tylko przez `insertRowsAfter`; każde
   `setNumberFormat` z zakresem wierszy trafia do `sheet._formatRanges` (B51). `env.http` to
   `UrlFetchApp` na niby: `http.calls` (adres, opcje) i `http.handler(url, opts)` → `{code, body}`
-  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_nearMinute`, `_tz` (B57).
+  albo wyjątek; bez handlera 500. Wyzwalacze zapisują `_weekDay`, `_everyWeeks`, `_everyMinutes` (B74), `_nearMinute`, `_tz` (B57).
   **`env.cost`** — koszt usług w ms przy zamrożonym zegarze: `read[zakładka]` (każde `getValues`),
   `waitLock` (`lockFail` — blokada rzuca), `flush`, `template`, `evaluate`; `env.now()`, `env.html.evaluated`
   (szablony z `doGet`: `boot`, `served`). Uwaga: pusta zakładka nie woła `getValues` — koszt jej odczytu
@@ -680,10 +764,18 @@ S129 odświeżanie nie dokłada odczytów, gdy poprzedni wisi (do `T.readStale`)
 S130–S137 psy innych grup (1.3: dwie listy sortowane osobno, spacer grupowy z obu list, zamrożona lista a zmiana
 grupy, grupa w „Dodaj psa" i edycji, plakietka, te same reguły co serwer, „Bierze G7"), S138 powrót do karty nie
 dokłada odczytu tuż po poprzednim ani przy wiszącym (1.3), S139 lista dnia do prowadzącej = „Skopiuj treść"
-(serwer i przeglądarka), S140 panel listy dnia (kontakty, szkic, zapis, „Wyślij listę" z potwierdzeniem),
+(serwer i przeglądarka), S140 panel listy dnia (kontakty po nazwie, bez numeru — klucz, szkic, zapis, „Wyślij listę" z potwierdzeniem),
 S141 „Co nowego?" (lista zmian od najnowszej, „W panelu admina", odświeżenie jej nie zamyka — 1.4), S142 pasek
 „Nowa wersja" (raz na telefon, „Zobacz" / ✕, bez pamięci przeglądarki — bez paska), S143 stan startowy z pamięci
-serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu),
+serwera (`cached` → od razu świeży odczyt; bez niego — bez dodatkowego odczytu), S144 „OK" przy imieniu w polu 2/2
+w ramce (reguły CSS — jsdom nie liczy układu; pomiar w Chromium 320–412 px), S145 panel pomocnika Grafiku (grupa i kontakt
+z list bota, szkic, zapis, podgląd jako tekst, „Sprawdź teraz" i „Sprawdź bramkę" wprost, nie przez kolejkę; S145b — te same
+reguły i limity co serwer; S145c — przycisk bez odpowiedzi wraca po `T.helperWait`; S145d — bramka bez powiadomień w panelu),
+S146 członkowie w panelu (pobranie, „Imię (#17)" / sam „#17", bez numerów telefonu, 📲 wprost bez powtórki, klasa jednym
+stuknięciem po numerze osoby od razu na ekranie, drugie zdejmuje, nieudany zapis wraca, filtr), S147 Panel w zwijanych
+sekcjach (kolejność, zwinięte na start, rozwinięte przeżywa przerysowanie, bez trybu edycji bez sekcji, nieudane pobranie rozwija
+diagnostykę) i pomocnik w dwóch sekcjach (sekcja drugiego środowiska wyszarzona; test czeka na produkcję; na produkcji tryb
+funkcji „w teście" / „gotowa" z pytaniem przed pierwszym „gotowa", sygnał dla testu w panelu; `HELPER_READY` = serwer),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -717,8 +809,9 @@ B65 grupa psa (zakładka bez kolumny, dokładanie kolumny, pisownia, karta sprze
 na wąskiej zakładce), B66 cudza kolumna O (z innym nagłówkiem albo z wpisami bez nagłówka; nocne czyszczenie
 jej nie zapisuje), B67 `markTeam` („Bierze G7": tylko wolny bez grupy, idempotentny,
 z wyprzedzeniem, nie do grupy spacerowej, nie do Historii, ale `ostatni_spacer`), B68 lista grup bota bez
-dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty, ustawienia, wysyłka po czyszczeniu raz na
-dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak, „nie wiadomo" / „nie wyszła", drugi dzień mimo to),
+dwóch takich samych pozycji, B69 lista dnia do prowadzącej (kontakty jako klucz i nazwa — bez numeru, klucz z sekretem projektu,
+zapis po kluczu, ustawienia, wysyłka po czyszczeniu raz na dzień, treść, zaległe dni, ręcznie), B70 bramka zawodzi (czyszczenie i tak,
+„nie wiadomo" / „nie wyszła", drugi dzień mimo to, numer z odpowiedzi bramki zamaskowany),
 B71 krótsza praca pod blokadą (pies z pamięci — 6 wywołań arkusza zamiast 11, kolory raz; zmiana psa, dodanie, usunięcie,
 „Wszystkie po 2" unieważniają; ręczna zmiana arkusza — od najbliższego odczytu listy; akcja na spacerze spod zapisu
 zmieniającego psy; awarie pamięci), B72 otwarcie strony
@@ -726,10 +819,36 @@ bez arkusza (stan z pamięci bez ani jednego wywołania arkusza; zapis, zapis w 
 nowy dzień, wygasłe znaczniki przy zajętej i wolnej blokadzie, `migrate()`, awarie, wpis ponad 100 KB),
 B73 odczyt listy wkłada do pamięci tylko zmiany (bez zmian — jedno wywołanie pamięci, bez zapisu; po zapisie sam stan;
 ręczna zmiana arkusza, wyrzucony i wygasły wpis — z powrotem),
+B74–B80 pomocnik Grafiku (`tests/helper.js`: ustawienia i tylko prywatnie, kolejka bramki, ankiety i głosy, B77 — o obecności mówi
+tylko ankieta: wiadomości z czatu nic nie zmieniają w składzie, przeglądzie ani odpowiedziach, stan bez ich treści,
+skład dnia wieczorem i rano, B79 — dopisania i wypisania w ciągu dnia bez osobnych wiadomości, tylko w składzie wieczorem,
+przegląd tygodnia / skład grupy / pytania / sufity / panel), B81 bramka
+bez powiadomień (ostrzeżenie zamiast składów, po włączeniu historia czatu, ankieta niepełna — „co najmniej"), B82 historia czatu
+powtarzalnie, starszy głos nie nadpisuje nowszego, 408 z kolejki = pusta kolejka, B83 członkowie i klasy (lista z grupy z imionami,
+bez numerów w odpowiedzi, klasa po numerze osoby, ostrzeżenia „brak fioletowego" / „kandydat bez fioletowego", klasa przez `@lid`),
+B84 numer osoby i karta kontaktu (nadany po kolei, nie z numeru telefonu, stały po wyjściu i powrocie, „#17 = Ania", „#17" w składzie
+i w „ludzie", 📲 i „kto 17" — karta tylko do właściciela, konto bez numeru, przebieg w toku, udostępnione kontakty, sufit kart
+i sufit zapamiętanych numerów), B85 tryb funkcji (na teście „gotowa" przepada — przy zapisie i przy odczycie; na produkcji
+„gotowa" do „Grafiku", „w teście" do kontaktu, wyłączona nie jest „gotowa", zapis bez `ready` zostawia tryby; pytania, karty
+i podgląd zawsze do kontaktu; nagłówek bez 🧪, w dzienniku „do Grafiku:"), B86 jeden aktywny (sygnał przy zapisie i przebiegu
+produkcji, POST na adres wdrożenia testowego, bez tokenu; test z ważnym sygnałem nie rusza kolejki, „Sprawdź teraz" odmawia;
+podróbka, śmieci, inny token, sygnał sprzed 15 min, spóźniony „pracuję" po „koniec" — odrzucone; produkcja nie przyjmuje;
+„koniec" i wygaśnięcie — test przejmuje kolejkę i doczytuje historię; aplikacja testowa nie odpowiada — przebieg produkcji
+idzie dalej, błąd w panelu), B87–B90 poprawki po review PR #8 (B87 wiadomość odrzucona przez bramkę albo zatrzymana sufitem
+nie dostaje znacznika i idzie w następnym przebiegu, „nowe osoby" nie giną, nowa ankieta wraca do kolejki — po sufcie i po 4xx, po
+5xx nie drugi raz; przy osiągniętym sufcie dziennym przebiegi okna nie składają wiadomości — bez pogody i odczytów psów; B88 ankieta
+poznana tylko z głosu i bez dat — bez dni, przy limicie wypada pierwsza; B89 błąd arkusza bez szczegółów w składzie, nazwa-numer
+telefonu jako „#N" także w zapisanej liście; B90 helperTick najwyżej raz na 5 min, historia czatu tylko dla dni z wiadomości tej
+pory; w B76 — daty ankiety w środku tygodnia i kilkudniowy zakres kończący się w dniu wysłania (zeszły tydzień), dni po przyjściu
+ankiety poznanej z głosu, głos z pełnym stanem bez fałszywego powiązania adresów, wycofanie przed głosem pod `@lid` i ta sama
+osoba raz jako `@c.us`, potem `@lid` — bez zdejmowania głosów innym; w B69 — sekret kluczy raz na wykonanie, karta sprzed 27.10 nie
+kasuje kontaktu; w B70 — data z godziną w `noPhones_`; S147b — pytanie przy zmianie grupy i włączeniu z „gotowymi", przy
+wyłączonym pomocniku bez pytania), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
-tylko wdrożenie testowe; odczyt stanu startowego i `served` z kawałków prawdziwej strony; mediana i 90% — RELEASE.md).
+tylko wdrożenie testowe; odczyt stanu startowego i `served` z kawałków prawdziwej strony; mediana i 90% — RELEASE.md),
+T8 sygnał pomocnika idzie do wdrożenia testowego (`HELPER_TEST_APP` w `Config.gs` = cel `deploy:test`, nie produkcja).
 
 **Uwaga o zasięgu harnessów:** frontendowy zna tylko atrapę serwera, backendowy nie zna
 kolejki. Bug z ponawianym `markWalked` (niżej, pkt 9) siedział dokładnie na styku i żaden
@@ -1010,6 +1129,42 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   pierwszym czyszczeniu na 1.4 (24.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; przez dzień–dwa Dziennik spowolnień
   i Wykonania produkcji (otwarcie strony, odczyt listy). Kolory trudności i zgłaszanie spacerów formularzem schroniska
   (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania.
+- **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
+  ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
+  testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie
+  wiadomości prywatnie do właściciela, na podstawie prawdziwego „Grafiku" (od 28.10 — także na produkcji, niżej). Na produkcji
+  wyłączony (domyślnie). **Do zrobienia
+  przez właściciela przed testem:** w konsoli Green API powiadomienia przychodzące, o ankietach i o wiadomościach wysłanych
+  (API i telefon), pusty adres webhooka (panel → „Sprawdź bramkę"); potem w panelu TESTU grupa „Grafik", kontakt, „włączony".
+  **Test 24–25.10:** pomocnik włączony 24.10 wieczorem, ale w bramce wszystkie cztery powiadomienia były wyłączone — pusta
+  kolejka, a pomocnik pisał „W Grafiku nie ma ankiety" (ankieta z prod wyszła 25.10 10:13). Właściciel włączył je 25.10
+  ok. 21:30; poprawka: ostrzeżenie zamiast składów i historia czatu (Konwencje). Ankieta „Grafik 26.10-01.11" zostaje
+  **niepełna** (głosów sprzed 21:30 bramka nie odda) — pełny obraz od ankiety z 1.11.
+  **Do sprawdzenia w pierwszych dniach** (HELPER.md): czy przychodzą głosy, format numerów (`@c.us` / `@lid`), czy
+  powiadomienie o głosie ma jedną osobę czy pełny stan, czy historia czatu ma ankietę bota, które wiadomości to szum. Limit planu Developer dotyczy też
+  odbierania (3 czaty w miesiącu) — w październiku „Grafik" i właściciel są w trójce.
+  **26–27.10:** zmiany w ankiecie usunięte (@43), członkowie i klasy (@44), pełne numery telefonów w panelu (@45) — cofnięte
+  27.10, w ich miejsce numer osoby „#17" i karta kontaktu (@46, Konwencje); wybór kontaktu w panelu (lista dnia, pomocnik)
+  też bez numerów — klucz kontaktu (@47, decyzja właściciela 27.10); skład dnia bez cytatów z czatu (@48, 27.10 — Konwencje,
+  „Pomocnik Grafiku"); o obecności mówi tylko ankieta — bez 🔀, 🚫 i „nieobecni", treści czatu bot nie czyta (@49, 27.10). Do wiadomości: stare grupy WhatsAppa mają w adresie
+  numer twórcy („48600111222-1600000000@g.us") — lista grup („Pobierz grupy") pokazuje adresy grup; grupy społeczności
+  („120363…@g.us") numeru nie mają.
+  **28.10 — pomocnik na danych produkcji** (decyzje właściciela; Konwencje, HELPER.md „Produkcja i test"): właściciel chce
+  testować bota na danych produkcji, więc **pomocnik jedzie z 1.5 na produkcję** (wyłączony, dopóki nie włączy go w panelu
+  produkcji). Na produkcji tryb funkcji „w teście" (do kontaktu) / „gotowa" (do „Grafiku"); **pracuje zawsze jeden** — pierwszy
+  projekt (oba naraz, test z historii czatu) właściciel odrzucił: „niech jeden będzie aktywny"; pierwszeństwo ma produkcja,
+  test czeka na jej sygnał. Panel w zwijanych sekcjach, pomocnik produkcji i testu w osobnych (druga wyszarzona). Do czasu
+  wydania 1.5 na produkcji sygnału nie ma, więc pomocnik testu pracuje jak dotąd. **Po wydaniu do sprawdzenia** (HELPER.md,
+  punkt 6): czy sygnał dochodzi (panel produkcji „doszedł ✓", panel testu „Czeka"), przejęcie po wyłączeniu na produkcji,
+  pierwsza wiadomość funkcji „gotowej" w „Grafiku"; członków i klasy trzeba pobrać i ustawić w panelu produkcji od nowa.
+  **Na teście @50 (29.10, 06:38, `0e34a7d`)** — razem z 13 poprawkami po review PR #8 (decyzje właściciela 28.10: nr 5 —
+  poprawka od razu, nr 7 — próg 5 min, nr 8 — wariant „bez dni"; HELPER.md, B87–B90, S147b). **@51 (29.10, 07:11, `4c976a7`)**
+  — 5 poprawek po drugim review (decyzje właściciela 29.10: nr 1 — wersja ostrożna przy głosach, nr 5 — pytanie o „gotowe"
+  tylko przy włączonym pomocniku). **@52 (29.10, 07:29, `031d82f`)** — data wydania w „Co nowego" i wpis o pomocniku (prośba
+  właściciela 29.10). **Test wydania na @52 (29.10, RELEASE.md):** strona i `doGet` w normie (1,14 / 0,82 s), `getData` —
+  mediana 1,80 s (+1%), ale 90% (+35%) i trzy rezerwacje naraz ponad progiem. Kod odczytu i zapisu bez zmian, wolne odczyty
+  bez wpisu w Dzienniku (czas minął przed naszym kodem), wolniejszy dzień Google — **wydanie przyjęte przez właściciela
+  29.10**. Test w Chrome bez błędów.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,

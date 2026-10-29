@@ -198,6 +198,66 @@ const POLL_LIMITS = { QUESTION: 200, OPTION: 100, OPTIONS_MIN: 2, OPTIONS_MAX: 1
  */
 const POLL_WINDOW_H = 3;
 
+/**
+ * Pomocnik Grafiku (1.5, faza testów; Helper.gs, HELPER.md) — bot czyta grupę „Grafik" (ankieta) i składa
+ * wiadomości: skład dnia, przegląd tygodnia… Wyłączony, dopóki prowadząca go nie włączy. `features` — włącznik
+ * każdej funkcji (panel). `ready` — funkcje „gotowe" (28.10.2026, decyzja właściciela): na PRODUKCJI piszą do „Grafiku",
+ * pozostałe włączone — „w teście" — do kontaktu z ustawień (toId, zwykle właściciel); na teście `ready` przepada i wszystko
+ * idzie prywatnie. Tryb mają tylko funkcje z własną wiadomością (HELPER_READY): pogoda i „codziennie" to części składu
+ * dnia, a odpowiedzi na pytania idą zawsze do pytającego. min — ilu osób trzeba na dzień
+ * („3 osoby/dzień są potrzebne" — prowadząca w Grafiku), evening / morning — godziny wiadomości (0–23),
+ * weekDays — dni przeglądu tygodnia (0 = niedziela), names — imiona dla osób bez nazwy („#17 = Ania" — numer osoby
+ * z listy członków, albo „…123 = Ania" — końcówka numeru telefonu).
+ * Klasy osób (fioletowy / pomarańczowy / kandydat) — osobno, z listy członków w panelu (Helper.gs, setHelperRole).
+ */
+const DEFAULT_HELPER = {
+  enabled: false, chatId: '', chatName: '', toId: '', toName: '',
+  min: 3, evening: 20, morning: 7, weekDays: [0, 3], names: '',
+  features: { evening: true, eveningAlways: true, morning: true, week: true, newPoll: true,
+              members: true, lastWeek: true, weather: true, commands: true },
+  ready: { evening: false, morning: false, week: false, newPoll: false, members: false, lastWeek: false },
+};
+const HELPER_FEATURES = Object.keys(DEFAULT_HELPER.features);
+const HELPER_READY = Object.keys(DEFAULT_HELPER.ready);
+/**
+ * Jeden aktywny pomocnik (28.10.2026, decyzja właściciela; Helper.gs, „jeden aktywny"): test i produkcja dzielą jedną
+ * instancję bramki z jedną kolejką powiadomień, więc pracuje zawsze jeden, a pierwszeństwo ma produkcja. Włączony
+ * pomocnik produkcji wysyła do aplikacji testowej podpisany sygnał „pracuję" — przy każdym przebiegu i przy zapisie
+ * ustawień, ważny HELPER_LEASE_MIN minut — a przy wyłączeniu „koniec"; pomocnik testu z ważnym sygnałem czeka.
+ * HELPER_TEST_APP — wdrożenie testowe, ten sam identyfikator co `deploy:test` w package.json (T8 pilnuje obu).
+ * Przerwa w przebiegach dłuższa niż HELPER_STALE_MIN (czekał na produkcję, był wyłączony) — pomocnik doczytuje historię
+ * czatu: to, co przyszło w międzyczasie, zdjął z kolejki drugi.
+ */
+const HELPER_TEST_APP = 'AKfycbwyC8yTGXWJQmIUL-j0YNv77E1S8qEYCqtsTB54bxK9SWQhWmq2njdByJFpfIWOtw04IQ';
+const HELPER_LEASE_MIN = 30;
+const HELPER_STALE_MIN = 30;
+/**
+ * Sufity pomocnika. Właściwość ma limit 9 KB na wartość — każda część stanu najwyżej HELPER_BYTES bajtów,
+ * listy najwyżej tyle pozycji. NAME_MAP — pole panelu „Imiona" (ta sama liczba w Script.html — S145b),
+ * GONE — wypisań z ankiety, MESSAGE — długość wiadomości, CMDS — pytań na przebieg,
+ * ROSTER — członków na liście w panelu (społeczność G13 to ok. 40–100 osób; więcej i tak nie zmieści się w 8 KB),
+ * IDS — zapamiętanych numerów osób (#17; lista członków + osoby z „Grafiku", ok. 25 bajtów na osobę).
+ */
+const HELPER_LIMITS = { MIN_MAX: 10, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, GONE: 40,
+                        SEEN: 60, LOG: 30, PANEL_LOG: 15, CMDS: 3, MESSAGE: 3500, ROSTER: 150, IDS: 250 };
+const HELPER_BYTES = 8000;
+const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps Script: 1, 5, 10, 15 albo 30)
+const HELPER_TICK_GAP_MIN = 5;       // helperTick (publiczny) najwcześniej tyle minut po końcu poprzedniego przebiegu — decyzja właściciela 28.10
+const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)
+const HELPER_MAX_EVENTS = 40;        // powiadomień na przebieg
+const HELPER_INTAKE_MS = 150000;     // najdłużej tyle czytamy kolejkę w jednym przebiegu
+const HELPER_WINDOW_H = 3;           // wiadomość o swojej porze najpóźniej tyle godzin po niej
+const HELPER_SEND_MAX = 6;           // wiadomości na przebieg
+const HELPER_DAY_MAX = 25;           // wiadomości na dzień
+const HELPER_CARD_MAX = 60;          // kart kontaktu na dzień (osobno — przeglądanie listy członków nie zjada wiadomości o swoich porach)
+const HELPER_BUSY_MS = 8 * 60000;    // znacznik „pracuję" starszy niż to = przebieg ubity, można dalej
+const HELPER_HIST_DAYS = 60;         // Historia: kto ostatnio chodził z psem dla wyznaczonych osób
+const HELPER_GATE_H = 6;             // ustawienia bramki (powiadomienia włączone?) — co tyle godzin; gdy czegoś brakuje — co przebieg
+const HELPER_HISTORY_COUNT = 300;    // historia czatu „Grafiku" (getChatHistory): tyle ostatnich wiadomości — tydzień głosów i rozmów
+const HELPER_HISTORY_GAP_H = 3;      // historia przed wiadomościami bez ankiety — najwyżej co tyle godzin
+const HELPER_HEAT = 28;              // od tylu °C — „upał"
+const HELPER_WEATHER = { LAT: 52.17, LON: 20.95 };   // okolice schroniska Na Paluchu (Open-Meteo)
+
 /** Strefa czasowa aplikacji — musi zgadzać się z appsscript.json. */
 const TIMEZONE = 'Europe/Warsaw';
 

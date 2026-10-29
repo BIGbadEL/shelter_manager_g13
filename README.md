@@ -17,12 +17,14 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `History.gs` | minione dni do podglądu + nocne czyszczenie `endOfDay()` (domyka dni sprzed bieżącego) |
 | `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z rozbiciem na kroki + to, co dosłały telefony (`reportDiag`) — w Panelu |
+| `Helper.gs` | pomocnik Grafiku (1.5, faza testów): bot czyta z „Grafiku" ankietę i składa wiadomości — prywatnie do właściciela, a na produkcji funkcje „gotowe" do „Grafiku"; pracuje jeden naraz (pierwszeństwo produkcji) — projekt w `HELPER.md` |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios17`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios21`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`, pomocnik Grafiku — `helper.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 | `RELEASE.md` | test wydania przed mergem do `main`: pomiar (czy nic nie zwolniło) i test funkcjonalny w Chrome, historia pomiarów |
+| `HELPER.md` | pomocnik Grafiku: co dzieje się w „Grafiku" (z eksportu czatu), funkcje, jak bot czyta grupę, bezpieczniki, co sprawdzić na teście |
 | `scripts/` | `warmup.js` (otwarcie aplikacji po wdrożeniu), `perf.js` (sonda otwierania strony testu), `executions.js` (Wykonania w oknie czasu) — nie jadą do Apps Script |
 
 Zakładki arkusza (tworzy je `setup()`):
@@ -110,6 +112,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
 | 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) = `main` | @22, 2026-10-23 |
+| 1.5 | (w przygotowaniu) „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów (na produkcji wyłączony, dopóki go nie włączyć; funkcje „gotowe" piszą do „Grafiku", pracuje jeden naraz); Panel w zwijanych sekcjach | `release/1.5` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -470,7 +473,21 @@ tak samo, w tym samym kolorze.
 
 ## Zakładka „Panel"
 
-Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Zawiera ustawienia (godzina czyszczenia) oraz diagnostykę: stan wyzwalacza resetu, czas i strefę serwera, liczniki rekordów, **dziennik spowolnień** (niżej) i **czasy przelotu ostatnich 30 wywołań tego telefonu**.
+Zakładka widoczna **tylko w trybie edycji**, obok „Listy". Od 1.5 w **zwijanych sekcjach** (28.10, prośba właściciela:
+panel był za długi) — na start wszystkie zwinięte, stuknięcie w nagłówek rozwija; w nagłówku krótki stan („ankieta wł.",
+„włączony", „4 os."):
+
+- **Lista i e-mail do schroniska** — godzina czyszczenia, „Wszystkie po 2 / po 1 spacerze", e-mail z listą spacerów;
+- **WhatsApp — ankieta i lista dnia** — ankieta tygodniowa, lista dnia do prowadzącej;
+- **Pomocnik Grafiku — produkcja** i **Pomocnik Grafiku — test** — działa sekcja tego środowiska, druga jest wyszarzona
+  (ustawia się ją w drugiej aplikacji; zdanie, jak się do siebie mają — niżej, „Pomocnik Grafiku");
+- **Członkowie — fioletowy / pomarańczowy / kandydat** — lista tej aplikacji;
+- **Diagnostyka** — stan wyzwalacza resetu, czas i strefa serwera, liczniki rekordów, **dziennik spowolnień** (niżej)
+  i **czasy przelotu ostatnich 30 wywołań tego telefonu**. Gdy panel nie pobierze danych, ta sekcja rozwija się sama.
+
+Rozwinięte sekcje pamięta strona do przeładowania; zwinięta treść zostaje w stronie (szkice ustawień przeżywają zwinięcie).
+
+Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera i bez sekcji). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
 
 ### Dziennik spowolnień (od 1.2)
 
@@ -558,7 +575,43 @@ wysyłanie po czyszczeniu zostaw wyłączone** (inaczej prowadząca co noc dosta
 testowego), a do próby „Wyślij listę" wybierz **tę samą osobę co na produkcji** — nowy adresat, np. własny
 numer, to czwarty czat. Stan licznika: konsola Green API.
 
-Awaryjne wejście bez PIN-u: **5 tapnięć w datę** w nagłówku (pokazuje wtedy tylko log wywołań, bez danych serwera). Gest liczy `pointerdown`, nie `click` — na telefonie szybka seria tapnięć bywa zjadana przez rozpoznawanie gestów przeglądarki i licznik nigdy nie dochodził do pięciu.
+### Pomocnik Grafiku (od 1.5 — faza testów)
+
+Bot czyta z grupy „Grafik" ankietę tygodniową (o tym, kto przychodzi, mówi tylko ona — treści czatu nie analizuje)
+i składa wiadomości: skład na jutro (wieczorem), dziś rano (gdy coś nie gra), przegląd tygodnia, nowa ankieta, nowe
+osoby, miniony tydzień, odpowiedzi na pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decyzje:
+**`HELPER.md`**.
+
+**Dokąd pisze** (28.10, decyzja właściciela): na **teście** zawsze tylko prywatnie, do kontaktu z ustawień (z 🧪 na początku).
+Na **produkcji** każda funkcja z własną wiadomością ma tryb: **w teście** — do kontaktu z ustawień (zwykle właściciel;
+testowanie na danych produkcji), **gotowa** — do „Grafiku", do wszystkich. Zapis, który robi funkcję „gotową", pyta najpierw.
+Odpowiedzi na pytania, karty kontaktu i ostrzeżenia idą zawsze tylko do kontaktu.
+
+**Pracuje zawsze jeden pomocnik** (28.10): test i produkcja dzielą jedną instancję bramki z jedną kolejką powiadomień,
+a pierwszeństwo ma produkcja. Włączony pomocnik produkcji wysyła aplikacji testowej sygnał „pracuję" (przy każdym przebiegu
+i przy zapisie ustawień, podpisany tokenem bramki) — pomocnik testu wtedy czeka. **Przełącznikiem jest więc „włączony"
+w panelu produkcji**: wyłączony — w ciągu 10 min pracuje test (o ile tam włączony), włączony — test ustępuje. Pomocnik po
+przerwie doczytuje historię czatu. Klasy, numery osób i lista członków są osobne w każdej aplikacji.
+
+Włączenie (raz w każdym środowisku):
+
+1. **Konsola Green API → instancja → ustawienia**: włącz powiadomienia o wiadomościach przychodzących,
+   o ankietach i o wiadomościach wysłanych z API i z telefonu; adres webhooka zostaw **pusty**. Panel →
+   „Sprawdź bramkę" pokazuje, czego jeszcze brakuje.
+2. Panel → „Pomocnik Grafiku — produkcja" (albo „— test"): „Pobierz grupy" → „Grafik", „Pobierz kontakty" → kontakt
+   (właściciel), minimum osób, godziny, funkcje (na produkcji z trybem), „włączony", „Zapisz". Wyzwalacz `helperTick`
+   (co 10 min) zakłada się sam; `installTriggers()` też go przywraca. Na produkcji wcześniej: właściwości `greenApi*`
+   i `authorizeWhatsApp()` w edytorze (jak dla ankiety).
+3. Pełny obraz głosów — od pierwszej ankiety wysłanej po włączeniu powiadomień w bramce: bramka nie oddaje
+   wyniku ankiety, tylko głosy oddane przy włączonych powiadomieniach. Ankieta sprzed włączenia jest niepełna
+   („co najmniej N os.").
+
+Bez powiadomień w bramce pomocnik nic nie widzi — wysyła wtedy raz dziennie ostrzeżenie z listą wyłączonych
+ustawień, a nie składy (test 24–25.10: pisał „nie ma ankiety", choć ankieta była).
+
+**Limit darmowego planu** dotyczy też odbierania: powiadomienia tylko z 3 czatów w miesiącu. „Grafik"
+i właściciel są już w tej trójce; czat spoza niej pomocnik pomija (`quotaExceeded`). Od 1. dnia miesiąca
+trzy pierwsze czaty, które się odezwą, zajmują limit — jeśli bot jest w innych grupach, warto go z nich wypisać.
 
 ## Kolejność psów na liście
 
@@ -620,6 +673,42 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.5 — w przygotowaniu (`release/1.5`)
+
+- **„OK" przy imieniu wychodził poza ramkę pola 2/2** (zgłoszenie z testu, Android, 360 px). Pole „Twoje imię"
+  w układzie flex trzymało domyślną szerokość pola tekstowego (ok. 20 znaków fontu telefonu) i w węższym polu
+  psa na dwa spacery nie mogło się zwęzić. Teraz nie ma własnej szerokości (`width:0`, `min-width:0`) i zajmuje
+  to, co zostaje obok „OK". Pomiar w Chromium 320–412 px, także szerszym fontem: przed — „OK" wystawał do 55 px,
+  po — 0 (S144).
+- **Pomocnik Grafiku — faza testów** (`Helper.gs`, `HELPER.md`, B74–B86, S145–S147): bot czyta „Grafik" i pisze
+  prywatnie do właściciela. Wyłączony, dopóki nie włączy się go w panelu. `greenCall_` dostał metodę HTTP (DELETE dla
+  `deleteNotification`), a pusta odpowiedź bramki to `null`.
+- **Pomocnik pisał „W Grafiku nie ma ankiety", choć była** (test 24–25.10). W bramce wszystkie powiadomienia były
+  wyłączone, więc nic do niego nie dochodziło, a on brał pustkę za brak ankiety. Teraz sprawdza ustawienia bramki
+  i bez powiadomień wysyła tylko ostrzeżenie; po włączeniu czyta historię czatu (ankieta bota jest tam zawsze),
+  a ankietę sprzed włączenia oznacza jako niepełną („co najmniej"). 408 z kolejki to pusta kolejka (B81, B82, S145d).
+- **Bez osobnych wiadomości o każdym dopisaniu i wypisaniu z ankiety** (26.10, decyzja właściciela: męczące) — funkcja
+  „zmiany w ankiecie" usunięta; zostają podsumowania wieczorem i rano, wypisania są w nich jako „wypisali się" (B79).
+- **Członkowie i klasy** (26.10): panel → „Członkowie" — skład „Grafiku" albo całej społeczności (grupa ogłoszeń) z bramki,
+  z imionami z kontaktów bota; stuknięcie w fioletowy / pomarańczowy / kandydat zapisuje klasę. Skład dnia ma 🟣 🟠 🌱
+  przy imionach i ostrzega o kandydacie bez fioletowego. Zastępuje pola „Fioletowi" i „Nowi" (B83, S146; `HELPER.md`).
+- **Numer osoby „#17" zamiast numeru telefonu** (27.10, decyzja właściciela): numery telefonów nie opuszczają serwera —
+  panel pokazuje „Imię (#17)", wiadomości „#17" przy osobie bez imienia. Do telefonu prowadzi karta kontaktu, którą bot
+  wysyła na WhatsAppa właściciela („📲" w panelu, „kto 17" w czacie); udostępniony botowi kontakt dostaje odpowiedź z #
+  (B84, S146). Dzień wcześniej (test @45) panel pokazywał pełne numery — cofnięte. Wybór kontaktu w panelu (lista dnia,
+  pomocnik) też bez numerów — po nazwie, z kluczem kontaktu z serwera (B69, S140, S145).
+- **O obecności mówi tylko ankieta** (27.10, decyzje właściciela): bez cytatów „Z czatu" w składzie dnia (wiadomość ma docelowo
+  iść do „Grafiku" — to byłoby wklejanie tego samego w to samo), a potem bez wszystkiego, co bot wyczytywał z czatu: 🔀 „pisze, że
+  będzie / nie da rady", 🚫 zapowiedziane nieobecności (dzień i tydzień), pytanie „nieobecni". Pomocnik nie analizuje treści
+  wiadomości ani jej nie trzyma — z czatu bierze tylko nazwę nadawcy (B77–B79, B82).
+- **Pomocnik na danych produkcji** (28.10, decyzje właściciela): na produkcji każda funkcja z własną wiadomością ma tryb
+  „w teście" (do kontaktu, zwykle właściciel) albo „gotowa" (do „Grafiku"; zapis pyta najpierw); na teście dalej wszystko
+  prywatnie (B85, S147). **Pracuje zawsze jeden pomocnik, pierwszeństwo ma produkcja**: włączony pomocnik produkcji wysyła
+  testowi podpisany sygnał „pracuję" (`doPost` w aplikacji testowej), test wtedy czeka i nie rusza kolejki bramki; po
+  wyłączeniu na produkcji test przejmuje, a pomocnik po przerwie doczytuje historię czatu (B86).
+- **Panel w zwijanych sekcjach** (28.10, prośba właściciela: za długi) — lista i e-mail, WhatsApp, pomocnik produkcji
+  i testu (sekcja drugiego środowiska wyszarzona), członkowie, diagnostyka (S147).
 
 ### 1.4 — wdrożone 2026-10-23 (@22)
 

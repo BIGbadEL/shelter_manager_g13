@@ -38,8 +38,8 @@ function S141(){
   // przed wydaniem bez daty („Wersja 1.4 nowa"), po wpisaniu daty — z nią przed „nowa"
   check('najnowsza na górze, oznaczona „nowa": ' + vers[0], vers[0] === 'Wersja ' + VER + ' nowa'
     || new RegExp('^Wersja ' + VER.replace(/\./g, '\\.') + ' \\d{1,2} \\S+ \\d{4} nowa$').test(vers[0]), vers[0]);
-  check('...potem starsze, aż do 1.0', vers.length >= 7 && /^Wersja 1\.3 9 października 2026$/.test(vers[1]) && /^Wersja 1\.0 /.test(vers[vers.length - 1]),
-    JSON.stringify(vers));
+  check('...potem starsze (z datą wydania), aż do 1.0', vers.length >= 7 && /^Wersja \d+\.\d+(\.\d+)? \d{1,2} \S+ \d{4}$/.test(vers[1])
+    && vers.indexOf('Wersja 1.3 9 października 2026') > 0 && /^Wersja 1\.0 /.test(vers[vers.length - 1]), JSON.stringify(vers));
   check('tylko najnowsza ma „nowa"', doc(app).querySelectorAll('#wnList .wn-new').length === 1);
   const sec = v => [...doc(app).querySelectorAll('#wnList .wn-ver')].filter(s => head(s.querySelector('h3')).startsWith('Wersja ' + v + ' '))[0];
   check('zmiany w panelu admina osobno, pod „W panelu admina" (1.3)', txt(sec('1.3').querySelector('.wn-admin')) === 'W panelu admina'

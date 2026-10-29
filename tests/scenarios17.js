@@ -30,6 +30,15 @@ function failTo(app, fn, msg){
 }
 const block = (app, ms) => app.window.eval(`(()=>{ const t = Date.now(); while(Date.now() - t < ${ms}){} })()`);
 const reported = app => [].concat(...app.diagReports);
+const uniq = list => { const seen = {}; return list.filter(e => !seen[e.id] && (seen[e.id] = true)); };
+// Wpisy, które telefon zanotował: wysłane (harness odpowiada sam) i czekające — każdy RAZ, po id. Wpis w drodze (wysłany,
+// odpowiedź jeszcze nie wróciła) jest w obu listach naraz, a po zaginionej odpowiedzi telefon wysyła go jeszcze raz (serwer
+// odrzuca powtórki po id). Zwykła suma list liczyła go dwa razy, gdy sprawdzenie pod obciążeniem wpadło w to okno (pełny
+// `npm test` 27.10.2026, S123: „bez odpowiedzi" ×2 z tym samym id). Prawdziwe podwójne zanotowanie ma dwa różne id.
+const noted = app => uniq(reported(app).concat(pendingOf(app)));
+// Czekanie, aż coś się STANIE (najwyżej `ms`), zamiast stałej pauzy — pod obciążeniem zegar strony się spóźnia. Sprawdzenia,
+// że coś się NIE stało, czekają stały czas, jak dotąd.
+async function until(cond, ms){ const t = Date.now(); while(!cond() && Date.now() - t < (ms || 3000)) await sleep(10); return cond(); }
 
 /* ---------- S122: wywołania widziane z telefonu ---------- */
 async function S122(){
@@ -64,25 +73,26 @@ async function S122(){
   await sleep(150);
   check('...nadal nie (zapis w drodze)', calls(app, 'reportDiag').length === 0);
   while(calls(app, 'setTaskDone').length) respondTo(app, 'setTaskDone', {ok:true});   // zaginiony i jego powtórka
-  await sleep(160);
+  await until(() => calls(app, 'reportDiag').length >= 1);
   check('po zapisach: jedna wysyłka z wpisami', calls(app, 'reportDiag').length === 1 && calls(app, 'reportDiag')[0].args[0].length >= 4,
     JSON.stringify(app.pending.map(x => x.fn)));
   await sleep(150);
   check('...i nie druga, dopóki pierwsza nie wróciła', calls(app, 'reportDiag').length === 1);
   failTo(app, 'reportDiag', 'brak sieci');
   check('nieudana wysyłka: wpisy zostają', pendingOf(app).length >= 4);
-  await sleep(150);
+  await until(() => calls(app, 'reportDiag').length >= 1);
   const batch = calls(app, 'reportDiag')[0].args[0];
   respondTo(app, 'reportDiag', {ok:true, n:batch.length});
   check('udana: wysłane znikają z kolejki', pendingOf(app).length === 0, JSON.stringify(pendingOf(app)));
   check('bez błędów', app.errors.length === 0, app.errors.join('; '));
 
   // wysyłka, na którą odpowiedź nie przyszła: po diagNoReply wolno ponowić (serwer odrzuca powtórki po id)
-  const lost = buildApp({ timing: Object.assign({}, FAST, {diagNoReply: 400}), diagManual: true, boot: base() });
+  const lost = buildApp({ timing: Object.assign({}, FAST, {diagNoReply: 1000}), diagManual: true, boot: base() });
   lost.window.dispatchEvent(new lost.window.ErrorEvent('error', { message: 'x' }));
-  await sleep(220);
+  await until(() => calls(lost, 'reportDiag').length >= 1);
+  await sleep(200);
   check('wysyłka bez odpowiedzi: na razie jedna', calls(lost, 'reportDiag').length === 1);
-  await sleep(450);
+  await until(() => calls(lost, 'reportDiag').length >= 2);
   check('...po diagNoReply druga z tym samym wpisem', calls(lost, 'reportDiag').length === 2
     && calls(lost, 'reportDiag')[1].args[0][0].id === calls(lost, 'reportDiag')[0].args[0][0].id);
 }
@@ -91,8 +101,8 @@ async function S122(){
 async function S123(){
   console.log('S123: dziennik — odczyt (getData) bez odpowiedzi: wpis, zanim wróci; po powrocie drugi z czasem; nieudany odczyt');
   const app = buildApp({ timing: FAST });
-  const all = () => reported(app).concat(pendingOf(app));     // wysłane (harness odpowiada sam) i czekające
-  await sleep(250);                                            // startowy getData wisi
+  const all = () => noted(app);                                // wysłane (harness odpowiada sam) i czekające — każdy raz
+  await until(() => all().some(e => e.msg === 'bez odpowiedzi'));   // startowy getData wisi
   check('odczyt wisi dłużej niż diagNoReply: wpis „bez odpowiedzi"', all().filter(e => e.fn === 'getData' && e.msg === 'bez odpowiedzi').length === 1, JSON.stringify(all()));
   await sleep(120);
   check('...raz, nie z każdym tyknięciem zegara', all().filter(e => e.msg === 'bez odpowiedzi').length === 1);
@@ -109,19 +119,28 @@ async function S123(){
   await sleep(300);
   check('...także po diagNoReply (odczyt, który wrócił, nie wisi dalej w „w drodze")', all().filter(e => e.fn === 'getData').length === 3,
     JSON.stringify(all().map(e => e.msg)));
+  await until(() => pendingOf(app).length === 0);
   check('wpisy pojechały na serwer (reportDiag) i zniknęły z kolejki', reported(app).length >= 3 && pendingOf(app).length === 0);
   check('bez błędów', app.errors.length === 0, app.errors.join('; '));
+
+  // wpis w drodze: wysłany, a odpowiedź serwera jeszcze nie wróciła (tu nie wraca w ogóle) — jest w wysłanych i w kolejce
+  // naraz, po diagNoReply idzie jeszcze raz z tym samym id. To okno pod obciążeniem trafiało w sprawdzenie wyżej (×2).
+  const held = buildApp({ timing: FAST, diagDelay: 60000 });
+  await until(() => reported(held).some(e => e.msg === 'bez odpowiedzi'));
+  const raw = reported(held).concat(pendingOf(held)).filter(e => e.msg === 'bez odpowiedzi');
+  check('wpis w drodze — w wysłanych i w kolejce naraz, ten sam id; liczony raz', raw.length >= 2 && raw.every(e => e.id === raw[0].id)
+    && noted(held).filter(e => e.msg === 'bez odpowiedzi').length === 1, JSON.stringify(raw));
 }
 
 /* ---------- S124: strona stała ---------- */
 async function S124(){
   console.log('S124: dziennik — strona stała, choć była na ekranie (zegar się spóźnił); karta w tle i okienko pytania to nie zamrożenie');
   const app = buildApp({ timing: FAST, boot: base() });
-  const freezes = () => reported(app).concat(pendingOf(app)).filter(e => e.kind === 'freeze');
+  const freezes = () => noted(app).filter(e => e.kind === 'freeze');
   await sleep(100);
   check('zwykła praca: nic', reported(app).length + pendingOf(app).length === 0, JSON.stringify(pendingOf(app)));
   block(app, 450);
-  await sleep(100);
+  await until(() => freezes().length >= 1);
   let p = freezes();
   check('skrypt zajęty 450 ms: wpis „freeze" z czasem przerwy', p.length === 1 && p[0].ms >= 450, JSON.stringify(p));
   // karta w tle: przeglądarka usypia zegary — to nie jest zamrożenie. Zegar nie tyka w tle (blok),
@@ -193,8 +212,8 @@ async function S126(){
   const again = buildApp({ timing: FAST, boot: base(), url: URL, storage: { g13diag: JSON.stringify(stored), g13dev: dev } });
   check('po przeładowaniu: te same wpisy w kolejce, ten sam znak telefonu', pendingOf(again).length === stored.length
     && again.window.__diag().dev === dev);
-  await sleep(150);
-  check('...i wysłane przy pierwszej okazji', reported(again).length === stored.length && pendingOf(again).length === 0
+  await until(() => pendingOf(again).length === 0);
+  check('...i wysłane przy pierwszej okazji', uniq(reported(again)).length === stored.length && pendingOf(again).length === 0
     && JSON.parse(again.window.localStorage.getItem('g13diag')).length === 0);
   // sufit kolejki: telefon bez zasięgu nie zbiera w nieskończoność
   for(let i = 0; i < 30; i++) err('błąd ' + i);
@@ -285,9 +304,10 @@ async function S128(){
   failTo(app, 'setTaskDone', 'Zły stan');
   app.window.dispatchEvent(new app.window.ErrorEvent('error', { message: 'boom', lineno: 7 }));
   block(app, 400);
-  await sleep(250);
-  const sent = reported(app);
-  const kinds = [...new Set(sent.map(e => e.kind))].sort().join(',');
+  const kindsOf = () => [...new Set(reported(app).map(e => e.kind))].sort().join(',');
+  await until(() => kindsOf() === 'call,error,freeze,start');
+  const sent = uniq(reported(app));                                    // ponowiona wysyłka niesie te same id — serwer je odrzuca
+  const kinds = kindsOf();
   check('telefon wysłał wszystkie rodzaje wpisów', kinds === 'call,error,freeze,start', kinds + ' | ' + JSON.stringify(sent));
   // zegar serwera = teraz: wpis z przyszłości (więcej niż dzień) serwer przycina do chwili odbioru
   const env = makeContext({ sheets: [], props: { pin: '1' }, now: new Date().toISOString() });

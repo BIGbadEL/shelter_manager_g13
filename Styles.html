@@ -278,8 +278,13 @@
   /* przyciski zarezerwowanego spaceru trzymają się razem: za wąsko — schodzą pod spód razem */
   .acts{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;}
 
-  .entry{margin-top:10px;display:flex;gap:8px;}
-  .entry input{flex:1;font-family:inherit;font-size:15px;padding:10px 12px;
+  /* Pole imienia nie ma własnej szerokości (width:0 + flex:1 — zajmuje to, co zostaje obok „OK").
+     Bez tego trzymało domyślną szerokość pola tekstowego (ok. 20 znaków fontu telefonu), a pole
+     „Twoje imię" w polu 2/2 psa na dwa spacery (.slot, flex) nie mogło się zwęzić: „OK" wychodziło
+     poza ramkę (zgłoszenie z 1.4 — na teście 360 px, Android; w Chromium od 320 px). */
+  .entry{margin-top:10px;display:flex;gap:8px;min-width:0;}
+  .entry .btn{flex:none;}
+  .entry input{flex:1;width:0;min-width:0;font-family:inherit;font-size:15px;padding:10px 12px;
     border:1.5px solid var(--forest);border-radius:10px;background:#fff;color:var(--ink);outline:none;}
   .hidden{display:none;}
 
@@ -339,6 +344,24 @@
   .panelbox h3{margin:0 0 9px;font-size:13.5px;font-weight:800;color:var(--forest);}
   .panelbox .lbl{font-size:13px;color:var(--ink);font-weight:600;flex:1;}
   .panelbox select{min-width:104px;}
+  /* sekcje Panelu (28.10, „panel jest już za duży"): nagłówek-przycisk, treść zwinięta; w środku dawne pola bez własnej
+     ramki — oddziela je kreska. `off` — sekcja drugiego środowiska (pomocnik): wyszarzona, bez rozwijania */
+  .psec{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);}
+  .psec-h{display:flex;align-items:center;gap:8px;width:100%;padding:13px 14px;border:0;background:none;border-radius:12px;
+    font-family:inherit;font-size:14px;font-weight:800;color:var(--forest);text-align:left;cursor:pointer;}
+  .psec-t{flex:1;min-width:0;}
+  .psec-badge{flex:none;max-width:46%;font-size:12px;font-weight:700;color:var(--muted);text-align:right;}
+  .psec-arrow{flex:none;width:12px;font-size:13px;color:var(--muted);}
+  .psec-b{padding:0 12px 12px;}
+  .psec .panelbox{margin-top:0;padding:12px 1px 4px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;}
+  .psec .panelbox:first-child{border-top:0;padding-top:2px;}
+  .psec.off{background:#ece8dd;opacity:.72;}
+  .psec.off .psec-h{cursor:default;color:var(--muted);}
+  .psec.off .hint{margin-top:0;}
+  /* pomocnik na produkcji: funkcja z trybem (wyłączona / w teście / gotowa) — nazwa i lista wyboru w jednym wierszu */
+  .hmode{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;font-size:13px;font-weight:600;color:var(--ink);}
+  .hmode label{flex:1 1 150px;min-width:0;}
+  .panelbox .hmode select{flex:none;min-width:0;font-family:inherit;font-size:13px;padding:7px 6px;border:1px solid #bcccbc;border-radius:9px;background:#fff;}
   .hint{margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted);}
   .mailtpl{display:block;width:100%;margin-bottom:8px;padding:9px 11px;border:1px solid #bcccbc;border-radius:9px;
     background:#fff;color:var(--ink);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical;}
@@ -366,6 +389,33 @@
   .pollchecks{display:flex;flex-direction:column;gap:8px;margin:2px 0 10px;}
   .pollchecks input{width:18px;height:18px;margin:0;accent-color:var(--forest);}
   .hint.pollerr{color:var(--warn-ink);font-weight:700;overflow-wrap:anywhere;}
+  /* pomocnik Grafiku (1.5): dni przeglądu tygodnia w jednym wierszu, podgląd wiadomości jak na WhatsAppie */
+  .helperdirty{margin:-2px 0 8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
+    font-size:12.5px;font-weight:700;}
+  .helperdirty.hidden{display:none;}
+  .pollchecks.days{flex-direction:row;flex-wrap:wrap;gap:6px 12px;}
+  .helperpre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:12.5px;line-height:1.45;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin:6px 0 8px;max-height:360px;overflow:auto;}
+  .helpergate{font-size:12.5px;font-weight:700;margin:4px 0 6px;display:flex;flex-direction:column;gap:3px;}
+  .helpergate .gateok{color:var(--forest);}
+  .helpergate .gatebad{color:var(--hard);}
+  /* członkowie (pomocnik): filtr i wiersz osoby — imię nad trzema przyciskami klasy, żeby zmieściło się na 360 px */
+  .rchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px;}
+  .rchip{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:5px 10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;}
+  .rchip.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .roster{list-style:none;margin:0;padding:0;}
+  .rrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 0;border-bottom:1px solid var(--line);}
+  .rrow:last-child{border-bottom:0;}
+  .rname{flex:1 1 140px;min-width:0;font-size:14px;font-weight:700;color:var(--ink);overflow-wrap:anywhere;}
+  .rname.unnamed{color:var(--muted);font-weight:600;}
+  .rnr{color:var(--muted);font-weight:600;white-space:nowrap;}
+  .rnot{font-size:11px;font-weight:700;color:var(--muted);background:#ece8dd;padding:1px 6px;border-radius:6px;}
+  .rroles{display:flex;gap:5px;flex:none;}
+  .rrole{border:1.5px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:6px 8px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+  .rrole.rp.on{background:#7b3fb3;border-color:#7b3fb3;color:#fff;}
+  .rrole.ro.on{background:#e07b16;border-color:#e07b16;color:#fff;}
+  .rrole.rk.on{background:var(--forest);border-color:var(--forest);color:#fff;}
+  .rrole.rcard{padding:4px 7px;font-size:15px;line-height:1;}
   .diag{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);}
   .diagrow{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--line);}
   .diagrow:last-child{border-bottom:0;}
