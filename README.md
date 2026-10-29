@@ -28,8 +28,9 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `scripts/` | `warmup.js` (otwarcie aplikacji po wdrożeniu), `perf.js` (sonda otwierania strony testu), `executions.js` (Wykonania w oknie czasu) — nie jadą do Apps Script |
 
 Zakładki arkusza (tworzy je `setup()`):
-- **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do`.
+- **Psy** — katalog: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do | grupa_psa | notatki | odkleszczanie | odkleszczanie_co | odkleszczanie_nastepne | odkleszczanie_ostatnio`.
   Kolumny `status`, `kto`, `godzina`, `kto1`, `godzina1` to pozostałość po modelu jednego dnia — od wprowadzenia dat są nieużywane (patrz niżej).
+  Kolumny od `grupa_psa` (1.3) i od `notatki` (1.6) doszły później — dokładają się same przy pierwszym zapisie (albo `migrate()`), a liczą się tylko pod swoim nagłówkiem.
 - **Spacery** — stan pojedynczego spaceru: `data | pies_id | spacer | status | kto | godzina | grupa`. Wiersz na (dzień, pies, numer spaceru); brak wiersza = ten spacer jest wolny. Pies na dwa spacery ma dwa niezależne spacery 1/2 i 2/2 — każdy z własną rezerwacją, osobą i grupą. Trzyma tylko dni otwarte. Zakładkę w starym układzie (wiersz na psa, drugi spacer w `kto1`/`godzina1`) aplikacja przepisuje sama przy pierwszym dostępie.
 - **Historia** — zamknięte dni: `data | pies | kto | godzina | grupa | identyfikator` (`grupa` — numer spaceru grupowego tego dnia; `identyfikator` — numer psa z chwili spaceru, jako tekst; obie kolumny dokłada samo nocne czyszczenie, wpisy sprzed nich są bez grupy, a numer dostają z katalogu, jeśli imię jest jednoznaczne)
 - **Zadania** — `id | tresc | data | status`
@@ -113,6 +114,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
 | 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) | @22, 2026-10-23 |
 | 1.5 | „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów (na produkcji wyłączony, dopóki go nie włączyć; funkcje „gotowe" piszą do „Grafiku", pracuje jeden naraz); Panel w zwijanych sekcjach | `release/1.5` (`bdd0812`, merge `c5ba23d`) = `main` | @23, 2026-10-29 |
+| 1.6 | (w przygotowaniu) kilka notatek przy psie; odkleszczanie — 💊 przypomnienie tydzień przed terminem i zadanie w dniu terminu; pomocnik rano codziennie, z zadaniami na dziś | `release/1.6` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -314,6 +316,15 @@ Od 1.3 Psy mają kolumnę **`grupa_psa`** (O): pusta = nasza grupa (G13), inacze
 tej kolumny działa — dokłada się sama przy pierwszym psie innej grupy. W Spacery dochodzi status **`team`**
 („Bierze G7", w `kto` nazwa grupy): przy czyszczeniu nie idzie do Historii, tylko do `ostatni_spacer`.
 
+Od 1.6 Psy mają kolumny **`notatki`** (P) i **odkleszczania** (Q–T). Pierwsza notatka psa zostaje w `notatka` /
+`notatka_do`, dalsze idą do `notatki`, po jednej w linii: `termin|treść` (termin `rrrr-mm-dd` albo `nigdy`); nocne
+czyszczenie zdejmuje każdą po jej terminie, a gdy znika pierwsza, następna wchodzi na jej miejsce. Odkleszczanie:
+`odkleszczanie` (metoda), `odkleszczanie_co` (`3m` — miesiące, `12t` — tygodnie), `odkleszczanie_nastepne` (termin),
+`odkleszczanie_ostatnio` (dzień ostatniego odhaczenia zadania). Przypomnienia 💊 i zadania „💊 Odkleszczanie" nie ma
+w arkuszu — aplikacja liczy je z tych kolumn. Czyjaś kolumna w tym miejscu (inny nagłówek albo wpisy bez nagłówka) nie
+jest nadpisywana — zapis dalszych notatek albo odkleszczania daje wtedy wyraźny błąd. **Przed wdrożeniem 1.6 kolumny
+P–T w Psy mają być puste.**
+
 **Przepisanie starego układu Spacery dzieje się samo** (wersja z wierszem na psa i drugim
 spacerem w `kto1`/`godzina1`): przy pierwszym dostępie wiersz z odbytym pierwszym spacerem
 rozpada się na spacer 1/2 (odbyty, z tą samą osobą i godziną) i 2/2 (stan bieżący), a grupa
@@ -392,6 +403,7 @@ więc samo cofnięcie niczego nie wymaga. Ale jej zapisy nie wymieniają znaczni
 (stan startowy telefon i tak od razu odświeża, ale katalog dla akcji byłby stary do najbliższego odczytu listy:
 pies dodany w czasie cofnięcia przez kilka sekund nie dałby się zarezerwować). **Przed ponownym wdrożeniem 1.4
 w ciągu 6 h od cofnięcia uruchom z edytora `migrate()`** (wymienia znaczniki) albo odczekaj 6 h (review PR #7).
+To samo przy 1.6: ma własny prefiks wpisów (`g13c2:`), a zapisy wersji 1.5 wymieniają tylko znaczniki swojego.
 
 **Projekt bez wersji z datami** (produkcja przed pierwszym wdrożeniem dat — nie ma zakładki Spacery):
 nowa wersja zakłada zakładkę od razu w nowym układzie, kopii nie ma czego robić. Poprzednia wersja
@@ -470,6 +482,14 @@ tak samo, w tym samym kolorze.
 - **Katalog psów** — w stałej kolejności z arkusza, z ustawieniem „2 spacery dziennie" zamiast
   postępu dnia, z edycją i usuwaniem, oraz dodawanie psa. Pies innej grupy ma plakietkę „grupa G7";
   grupę wybiera się w „Dodaj psa" i w edycji (od 1.3; domyślnie G13).
+- **Edycja psa — notatki** (od 1.6): kilka notatek, każda w swoim wierszu z terminem albo „nigdy nie znika";
+  „+ Notatka" dokłada wiersz (najwyżej 6), ✕ go usuwa. Na liście dnia widać te, które ten dzień obejmują.
+- **Edycja psa — 💊 odkleszczanie** (od 1.6): metoda (z listy metod innych psów albo „Inna metoda…"), co ile
+  tygodni lub miesięcy, i **następne** — dzień, w którym kończy się obecne (puste = od dziś). Tydzień przed terminem
+  przy psie pojawia się 💊 przypomnienie, a w dniu terminu — zadanie „💊 Odkleszczanie: <pies>, boks … — <metoda>"
+  dla wolontariuszy. Odhaczenie zadania liczy kolejny termin od dnia odhaczenia (pomyłkę cofa się tego samego dnia).
+  Zmiana metody, wyczyszczenie jej („brak") albo usunięcie psa nie zostawia żadnego zadania. W katalogu przy psie:
+  „💊 Bravecto · co 3 miesiące · następne czw 05.11".
 
 ## Zakładka „Panel"
 
@@ -578,8 +598,9 @@ numer, to czwarty czat. Stan licznika: konsola Green API.
 ### Pomocnik Grafiku (od 1.5 — faza testów)
 
 Bot czyta z grupy „Grafik" ankietę tygodniową (o tym, kto przychodzi, mówi tylko ona — treści czatu nie analizuje)
-i składa wiadomości: skład na jutro (wieczorem), dziś rano (gdy coś nie gra), przegląd tygodnia, nowa ankieta, nowe
-osoby, miniony tydzień, odpowiedzi na pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decyzje:
+i składa wiadomości: skład na jutro (wieczorem), skład na dziś rano (od 1.6 codziennie, a pod nim zadania na dziś —
+także 💊 odkleszczanie; przełącznik „…codziennie" wyłączony = tylko gdy coś nie gra), przegląd tygodnia, nowa ankieta,
+nowe osoby, miniony tydzień, odpowiedzi na pytania („jutro", „sobota", „tydzień"…). Opis funkcji, źródła i decyzje:
 **`HELPER.md`**.
 
 **Dokąd pisze** (28.10, decyzja właściciela): na **teście** zawsze tylko prywatnie, do kontaktu z ustawień (z 🧪 na początku).
@@ -673,6 +694,25 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
   już nie ma — nikt go nie czytał.
 
 ## Naprawione bugi (changelog)
+
+### 1.6 — w przygotowaniu (`release/1.6`)
+
+- **Kilka notatek przy psie** (prośba właściciela: „uważać na coś, ćwiczyć kaganiec, we wtorek zapoznawczy, w środę RTG,
+  w niedzielę akcja"). Każda ma własny termin, jak dotąd jedyna; na liście dnia widać te, które ten dzień obejmują.
+  Pierwsza zostaje w `notatka` / `notatka_do` (wersja 1.5 widzi ją jak dotąd), dalsze w nowej kolumnie `notatki`.
+  Nocne czyszczenie zdejmuje każdą po terminie. Karta 1.5 otwarta w chwili wdrożenia zmienia tylko pierwszą — dalszych
+  nie kasuje.
+- **💊 Odkleszczanie** w edycji psa: metoda (z listy albo nowa), okres (tygodnie / miesiące), data następnego (dzień, w którym
+  kończy się obecne — decyzja właściciela). Tydzień przed terminem 💊 przypomnienie przy psie (nad zwykłymi notatkami),
+  w dniu terminu zadanie dla wolontariuszy; odhaczenie — kolejny termin od dnia odhaczenia (zrobione dzień później liczy
+  się od tego dnia), cofnięcie tego samego dnia. Przypomnienie i zadanie liczą się z kolumn psa, więc zmiana metody nie
+  zostawia „wiszącego" zadania. Nowe publiczne `setTickDone` (idempotentne — w `RETRIABLE`).
+- **Pomocnik Grafiku rano codziennie** (przełącznik „…codziennie", domyślnie włączony; wyłączony — jak dotąd, tylko przy
+  problemie), a pod składem „📋 Zadania na dziś": zwykłe nieodhaczone i odkleszczanie z terminem do dziś.
+- Arkusz: kolumny P–T w Psy (dokładają się same; czyjejś kolumny w tym miejscu nie nadpisujemy). Nowy prefiks pamięci
+  podręcznej `g13c2:` (kształt katalogu). Bez nowych uprawnień i wyzwalaczy.
+- Cofnięcie do 1.5: dalsze notatki i odkleszczanie zostają w arkuszu, 1.5 ich nie pokazuje (pierwszą notatkę — tak);
+  ponowne wdrożenie 1.6 w ciągu 6 h — najpierw `migrate()` (*Cofnięcie wdrożenia*, akapit o pamięci podręcznej).
 
 ### 1.5 — wdrożone 2026-10-29 (@23)
 

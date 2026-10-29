@@ -234,7 +234,9 @@ function closeWalks_(match, days) {
 /**
  * Katalog po zamknięciu dni: data ostatniego spaceru i notatki.
  * Notatka bez terminu żyje do czyszczenia; z terminem — do swojego dnia włącznie;
- * z terminem „nigdy" — dopóki ktoś jej nie skasuje.
+ * z terminem „nigdy" — dopóki ktoś jej nie skasuje. Każda notatka psa (1.6) osobno — gdy znika
+ * pierwsza (notatka / notatka_do), na jej miejsce wchodzi następna z kolumny `notatki`: wersja
+ * sprzed 1.6, która widzi tylko pierwszą, dalej widzi którąś z notatek psa.
  */
 function closeDogs_(current, lastWalk) {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
@@ -243,18 +245,22 @@ function closeDogs_(current, lastWalk) {
   // zmieniamy tylko ostatni spacer, notatkę i jej termin — czytamy i piszemy najwyżej do notatka_do.
   // Kolumna O (grupa psa, albo czyjaś własna) zostaje nietknięta: zapis wartości zamieniłby formułę w stałą
   // (review PR #6); do 1.2 czyszczenie i tak kończyło na kolumnie 14. Zakładka bywa też węższa (dogWidth_).
+  // Dalsze notatki (1.6) — osobnym zakresem, tylko z naszej kolumny `notatki` (ownCols_).
   const width = Math.min(dogWidth_(sh), DOG.NOTE_UNTIL);
   const vals = sh.getRange(2, 1, last - 1, width).getValues();
-  vals.forEach(r => {
+  const more = dogOwn_(sh).notes ? sh.getRange(2, DOG.NOTES, last - 1, 1).getValues() : null;
+  const keep = n => n.until === NOTE_FOREVER || (!!n.until && n.until >= current);
+  vals.forEach((r, i) => {
     const lw = lastWalk[Number(r[DOG.ID - 1])];
     if (lw && lw > cellDate_(r[DOG.LAST_WALK - 1])) r[DOG.LAST_WALK - 1] = lw;
-    const until = cellDate_(r[DOG.NOTE_UNTIL - 1]);
-    if (until !== NOTE_FOREVER && (!until || until < current)) {
-      r[DOG.NOTE - 1] = '';
-      r[DOG.NOTE_UNTIL - 1] = '';
-    }
+    const first = String(r[DOG.NOTE - 1] || '') ? [{ text: String(r[DOG.NOTE - 1]), until: cellDate_(r[DOG.NOTE_UNTIL - 1]) }] : [];
+    const left = first.concat(more ? parseNotes_(more[i][0]) : []).filter(keep);
+    r[DOG.NOTE - 1] = left.length ? left[0].text : '';
+    r[DOG.NOTE_UNTIL - 1] = left.length ? left[0].until : '';
+    if (more) more[i][0] = notesCell_(left.slice(1));
   });
   sh.getRange(2, 1, vals.length, width).setValues(vals);
+  if (more) sh.getRange(2, DOG.NOTES, more.length, 1).setValues(more);
 }
 
 function clearDoneTasks_() {

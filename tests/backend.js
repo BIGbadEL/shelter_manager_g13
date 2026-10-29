@@ -2191,7 +2191,7 @@ const teamOf = (env, id) => env.api.getData().dogs.filter(d => d.id === id)[0].t
   const fresh = makeContext({ props: { pin: TEST_PIN } });
   fresh.api.setup();
   check('setup() na pustym projekcie — nagłówek grupa_psa', fresh.sheets['Psy']._data[0][14] === 'grupa_psa'
-    && fresh.sheets['Psy']._data[1].length === 15 && fresh.api.getData().dogs.every(d => d.team === ''));
+    && fresh.sheets['Psy']._data[1].length === fresh.conf.DOG_WIDTH && fresh.api.getData().dogs.every(d => d.team === ''));
 })();
 
 (function(){

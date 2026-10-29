@@ -162,6 +162,13 @@
     padding:6px 10px;border-radius:8px;line-height:1.4;}
   .note .until{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:20px;
     background:#e8e2d2;color:#7a6427;font-size:11px;font-weight:700;vertical-align:1px;}
+  /* 💊 odkleszczanie (1.6) — „specjalna" notatka (prośba właściciela): inny kolor niż zwykłe 📌, ciemny tekst
+     (czytelny w słońcu), po terminie mocniej */
+  .note.tick{color:#5e1f3d;background:#f6e3ec;border-left:4px solid #b03a6f;}
+  .note.tick .until{background:#ecc9da;color:#5e1f3d;}
+  .note.tick.late{background:#f3d2df;}
+  .note.tick.late .until{background:#b03a6f;color:#fff;}
+  .tickinfo{margin-top:6px;font-size:12.5px;font-weight:600;color:#5e1f3d;}
   .dif{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;}
   .flex{flex:1;}
   .resv-pill{font-size:11px;font-weight:700;color:#6b4a14;background:var(--honey-soft);padding:2px 8px;border-radius:6px;}
@@ -300,6 +307,15 @@
   .check{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
   .adminrow .check input{flex:none;min-width:0;width:18px;height:18px;padding:0;margin:0;accent-color:var(--forest);}
   .adminrow input[type=date]:disabled{opacity:.45;}
+  /* edycja psa (1.6): sekcje, kilka notatek, odkleszczanie */
+  .efsec{margin-top:6px;font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--forest);}
+  .noterows{display:flex;flex-direction:column;gap:9px;}
+  .noterow{display:flex;flex-direction:column;gap:7px;}
+  .noterow + .noterow{padding-top:9px;border-top:1px dashed #cfdccf;}
+  .noterow .btn.del{flex:none;}
+  .tickmore{display:flex;flex-direction:column;gap:7px;}
+  .tickmore.hidden{display:none;}
+  .adminrow input[type=number]{flex:none;width:68px;min-width:0;}
 
   /* ---------- miniony dzień (podgląd), komunikaty ---------- */
   .hist-day{margin-top:14px;}

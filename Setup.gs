@@ -19,10 +19,11 @@ function setup() {
   const dogs = s.getSheetByName(SHEETS.DOGS) || s.insertSheet(SHEETS.DOGS);
   if (dogs.getLastRow() === 0) {
     dogs.getRange(1, 1, 1, DOG_WIDTH).setValues([DOG_HEADERS]);
+    const row = (...v) => v.concat(Array(DOG_WIDTH - v.length).fill(''));   // reszta wiersza pusta (grupa, notatki, odkleszczanie)
     dogs.getRange(2, 1, 3, DOG_WIDTH).setValues([
-      [1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', '', '', 1, '', '', '', ''],
-      [2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', '', '', 2, '', '', '', ''],  // pies na 2 spacery dziennie
-      [3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', '', '', 1, '', '', '', ''],  // nowy pies: jeszcze bez imienia
+      row(1, 'Borys', '',     'K-3', 'easy', STATUS.FREE, '', '', '', '', 1),
+      row(2, 'Luna',  '1024', '',    'easy', STATUS.FREE, '', '', '', '', 2),  // pies na 2 spacery dziennie
+      row(3, '',      '2077', 'K-9', 'hard', STATUS.FREE, '', '', '', '', 1),  // nowy pies: jeszcze bez imienia
     ]);
     dogs.setFrozenRows(1);
   }
@@ -93,6 +94,15 @@ function migrate() {
     console.log('UWAGA: kolumna ' + DOG.TEAM + ' (O) w zakładce Psy jest zajęta — inny nagłówek niż „' + DOG_HEADERS[DOG.TEAM - 1] +
                 '" albo wpisy bez nagłówka; grupa psa nie będzie się zapisywać. Przesuń tamtą kolumnę i uruchom migrate() jeszcze raz.');
   }
+  // notatki i odkleszczanie (1.6) — tak samo; same dokładają się też przy pierwszym zapisie z panelu
+  if (dogs && !dogColumnsFor_(dogs, [DOG.NOTES])) {
+    console.log('UWAGA: kolumna ' + DOG.NOTES + ' (P) w zakładce Psy jest zajęta — dalsze notatki psa nie będą się zapisywać. ' +
+                'Przesuń tamtą kolumnę i uruchom migrate() jeszcze raz.');
+  }
+  if (dogs && !dogColumnsFor_(dogs, TICK_COLS)) {
+    console.log('UWAGA: kolumny ' + DOG.TICK + '–' + DOG.TICK_LAST + ' (Q–T) w zakładce Psy są zajęte — odkleszczanie nie będzie ' +
+                'się zapisywać. Przesuń tamte dane i uruchom migrate() jeszcze raz.');
+  }
   setup();   // dołoży brakujące zakładki i formaty
 }
 
@@ -114,9 +124,11 @@ function applyTextFormats_() {
     if (!sh) return;
     cols.forEach(c => sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@'));
   });
-  // grupa psa — tylko nasza kolumna (czyjejś innej w tym miejscu formatu nie zmieniamy)
+  // grupa psa, notatki, odkleszczanie — tylko nasze kolumny (czyjejś innej w tym miejscu formatu nie zmieniamy)
   const dogs = s.getSheetByName(SHEETS.DOGS);
-  if (dogs && teamHead_(dogs) === DOG_HEADERS[DOG.TEAM - 1]) dogs.getRange(1, DOG.TEAM, dogs.getMaxRows(), 1).setNumberFormat('@');
+  const own = dogs ? dogOwn_(dogs) : {};
+  const ours = [].concat(own.team ? [DOG.TEAM] : [], own.notes ? [DOG.NOTES] : [], own.tick ? TICK_COLS : []);
+  ours.forEach(c => dogs.getRange(1, c, dogs.getMaxRows(), 1).setNumberFormat('@'));
 }
 
 /**

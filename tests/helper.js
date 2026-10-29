@@ -519,7 +519,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
 
   // „tylko gdy problem": wszystko w porządku — skład nie idzie
   const calm = build({ now: '2026-10-25T10:20:00+02:00' });
-  on(calm, { min: 1, eveningAlways: false, weekDays: [], features: { eveningAlways: false, newPoll: false, weather: false } });
+  on(calm, { min: 1, eveningAlways: false, weekDays: [], features: { eveningAlways: false, morningAlways: false, newPoll: false, weather: false } });
   calm.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }));
   calm.tick();
   calm.tick('2026-10-25T20:05:00+02:00');
@@ -631,7 +631,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   console.log('B81: pomocnik — w bramce wyłączone powiadomienia (test 24–25.10): zamiast „brak ankiety" jedno ostrzeżenie dziennie, bez składów');
   const env = build({ now: '2026-10-24T20:35:00+02:00' });
   ['incomingWebhook', 'pollMessageWebhook', 'outgoingAPIMessageWebhook', 'outgoingMessageWebhook'].forEach(k => { env.gw.settings[k] = 'no'; });
-  on(env);
+  on(env, { features: { morningAlways: false } });    // rano tylko przy problemie — tego dotyczy sprawdzenie ankiety niepełnej niżej
   env.tick();
   const m = env.msgs();
   check('wieczór, bramka bez powiadomień: jedno ostrzeżenie z listą wyłączonych, żadnego składu ani przeglądu',
@@ -765,7 +765,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && /🌱 kandydaci: Kasia — z fioletowym ✓/.test(t2) && !/brak fioletowego|bez fioletowego/.test(t2), t2);
   // bez nikogo sklasyfikowanego jako fioletowy — „brak fioletowego" nic by nie znaczyło
   const plain = build({ now: '2026-10-26T12:00:00+02:00' });
-  on(plain, { min: 1, weekDays: [], features: { newPoll: false, members: false, weather: false, lastWeek: false } });
+  on(plain, { min: 1, weekDays: [], features: { morningAlways: false, newPoll: false, members: false, weather: false, lastWeek: false } });
   plain.gw.members = [ANIA, BASIA];
   plain.gw.contacts = [{ id: ANIA, name: 'Ania', type: 'user' }, { id: BASIA, name: 'Basia', type: 'user' }];
   plain.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Wtorek'], '2026-10-26T12:10:00+02:00', { name: 'Ania' }),
@@ -1209,6 +1209,67 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     'historia: ' + env.gw.historyCalls.length);
   check('...a wiadomości o swoich porach poszły (skład na środę i na czwartek)', env.msgs().some(m => /Jutro — środa 28\.10/.test(m))
     && env.msgs().some(m => /Jutro — czwartek 29\.10/.test(m)), env.msgs().map(m => m.split('\n')[1]).join(' | '));
+})();
+
+/* ---------- B100: rano codziennie — skład na dziś, pod nim zadania na dziś (1.6) ---------- */
+(()=>{
+  console.log('B100: pomocnik — rano codziennie skład na dziś, a pod nim zadania na dziś (zwykłe i 💊 odkleszczanie); wyłączone „codziennie" — tylko przy problemie');
+  const TICK_HEAD = ['grupa_psa', 'notatki', 'odkleszczanie', 'odkleszczanie_co', 'odkleszczanie_nastepne', 'odkleszczanie_ostatnio'];
+  const setUp = (env, tasks, ticks) => {
+    const psy = env.sheets['Psy']._data;
+    psy[0] = psy[0].concat(TICK_HEAD);
+    psy.slice(1).forEach(r => { const t = ticks[r[0]]; r.push('', '', t ? t[0] : '', t ? t[1] : '', t ? t[2] : '', ''); });
+    tasks.forEach(t => env.sheets['Zadania']._data.push(t));
+  };
+  const TASKS = [[1, 'Umyć miski', '2026-10-24', 'open'], [2, 'Zadzwonić do weterynarza 600 111 222', '2026-10-26', 'open'],
+                 [3, 'Zrobione wczoraj', '2026-10-25', 'done'], [4, 'Na jutro', '2026-10-27', 'open']];
+  const TICKS = { 1: ['Bravecto', '3m', '2026-10-26'], 2: ['Advantix', '4t', '2026-10-30'] };
+  const env = build({ now: '2026-10-26T06:50:00+01:00' });
+  setUp(env, TASKS, TICKS);
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }));
+  env.tick();
+  env.tick('2026-10-26T07:05:00+01:00');
+  const mo = env.msgs().filter(m => /Dziś — poniedziałek 26\.10/.test(m));
+  const m = mo[0] || '', L = m.split('\n');
+  check('rano, nic nie gra źle — skład na dziś i tak idzie (codziennie, domyślnie)', mo.length === 1 && /1 os\. ✅/.test(m), env.msgs().join(' | '));
+  check('pod składem: „Zadania na dziś" — najpierw odkleszczanie z terminem do dziś, potem zwykłe z wiekiem', L.indexOf('📋 *Zadania na dziś:*') > L.findIndex(x => /^👥/.test(x))
+    && m.indexOf('📋') < m.indexOf('🐕')
+    && /• 💊 Odkleszczanie: Draco — Bravecto\n• Umyć miski \(od 2 dni\)\n• Zadzwonić do weterynarza …/.test(m), m);
+  check('bez odhaczonych, bez przyszłych, bez odkleszczania z terminem po dziś, bez numeru telefonu', !/Zrobione wczoraj|Na jutro|Advantix|600 111 222/.test(m), m);
+  env.tick('2026-10-26T07:15:00+01:00');
+  check('drugi przebieg tego ranka — bez drugiej wiadomości', env.msgs().filter(x => /Dziś — poniedziałek/.test(x)).length === 1);
+  check('podgląd „dziś" w panelu — z zadaniami, jak rano', /📋 \*Zadania na dziś:\*/.test(env.api.helperPreview(TEST_PIN, 'dzis').text));
+  check('skład na jutro wieczorem — bez zadań', !/Zadania na dziś/.test(env.api.helperPreview(TEST_PIN, 'jutro').text));
+
+  // wyłączone „codziennie" i dzień w porządku — cisza, jak przed 1.6
+  const calm = build({ now: '2026-10-26T06:50:00+01:00' });
+  setUp(calm, TASKS, TICKS);
+  on(calm, { min: 1, weekDays: [], features: { morningAlways: false, newPoll: false, members: false, lastWeek: false, weather: false } });
+  calm.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }));
+  calm.tick(); calm.tick('2026-10-26T07:05:00+01:00');
+  check('„codziennie" wyłączone, nic nie gra źle — nic (zadania nie wysyłają wiadomości same)', !calm.msgs().some(x => /Dziś —/.test(x)), calm.msgs().join(' | '));
+  // ...ale przy problemie — skład z zadaniami
+  const low = build({ now: '2026-10-26T06:50:00+01:00' });
+  setUp(low, TASKS, TICKS);
+  on(low, { min: 3, weekDays: [], features: { morningAlways: false, newPoll: false, members: false, lastWeek: false, weather: false } });
+  low.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }));
+  low.tick(); low.tick('2026-10-26T07:05:00+01:00');
+  const lm = low.msgs().filter(x => /Dziś —/.test(x))[0] || '';
+  check('„codziennie" wyłączone i mało osób — skład z zadaniami', /minimum 3/.test(lm) && /Zadania na dziś/.test(lm), lm);
+
+  // bez zadań — bez sekcji; dużo zadań — najwyżej 10 linijek i „…i jeszcze"
+  const none = build({ now: '2026-10-26T06:50:00+01:00' });
+  setUp(none, [], {});
+  on(none, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  check('bez zadań — bez „Zadania na dziś"', !/Zadania/.test(none.api.helperPreview(TEST_PIN, 'dzis').text));
+  const many = build({ now: '2026-10-26T06:50:00+01:00' });
+  setUp(many, Array.from({ length: 12 }, (_, i) => [i + 1, 'Zadanie ' + (i + 1), '2026-10-26', 'open']), {});
+  on(many, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  const mt = many.api.helperPreview(TEST_PIN, 'dzis').text;
+  check('12 zadań — 10 linijek i „…i jeszcze 2"', (mt.match(/^• Zadanie /gm) || []).length === 10 && /• …i jeszcze 2/.test(mt), mt);
+  check('domyślnie „codziennie" włączone (decyzja właściciela 29.10)', env.conf.DEFAULT_HELPER.features.morningAlways === true
+    && env.conf.HELPER_FEATURES.indexOf('morningAlways') >= 0);
 })();
 
 /* ---------- B74 (ciąg dalszy): na teście w żadnym scenariuszu nic nie poszło do grupy ---------- */

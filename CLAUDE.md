@@ -46,7 +46,13 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 
 ## Arkusz
 
-- **Psy** — KATALOG, kim jest pies: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do | grupa_psa`.
+- **Psy** — KATALOG, kim jest pies: `id | imie | identyfikator | boks | trudnosc | status | kto | godzina | ostatni_spacer | notatka | spacery | kto1 | godzina1 | notatka_do | grupa_psa | notatki | odkleszczanie | odkleszczanie_co | odkleszczanie_nastepne | odkleszczanie_ostatnio`.
+  **Kolumny P–T (1.6)** — dalsze notatki psa i odkleszczanie (Konwencje niżej), dołożone później jak `grupa_psa`:
+  te same zasady „naszej kolumny" (`ownCols_`: liczy się tylko pod naszym nagłówkiem, cztery kolumny odkleszczania tylko
+  razem; `dogColumnsFor_` dokłada tylko tyle kolumn, ile trzeba, i nie przejmuje kolumny z cudzym nagłówkiem ani bez
+  nagłówka z wpisami; `colsWritable_` — wyraźny błąd przed zapisem psa). **Przed `deploy:prod` 1.6 kolumny P–T w Psy
+  produkcji mają być puste** (jak O przed 1.3 — sprawdza właściciel); `migrate()` je dokłada, ale same dokładają się też
+  przy pierwszym zapisie z panelu.
   **`grupa_psa`** (1.3, kolumna O) — grupa wolontariuszy, do której należy pies; pusta = nasza (`HOME_TEAM`
   = „G13", ta sama stała w `Script.html`). Doszła później: zakładka bywa węższa — **czytaj najwyżej
   `dogWidth_(sh)` kolumn**; kolumnę dokłada pierwszy zapis psa innej grupy (`dogColumns_`, z nagłówkiem
@@ -202,6 +208,32 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   Pusty termin znikał przy KAŻDYM `endOfDay` — także tym o 20:30, zaraz po dodaniu notatki
   na jutrzejszą listę (B35). Klient pokazuje taki termin jak brak terminu (`noteDated`: bez
   odznaki, puste pole w edycji). Pusty `notatka_do` zostaje tylko w starych notatkach.
+- **Kilka notatek przy psie** (1.6, prośba właściciela: „trzeba uważać na coś, ćwiczyć kaganiec, we wtorek zapoznawczy,
+  w środę RTG, w niedzielę akcja"; B91–B94, S148, S150). Każda ma własny termin (dzień / „nigdy" / bez terminu — reguły
+  jak dotąd jedynej, `noteUntil_`), najwyżej `NOTES_MAX`. **Pierwsza zostaje w `notatka` / `notatka_do`** — wersja sprzed
+  1.6 i jej karty widzą ją jak dotąd i tylko ją ruszają; dalsze w kolumnie `notatki`, po jednej w linii „termin|treść"
+  (`parseNotes_` / `notesCell_`; linia wpisana ręcznie bez terminu = cała treść, bez terminu). `getData`: `notes` (wszystkie)
+  plus `note` / `noteUntil` (pierwsza). `updateDog` z `notes` (karta 1.6) zapisuje całą listę; **bez `notes` (karta sprzed
+  1.6) — tylko pierwszą, dalsze zostają**. Nocne czyszczenie (`closeDogs_`) zdejmuje każdą po terminie, a gdy znika pierwsza,
+  następna wchodzi na jej miejsce (stara wersja dalej widzi którąś z notatek). Kolumna `notatki` czytana i pisana tylko
+  pod naszym nagłówkiem (`ownCols_`), osobnym zakresem — kolumny O nocne czyszczenie dalej nie dotyka.
+- **Odkleszczanie** (1.6, prośba właściciela; B95–B99, S148–S152). W edycji psa: metoda (z listy metod psów z katalogu albo
+  „Inna metoda…" — jak grupa psa; pisownia ujednolicona, `tickMethod_` = `tickClean`), okres (`TICK_LIMITS`: 1–52 tygodni,
+  1–12 miesięcy) i **termin następnego — dzień, w którym kończy się obecne** (decyzja właściciela 29.10: psy już są na jakiejś
+  metodzie; pusty = dziś + okres). Kolumny `odkleszczanie` / `odkleszczanie_co` („3m", „12t") / `odkleszczanie_nastepne` /
+  `odkleszczanie_ostatnio`; `getData`: `tick` = {method, n, u, next, last} albo null. **Przypomnienie 💊 przy psie
+  (`TICK_SOON_DAYS` = 7 dni przed terminem) i zadanie „💊 Odkleszczanie: <pies>, boks … — <metoda>" (od dnia terminu do
+  odhaczenia) nie są nigdzie zapisane — wynikają z tych kolumn** (`tickNoteHtml`, `tickTasks` w Script.html,
+  `helperTaskLines_` w Helper.gs), więc zmiana metody, wyczyszczenie jej i usunięcie psa nie mogą zostawić „wiszącego"
+  zadania (prośba właściciela). Zmiana metody albo okresu = nowy cykl (bez „ostatnio"), poprawiony sam termin — „ostatnio"
+  zostaje (`writeTick_`). **`setTickDone(id, done, seen)`** — publiczne jak `setTaskDone`: odhaczenie tylko w dniu terminu
+  albo po nim i tylko stanu z ekranu (`seen` = termin), **termin = dzień odhaczenia + okres** (zrobione dzień później liczy
+  się od tego dnia — prośba właściciela), „ostatnio" = dziś; cofnięcie (`done` false, `seen` = „ostatnio") tylko tego samego
+  dnia — zadanie wraca jako dzisiejsze. Dzień = dzień rezerwacyjny, jak przy zadaniach. Dwa takie same wywołania = jedno —
+  w `RETRIABLE`. Na liście: 💊 nad zwykłymi notatkami (ciemny róż, po terminie mocniej — „specjalna, z pigułką"), termin
+  zawsze względem dziś („dziś", „jutro", „czw 05.11", „zaległe od 2 dni (wt 27.10)"); zadania odkleszczania przed zwykłymi,
+  bez ✕ (usuwa się je razem z metodą). Karta sprzed 1.6 (bez `tick` w `updateDog`) odkleszczania nie rusza. Klient liczy
+  termin tą samą arytmetyką co serwer (`addPeriod` = `addPeriod_`: miesiąc — ten sam dzień albo ostatni; S152).
 - **Mail z listą spacerów dla schroniska — trzy ustawienia** we właściwościach: `mailTo`
   (`mailTo_()`, odbiorcy „a@b.pl, c@d.pl", brak = adres wpisuje się w poczcie), `mailSubject`
   (`mailSubject_()`, brak = `DEFAULT_MAIL_SUBJECT`), `mailTemplate` (`mailTemplate_()`, brak =
@@ -303,9 +335,12 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
 - **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B90, S145–S147b; decyzja właściciela 24.10.2026:
   „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
   bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
-  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa
+  odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, skład na dziś rano, przegląd tygodnia, nowa
   ankieta, nowe osoby, miniony tydzień, pogoda, odpowiedzi na pytania w prywatnym czacie. Każda funkcja ma włącznik
-  (`features`). **Osobnych wiadomości o dopisaniach i wypisaniach z ankiety nie ma** — funkcja „zmiany w ankiecie"
+  (`features`). **Rano (1.6, decyzja właściciela 29.10): codziennie** (`morningAlways`, domyślnie włączone; wyłączone — jak
+  dotąd, tylko gdy coś nie gra), a **pod składem — „📋 Zadania na dziś"** (`helperTaskLines_`: zwykłe nieodhaczone z dniem do
+  dziś, z wiekiem, i „💊 Odkleszczanie" psów z terminem do dziś — te same co na liście dnia; najwyżej `HELPER_TASKS_MAX`
+  linijek, tekst przez `noPhones_`, błąd odczytu bez szczegółów; B100). Podgląd „dziś" w panelu — tak samo, z zadaniami. **Osobnych wiadomości o dopisaniach i wypisaniach z ankiety nie ma** — funkcja „zmiany w ankiecie"
   usunięta 26.10 (decyzja właściciela: męcząca, sens bota to mniej powiadomień; wystarczą podsumowania wieczorem i rano,
   B79 pilnuje ciszy w ciągu dnia) — nie przywracać bez pytania. **Członkowie i klasy** (26.10, prośba właściciela; B83, S146):
   `getHelperMembers(pin, chatId)` — skład grupy z bramki („Grafik" albo ogłoszenia społeczności = cała społeczność) z imionami
@@ -431,6 +466,15 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
   i spacerów, psy w kolejności z arkusza, ustawienie „2 spacery dziennie" zamiast postępu,
   zadania wszystkie z dniem + formularz z datą. Lista dnia (`renderTile`) nie ma przycisków
   edycji. Wolontariusze nigdy nie widzą katalogu, prowadząca w edycji nigdy nie widzi dnia.
+- **Notatki i odkleszczanie na kafelku i w edycji psa** (1.6). `dogNotes(dog)` — lista notatek (`notes`, ze stanu sprzed
+  1.6 — `note` / `noteUntil`); `noteShownOn(n, date)` / `noteDated(n)` — dla każdej notatki osobno; `noteHtml(dog, date)` —
+  💊 (`tickNoteHtml`; w katalogu `tickInfoHtml`: metoda · okres · następne) nad 📌. Zadania odkleszczania (`tickTasks`)
+  w ramce zadań przed zwykłymi, `data-act="tickToggle"` → `doTickToggle` (od razu tak, jak policzy serwer; klucz `keyTick`;
+  najpierw kolejka, potem rysowanie — kręciołek od razu). Edycja psa: wiersze notatek `[data-noterow]` (pierwszy ma te same
+  pola `data-ef` co dawniej jedyna notatka), „+ Notatka" / ✕ zmieniają DOM wprost (edycja psa wstrzymuje przerysowanie —
+  `busyEditing`), „nigdy nie znika" wyłącza datę w swoim wierszu; odkleszczanie — `tickField` (metody z katalogu
+  `knownMethods`, „Inna metoda…", okres podpowiadany z psa z tą metodą — `methodPeriod`) i `readTickForm` (te same reguły
+  co `tickInput_` — kolejka ponawia nieudany zapis, więc komunikat od razu).
 - **`busyEditing()` łapie wyłącznie pole wolontariusza `[data-entry]`**, fokus w polu, edycję
   psa i zaznaczanie grupy (`state.select`). Nigdy nie wracaj do ogólnego `.entry` — patrz bug nr 10.
 - **Spacery grupowe.** Przytrzymanie kafelka (`LONG_PRESS_MS` = 550 ms od `pointerdown`,
@@ -636,7 +680,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **2025 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **2162 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -663,9 +707,11 @@ się STAŁO, czekają na to (`until`, najwyżej 3 s), nie stałą pauzę; że si
 grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z backend-harnessu (S136). `scenarios19`
 („Co nowego") też — pamięć telefonu przez `opts.url`/`opts.storage`; `scenarios20` (stan startowy z pamięci
 serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku, Panel w sekcjach) — S145c czeka na skrócony
-`T.helperWait`. **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
+`T.helperWait`. `scenarios22` (1.6: kilka notatek przy psie, odkleszczanie) — synchroniczny; S152 porównuje `addPeriod`
+i `tickClean` z prawdziwymi `addPeriod_` i `tickMethod_` z backend-harnessu. **Notatki i odkleszczanie po stronie serwera —
+własny zestaw `tests/care.js`** (B91–B99, ta sama atrapa arkusza co backend.js). **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
 klikają pola jak dotąd; nowy test, który sprawdza, co widać, rozwija sekcję stuknięciem w nagłówek (`openSec`).
-**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B90): bramka na niby z kolejką jak
+**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B90, B100): bramka na niby z kolejką jak
 prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
 żadna wiadomość ze wszystkich scenariuszy nie poszła do grupy.
 
@@ -776,6 +822,11 @@ stuknięciem po numerze osoby od razu na ekranie, drugie zdejmuje, nieudany zapi
 sekcjach (kolejność, zwinięte na start, rozwinięte przeżywa przerysowanie, bez trybu edycji bez sekcji, nieudane pobranie rozwija
 diagnostykę) i pomocnik w dwóch sekcjach (sekcja drugiego środowiska wyszarzona; test czeka na produkcję; na produkcji tryb
 funkcji „w teście" / „gotowa" z pytaniem przed pierwszym „gotowa", sygnał dla testu w panelu; `HELPER_READY` = serwer),
+S148–S152 kilka notatek i odkleszczanie (1.6: każda notatka ze swoim terminem na kafelku dnia, 💊 tydzień przed terminem
+i nad 📌, zadanie w dniu terminu — odhaczenie z terminem z ekranu, nowy termin od dziś, cofnięcie, przyszły dzień bez
+odhaczania, w trybie edycji bez ✕; edycja psa — wiersze notatek, „+ Notatka" do `NOTES_MAX`, ✕, „nigdy nie znika" w swoim
+wierszu, termin z przeszłości; metoda z listy z podpowiedzią okresu, „Inna metoda…", limity okresu, pisownia z katalogu,
+bez metody; te same stałe i ta sama arytmetyka co serwer),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -844,6 +895,15 @@ ankiety poznanej z głosu, głos z pełnym stanem bez fałszywego powiązania ad
 osoba raz jako `@c.us`, potem `@lid` — bez zdejmowania głosów innym; w B69 — sekret kluczy raz na wykonanie, karta sprzed 27.10 nie
 kasuje kontaktu; w B70 — data z godziną w `noPhones_`; S147b — pytanie przy zmianie grupy i włączeniu z „gotowymi", przy
 wyłączonym pomocniku bez pytania), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
+B91–B99 notatki i odkleszczanie (`tests/care.js`, 1.6: B91 kilka notatek — pierwsza w notatka / notatka_do, dalsze w kolumnie
+`notatki` z nagłówkiem i formatem, limit, linie wpisane ręcznie; B92 nocne czyszczenie każdej osobno, następna na miejsce
+pierwszej, czyjaś kolumna nietknięta; B93 karta sprzed 1.6 i wąska zakładka; B94 czyjaś kolumna P — błąd przed zapisem;
+B95 zapis metody, okresu i terminu, pisownia z katalogu, pusty termin = dziś + okres, błędy, miesiąc bez takiego dnia;
+B96 `setTickDone` — od dnia odhaczenia, powtórka, termin z ekranu, cofnięcie tylko tego dnia, katalog w pamięci podręcznej
+unieważniony; B97 zmiana metody i okresu, poprawiony termin, bez metody, karta sprzed 1.6, usunięcie psa, addDog; B98 kolumny
+Q–T czyjeś (także tylko jedna z czterech), `migrate()`, `setup()`; B99 stan startowy z notatkami i odkleszczaniem, nowy
+`CACHE_PREFIX`), B100 rano codziennie z „Zadaniami na dziś" (zwykłe i odkleszczanie, bez odhaczonych i przyszłych, numery
+telefonów zamaskowane, limit linijek, wyłączone „codziennie" — tylko przy problemie, podgląd „dziś"),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1143,6 +1203,14 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   pierwszym czyszczeniu na 1.4 (24.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; przez dzień–dwa Dziennik spowolnień
   i Wykonania produkcji (otwarcie strony, odczyt listy). Kolory trudności i zgłaszanie spacerów formularzem schroniska
   (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania.
+- **Wersja 1.6 — przygotowanie** (gałąź `release/1.6`, od 29.10.2026; prośby właściciela z 29.10): (1) **kilka notatek
+  przy psie**, każda z własnym terminem; (2) **odkleszczanie** w edycji psa — 💊 przypomnienie tydzień przed terminem
+  i zadanie w dniu terminu, odhaczenie liczy kolejny termin od dnia odhaczenia; (3) **pomocnik rano codziennie**, a pod
+  składem „Zadania na dziś" (Konwencje). Decyzje właściciela 29.10: notatka o odkleszczaniu „specjalna, z pigułką", a do tego
+  kilka zwykłych notatek; w panelu data **następnego** odkleszczania (nie startu); rano **codziennie** (przełącznik jak
+  wieczorem). Arkusz: kolumny P–T w Psy (Arkusz wyżej) — **przed wdrożeniem na produkcję mają być tam puste**; nowe
+  `CACHE_PREFIX` (`g13c2:`) — ponowne wdrożenie 1.6 w ciągu 6 h od cofnięcia do 1.5: najpierw `migrate()` (jak przy 1.4).
+  Cofnięcie do 1.5: dalsze notatki i odkleszczanie zostają w arkuszu, 1.5 ich nie widzi (pierwsza notatka — tak).
 - **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
   ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
   testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie

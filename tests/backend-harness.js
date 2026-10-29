@@ -297,12 +297,14 @@ function makeContext(opts){
                           setHelperSettings, helperSettings_, helperTick, helperRunNow, helperPreview, getHelperGateway, helperPanel_,
                           helperRange_, helperOptDay_, helperLoad_,
                           getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_, noPhones_,
-                          doPost, helperWaits_ };
+                          doPost, helperWaits_,
+                          notesOf_, noteText_, parseNotes_, notesCell_, setTickDone, addPeriod_, tickEvery_, tickMethod_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,
                            CACHE_PREFIX, CACHE_KEY, DEFAULT_HELPER, HELPER_LIMITS, HELPER_FEATURES, HELPER_SEND_MAX, HELPER_DAY_MAX, HELPER_CARD_MAX,
-                           HELPER_TICK_MIN, HELPER_BYTES, HELPER_READY, HELPER_LEASE_MIN, HELPER_STALE_MIN, HELPER_TEST_APP };
+                           HELPER_TICK_MIN, HELPER_BYTES, HELPER_READY, HELPER_LEASE_MIN, HELPER_STALE_MIN, HELPER_TEST_APP,
+                           NOTES_MAX, TICK_SOON_DAYS, TICK_LIMITS, TICK_COLS };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0;
                                          lockKeepsDogs_ = false; volLock_ = null; };

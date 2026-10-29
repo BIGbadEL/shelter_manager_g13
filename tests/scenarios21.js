@@ -63,7 +63,7 @@ function S144(){
 /* ---------- S145: panel pomocnika Grafiku ---------- */
 // kontakt (odbiorca) to klucz z serwera (contactKey_), nie adres z numerem — numery nie opuszczają serwera (27.10)
 const GRAFIK = '120363000000000001@g.us', OWNER = 'kGrzesiek00000001';
-const FEATS = {evening:true, eveningAlways:true, morning:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
+const FEATS = {evening:true, eveningAlways:true, morning:true, morningAlways:true, week:true, newPoll:true, members:true, lastWeek:true, weather:true, commands:true};
 const NOT_READY = {evening:false, morning:false, week:false, newPoll:false, members:false, lastWeek:false};
 const HELPER = (o, s) => Object.assign({settings: Object.assign({enabled:false, chatId:'', chatName:'', toKey:'', toName:'', min:3, evening:20, morning:7,
     weekDays:[0,3], names:'', features: Object.assign({}, FEATS), ready: Object.assign({}, NOT_READY)}, s),

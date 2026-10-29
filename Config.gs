@@ -49,10 +49,40 @@ const DOG = {
   TIME1: 13,      // stary model — patrz wyżej
   NOTE_UNTIL: 14, // do kiedy notatka ma przeżyć czyszczenie ('' = do najbliższego)
   TEAM: 15,       // grupa wolontariuszy, do której należy pies ('' = nasza, HOME_TEAM) — patrz niżej
+  NOTES: 16,      // dalsze notatki psa (1.6) — pierwsza zostaje w NOTE / NOTE_UNTIL; patrz niżej
+  TICK: 17,       // odkleszczanie (1.6): metoda ('' = pies bez odkleszczania w aplikacji) — patrz niżej
+  TICK_EVERY: 18, // ...co ile: „3m" (miesiące) albo „12t" (tygodnie)
+  TICK_NEXT: 19,  // ...termin następnego (rrrr-mm-dd)
+  TICK_LAST: 20,  // ...dzień rezerwacyjny ostatniego odhaczenia zadania („zrobione dziś" i cofnięcie pomyłki)
 };
 const DOG_HEADERS = ['id', 'imie', 'identyfikator', 'boks', 'trudnosc', 'status', 'kto', 'godzina',
-  'ostatni_spacer', 'notatka', 'spacery', 'kto1', 'godzina1', 'notatka_do', 'grupa_psa'];
+  'ostatni_spacer', 'notatka', 'spacery', 'kto1', 'godzina1', 'notatka_do', 'grupa_psa',
+  'notatki', 'odkleszczanie', 'odkleszczanie_co', 'odkleszczanie_nastepne', 'odkleszczanie_ostatnio'];
 const DOG_WIDTH = DOG_HEADERS.length;
+/** Kolumny odkleszczania — nasze tylko razem (wszystkie cztery pod naszymi nagłówkami). */
+const TICK_COLS = [DOG.TICK, DOG.TICK_EVERY, DOG.TICK_NEXT, DOG.TICK_LAST];
+
+/**
+ * Notatki psa (1.6, prośba właściciela: „trzeba uważać na coś, ćwiczyć kaganiec, we wtorek zapoznawczy, w środę RTG,
+ * w niedzielę akcja"). Każda ma własny termin, jak dotąd jedyna: dzień (do niego włącznie), „nigdy" albo bez terminu
+ * (do najbliższego czyszczenia). Pierwsza zostaje tam, gdzie zawsze (`notatka` / `notatka_do`) — wersja sprzed 1.6
+ * widzi ją jak dotąd i tylko ją rusza. Dalsze — w kolumnie `notatki`, po jednej w linii: „termin|treść" (termin:
+ * rrrr-mm-dd albo „nigdy"). Nocne czyszczenie zdejmuje notatki po terminie, a gdy znika pierwsza — następna wchodzi
+ * na jej miejsce. Kolumna doszła później: zakładka bywa węższa, a kolumna liczy się tylko pod naszym nagłówkiem
+ * (jak `grupa_psa`). NOTES_MAX — najwięcej notatek przy psie (razem z pierwszą).
+ */
+const NOTES_MAX = 6;
+
+/**
+ * Odkleszczanie (1.6, prośba właściciela). Metoda — wpisana raz, potem do wyboru przy innych psach (jak grupa psa);
+ * okres — tygodnie albo miesiące; termin następnego — w panelu dzień, w którym kończy się obecne (pusty = od dziś).
+ * TICK_SOON_DAYS dni przed terminem przy psie pojawia się 💊 przypomnienie, a od dnia terminu do odhaczenia — zadanie
+ * dla wolontariuszy. Ani przypomnienie, ani zadanie nie są zapisane osobno: wynikają z tych czterech kolumn, więc zmiana
+ * metody, wyczyszczenie jej czy usunięcie psa nie zostawia niczego „wiszącego". Odhaczenie zadania — termin = dzień
+ * odhaczenia + okres (ktoś zapomni i zrobi dzień później — liczymy od tego dnia). TICK_LIMITS — najdłuższy okres.
+ */
+const TICK_SOON_DAYS = 7;
+const TICK_LIMITS = { t: 52, m: 12 };
 
 /**
  * Psy innych grup (1.3). Pomagamy wyprowadzać psy innych grup wolontariuszy, a żeby zapisy szły
@@ -157,7 +187,7 @@ const NOTE_FOREVER = 'nigdy';
  * Limity długości pól (obrona przed wklejeniem elaboratu). MAIL, MAIL_TO, MAIL_SUBJECT — treść,
  * odbiorcy i temat maila z listą (właściwości skryptu; te same liczby w Script.html).
  */
-const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150, TEAM: 20 };
+const MAX_LEN = { NAME: 40, IDENT: 20, BOX: 20, TASK: 120, NOTE: 80, MAIL: 2000, MAIL_TO: 300, MAIL_SUBJECT: 150, TEAM: 20, TICK: 30 };
 
 /** Temat maila z listą spacerów — domyślny, dopóki prowadząca nie ustawi własnego (właściwość `mailSubject`). */
 const DEFAULT_MAIL_SUBJECT = 'Lista spacerowa G13 z [DATA]';
@@ -213,7 +243,8 @@ const POLL_WINDOW_H = 3;
 const DEFAULT_HELPER = {
   enabled: false, chatId: '', chatName: '', toId: '', toName: '',
   min: 3, evening: 20, morning: 7, weekDays: [0, 3], names: '',
-  features: { evening: true, eveningAlways: true, morning: true, week: true, newPoll: true,
+  // morningAlways (1.6, decyzja właściciela 29.10): skład na dziś rano codziennie, z zadaniami na dziś — wyłączone: tylko gdy coś nie gra
+  features: { evening: true, eveningAlways: true, morning: true, morningAlways: true, week: true, newPoll: true,
               members: true, lastWeek: true, weather: true, commands: true },
   ready: { evening: false, morning: false, week: false, newPoll: false, members: false, lastWeek: false },
 };
@@ -249,6 +280,7 @@ const HELPER_INTAKE_MS = 150000;     // najdłużej tyle czytamy kolejkę w jedn
 const HELPER_WINDOW_H = 3;           // wiadomość o swojej porze najpóźniej tyle godzin po niej
 const HELPER_SEND_MAX = 6;           // wiadomości na przebieg
 const HELPER_DAY_MAX = 25;           // wiadomości na dzień
+const HELPER_TASKS_MAX = 10;         // zadań w porannej wiadomości (1.6) — reszta jako „…i jeszcze N"
 const HELPER_CARD_MAX = 60;          // kart kontaktu na dzień (osobno — przeglądanie listy członków nie zjada wiadomości o swoich porach)
 const HELPER_BUSY_MS = 8 * 60000;    // znacznik „pracuję" starszy niż to = przebieg ubity, można dalej
 const HELPER_HIST_DAYS = 60;         // Historia: kto ostatnio chodził z psem dla wyznaczonych osób
@@ -303,6 +335,6 @@ const DIAG_REPORT_MAX = 10;
  * wersji = nowy przedrostek, żeby nowy kod nie czytał starych wpisów. CACHE_TTL_S — najdłużej, ile
  * Google pozwala (6 h): o poprawności decydują znaczniki pokolenia, nie czas.
  */
-const CACHE_PREFIX = 'g13c1:';
+const CACHE_PREFIX = 'g13c2:';   // g13c2 — 1.6: pies ma notatki i odkleszczanie (nowy kształt katalogu i stanu startowego)
 const CACHE_TTL_S = 21600;
 const CACHE_KEY = { GEN: 'gen', DOGS_GEN: 'genDogs', DOGS: 'dogs', BOOT: 'boot' };

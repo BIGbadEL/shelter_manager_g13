@@ -241,7 +241,7 @@ function S136(){
   const conf = src => (src.match(/const HOME_TEAM = '([^']*)'/) || [])[1];
   const gs = fs.readFileSync(path.join(ROOT, 'Config.gs'), 'utf8'), html = fs.readFileSync(path.join(ROOT, 'Script.html'), 'utf8');
   check('HOME_TEAM ten sam w Config.gs i Script.html', !!conf(gs) && conf(gs)===conf(html), conf(gs) + ' / ' + conf(html));
-  check('TEAM_MAX = MAX_LEN.TEAM', (html.match(/const TEAM_MAX = (\d+)/) || [])[1] === (gs.match(/TEAM: (\d+) \}/) || [])[1]);
+  check('TEAM_MAX = MAX_LEN.TEAM', (html.match(/const TEAM_MAX = (\d+)/) || [])[1] === (gs.match(/const MAX_LEN = \{[^}]*\bTEAM: (\d+)/) || [])[1]);
   const app = buildApp(), env = makeContext({});
   const cases = [['G7', []], [' g 7 ', ['G7']], ['g13', []], ['  G 13', []], ['', []], [null, []], ['G\u00077', []],
                  ['Grupa bardzo długa nazwa ponad limit', []], ['x'.repeat(19) + ' y', []], ['g10', ['G1', 'G10']], ['Ekipa  Ani', ['ekipa ani']]];

@@ -493,7 +493,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','setTickDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -519,6 +519,8 @@
   /** Edycja psa w katalogu (tryb edycji) — byt to sam pies. */
   function keyDog(id){ return 'dog:'+id; }
   function keyTask(id){ return 'task:'+id; }
+  /** Odkleszczanie psa (1.6) — osobny byt: odhaczenie zadania nie czeka na edycję psa w katalogu. */
+  function keyTick(id){ return 'tick:'+id; }
   function isPending(key){ return (pendingKeys.get(key)||0) > 0; }
 
   /**
@@ -1246,34 +1248,146 @@
     return 'do ' + String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0');
   }
 
+  /** Najwięcej notatek przy psie — NOTES_MAX w Config.gs. */
+  const NOTES_MAX = 6;
+  /**
+   * Notatki psa po kolei: {text, until} (1.6 — kilka przy jednym psie, każda z własnym terminem). Stan od serwera
+   * sprzed 1.6 zna tylko jedną: note / noteUntil.
+   */
+  function dogNotes(dog){
+    if(Array.isArray(dog.notes)) return dog.notes;
+    return dog.note ? [{text: dog.note, until: dog.noteUntil || ''}] : [];
+  }
   /**
    * Notatka przy psie. Bez terminu znika przy najbliższym czyszczeniu (domyślnie),
    * z terminem dostaje odznakę i dotrwa do wskazanego dnia włącznie.
    *
    * Przy przeglądaniu dni ta sama reguła mówi, GDZIE ją pokazać: bez terminu —
    * tylko na bieżącym dniu („zdjęcia o 12:00" nie dotyczy soboty), z terminem —
-   * na każdym dniu do terminu włącznie; „nigdy" — na każdym dniu.
+   * na każdym dniu do terminu włącznie; „nigdy" — na każdym dniu. Każda notatka psa osobno.
    */
-  function noteShownOn(dog, date){
-    if(!dog.note) return false;
-    if(dog.noteUntil === NOTE_FOREVER) return true;
-    return dog.noteUntil ? date <= dog.noteUntil : date === state.bizDate;
+  function noteShownOn(n, date){
+    if(!n || !n.text) return false;
+    if(n.until === NOTE_FOREVER) return true;
+    return n.until ? date <= n.until : date === state.bizDate;
   }
   /**
    * Czy notatka ma WŁASNY termin. Notatka „bez terminu" dostaje od serwera termin =
    * dzień rezerwacyjny, w którym ją zapisano (patrz noteUntil_) — dla oka to wciąż
    * „do czyszczenia": bez odznaki i z pustym polem daty w edycji.
    */
-  function noteDated(dog){
-    return !!dog.noteUntil && (dog.noteUntil === NOTE_FOREVER || !state.bizDate || dog.noteUntil > state.bizDate);
+  function noteDated(n){
+    return !!n.until && (n.until === NOTE_FOREVER || !state.bizDate || n.until > state.bizDate);
   }
-  function noteHtml(dog){
-    if(!dog.note) return '';
-    const lab = noteDated(dog) ? untilLabel(dog.noteUntil) : '';
+  function oneNoteHtml(n){
+    const lab = noteDated(n) ? untilLabel(n.until) : '';
     const pill = lab ? ` <span class="until">${esc(lab)}</span>` : '';
-    return `<div class="note">📌 ${esc(dog.note)}${pill}</div>`;
+    return `<div class="note">📌 ${esc(n.text)}${pill}</div>`;
   }
-  function dogNote(dog){ return noteShownOn(dog, state.date) ? noteHtml(dog) : ''; }
+  /**
+   * Notatki psa: 💊 odkleszczanie na górze (prośba właściciela: „specjalna, z pigułką"), pod nim zwykłe 📌.
+   * Bez `date` (katalog, tryb edycji) — wszystkie i pełna informacja o odkleszczaniu; z `date` (lista dnia) — te,
+   * które ten dzień obejmują, i przypomnienie, gdy do terminu zostało TICK_SOON dni albo mniej.
+   */
+  function noteHtml(dog, date){
+    const all = date === undefined;
+    const notes = dogNotes(dog).filter(n => all ? !!n.text : noteShownOn(n, date));
+    return (all ? tickInfoHtml(dog) : tickNoteHtml(dog, date)) + notes.map(oneNoteHtml).join('');
+  }
+  function dogNote(dog){ return noteHtml(dog, state.date); }
+
+  /* ---------- odkleszczanie (1.6) ----------
+     Przy psie: metoda, okres i termin następnego (tick: {method, n, u, next, last}). Przypomnienie 💊 przy psie
+     TICK_SOON dni przed terminem i zadanie na liście od dnia terminu do odhaczenia nie są nigdzie zapisane — wynikają
+     z tych pól (Config.gs, TICK_SOON_DAYS), więc po zmianie metody czy usunięciu psa nie ma czego sprzątać.
+     Odhaczenie zadania: termin = dzień odhaczenia + okres (setTickDone); pomyłkę cofa się tego samego dnia. */
+  const TICK_SOON = 7;                              // TICK_SOON_DAYS w Config.gs
+  const TICK_LIMITS = {t: 52, m: 12};               // TICK_LIMITS w Config.gs
+  const TICK_MAX = 30;                              // MAX_LEN.TICK w Config.gs
+  const TICK_NEW = '__new';                         // „Inna metoda…" na liście wyboru — pokazuje pole do wpisania
+  const TICK_UNIT = {t: ['tydzień', 'tygodnie', 'tygodni'], m: ['miesiąc', 'miesiące', 'miesięcy']};
+  const WEEKDAY_SHORT = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
+  function tickKey(m){ return String(m==null?'':m).replace(/\s+/g,'').toLowerCase(); }
+  /** Ta sama reguła co tickMethod_ na serwerze: znana metoda (bez wielkości liter i spacji) — w znanej pisowni. */
+  function tickClean(v, known){
+    const s = String(v==null?'':v).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0, TICK_MAX).trim();
+    if(!tickKey(s)) return '';
+    return (known || []).filter(m => tickKey(m) === tickKey(s))[0] || s;
+  }
+  /** Odkleszczanie psa albo null. */
+  function tickOf(dog){ const t = dog && dog.tick; return t && t.method && t.next ? t : null; }
+  /** Metody psów z katalogu, po kolei — do wyboru w edycji psa (jak knownTeams). `exceptId` — bez tego psa. */
+  function knownMethods(exceptId){
+    const out = [], seen = new Set();
+    state.dogs.forEach(d => {
+      const t = tickOf(d);
+      if(!t || d.id === exceptId || seen.has(tickKey(t.method))) return;
+      seen.add(tickKey(t.method)); out.push(t.method);
+    });
+    return out.sort((a, b) => a.localeCompare(b, 'pl', {numeric:true}));
+  }
+  /** Okres psa z tą metodą (pierwszy w katalogu) — podpowiedź przy wyborze metody z listy. */
+  function methodPeriod(method){
+    const d = state.dogs.find(x => { const t = tickOf(x); return t && tickKey(t.method) === tickKey(method); });
+    return d ? {n: d.tick.n, u: d.tick.u} : null;
+  }
+  /** Ta sama arytmetyka co addPeriod_ na serwerze: tygodnie — dni, miesiące — ten sam dzień (albo ostatni) miesiąca. */
+  function addPeriod(iso, n, u){
+    if(u === 't') return addDays(iso, 7*n);
+    const p = iso.split('-').map(Number);
+    const m = p[1]-1+n, y = p[0]+Math.floor(m/12), mm = ((m%12)+12)%12;
+    const end = new Date(Date.UTC(y, mm+1, 0)).getUTCDate();
+    return y + '-' + String(mm+1).padStart(2,'0') + '-' + String(Math.min(p[2], end)).padStart(2,'0');
+  }
+  function everyLabel(t){ return 'co ' + (t.n === 1 ? TICK_UNIT[t.u][0] : t.n + ' ' + plural(t.n, TICK_UNIT[t.u][0], TICK_UNIT[t.u][1], TICK_UNIT[t.u][2])); }
+  /** Termin po ludzku, względem bieżącego dnia: „dziś", „jutro", „czw 05.11", „zaległe od 2 dni (wt 03.11)". */
+  function tickWhen(iso){
+    const d = new Date(iso+'T12:00:00Z');
+    if(isNaN(d.getTime())) return iso;
+    const day = `${WEEKDAY_SHORT[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+    const n = state.bizDate ? dayDiff(state.bizDate, iso) : 99;
+    if(n === 0) return 'dziś';
+    if(n === 1) return 'jutro';
+    if(n < 0) return (n === -1 ? 'zaległe od wczoraj' : `zaległe od ${-n} dni`) + ` (${day})`;
+    return day;
+  }
+  /**
+   * Przypomnienie na liście dnia `date`: od TICK_SOON dni przed terminem do odhaczenia. Termin zawsze względem
+   * dzisiaj (i na przyszłym dniu „czw 05.11" mówi to samo). Odhaczenie przesuwa termin — przypomnienie znika.
+   */
+  function tickNoteHtml(dog, date){
+    const t = tickOf(dog);
+    if(!t || isPast(date) || date < addDays(t.next, -TICK_SOON)) return '';
+    const late = state.bizDate && t.next < state.bizDate;
+    return `<div class="note tick${late ? ' late' : ''}">💊 Odkleszczanie: <b>${esc(t.method)}</b> <span class="until">${esc(tickWhen(t.next))}</span></div>`;
+  }
+  /** W katalogu (tryb edycji): metoda, okres i następny termin — zawsze, nie tylko tydzień przed. */
+  function tickInfoHtml(dog){
+    const t = tickOf(dog);
+    return t ? `<div class="tickinfo">💊 ${esc(t.method)} · ${everyLabel(t)} · następne ${esc(tickWhen(t.next))}</div>` : '';
+  }
+  /**
+   * Zadania „💊 Odkleszczanie" na dzień `date` — wyliczone z psów (w zakładce Zadania ich nie ma). Bieżący dzień: od dnia
+   * terminu do odhaczenia, a odhaczone dziś — jako odhaczone (do cofnięcia pomyłki). Przyszły: to, co wypada dokładnie
+   * w ten dzień, bez odhaczania — jak zwykłe zadania.
+   */
+  function tickTasks(date){
+    const out = [];
+    if(!state.bizDate || isPast(date)) return out;
+    state.dogs.forEach(dog => {
+      const t = tickOf(dog); if(!t) return;
+      if(date === state.bizDate){
+        if(t.next <= date) out.push(tickTask(dog, t, false));
+        else if(t.last === date) out.push(tickTask(dog, t, true));
+      } else if(t.next === date) out.push(tickTask(dog, t, false));
+    });
+    return out;
+  }
+  function tickTask(dog, t, done){
+    return {tick: dog.id, id: 'k' + dog.id, text: tickTaskText(dog, t), date: done ? t.last : t.next, done: done};
+  }
+  /** „💊 Odkleszczanie: Draco, boks 438 — Bravecto" — z imieniem psa, boksem i metodą (prośba właściciela). */
+  function tickTaskText(dog, t){ return `💊 Odkleszczanie: ${dogLabel(dog)}${dog.box ? ', boks ' + dog.box : ''} — ${t.method}`; }
 
   /* ---------- zadania ----------
      Każde zadanie ma dzień, od którego się pokazuje. Na bieżącym dniu widać
@@ -1302,20 +1416,24 @@
     return `na ${WEEKDAY_ON[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
   }
 
+  /**
+   * Wiersz zadania. Zadanie „💊 Odkleszczanie" (`t.tick` = numer psa) odhacza się przez setTickDone i nie ma ✕ —
+   * znika samo po odhaczeniu, a usuwa się je razem z metodą w edycji psa.
+   */
   function taskRow(t, removable){
     const tick = canTickTask(t);
     const badge = !tick ? `<span class="plan">${esc(taskPlanned(t))}</span>`
                 : taskAge(t) ? `<span class="age">${taskAge(t)}</span>` : '';
-    const del  = removable ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
-    const pend = isPending(keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
-    const act  = tick ? ` data-act="taskToggle" data-id="${t.id}"` : '';
-    return `<div class="task${t.done?' done':''}${tick?'':' planned'}"${act}>
+    const del  = removable && !t.tick ? `<button class="btn del" data-act="taskRemove" data-id="${t.id}">✕</button>` : '';
+    const pend = isPending(t.tick ? keyTick(t.tick) : keyTask(t.id)) ? `<span class="saving" title="zapisuję…"></span>` : '';
+    const act  = !tick ? '' : t.tick ? ` data-act="tickToggle" data-id="${t.tick}"` : ` data-act="taskToggle" data-id="${t.id}"`;
+    return `<div class="task${t.done?' done':''}${tick?'':' planned'}${t.tick?' tick':''}"${act}>
       <span class="box">${t.done?'✓':''}</span><span class="txt">${esc(t.text)}</span>${pend}${badge}${del}</div>`;
   }
 
-  /** Zadania na liście dnia — dla wolontariuszy. Pusto = bez ramki, jak dotąd. */
+  /** Zadania na liście dnia — dla wolontariuszy: najpierw 💊 odkleszczanie, potem zwykłe. Pusto = bez ramki, jak dotąd. */
   function renderTasks(date){
-    const list = tasksFor(date);
+    const list = tickTasks(date).concat(tasksFor(date));
     if(!list.length) return '';
     const title = date === state.bizDate ? 'Zadania' : 'Zadania zaplanowane na ten dzień';
     return `<div class="tasksbox"><h3>${title}</h3>${list.map(t=>taskRow(t, false)).join('')}</div>`;
@@ -1324,13 +1442,15 @@
   /**
    * Zadania w trybie edycji: wszystkie, po kolei według dnia, z usuwaniem
    * i dodawaniem na wybrany dzień. Formularz to NIE `.entry` — patrz busyEditing().
+   * Odkleszczanie — jak na liście bieżącego dnia (od terminu do odhaczenia); kolejne terminy widać przy psach.
    */
   function renderTaskAdmin(){
     const list = state.tasks.slice().sort((a,b)=> String(a.date||'') < String(b.date||'') ? -1
                                                  : String(a.date||'') > String(b.date||'') ? 1 : 0);
+    const ticks = state.bizDate ? tickTasks(state.bizDate) : [];
     let html = `<div class="tasksbox"><h3>Zadania</h3>`;
-    if(!list.length) html += `<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
-    html += list.map(t=>taskRow(t, true)).join('');
+    if(!list.length && !ticks.length) html += `<div class="empty small">Brak zadań — dodaj pierwsze poniżej.</div>`;
+    html += ticks.concat(list).map(t=>taskRow(t, true)).join('');
     const day = formVal('newTaskDate'), from = state.bizDate || '';
     html += `<div class="taskform">
         <input type="text" id="newTask" maxlength="120" placeholder="Nowe zadanie (np. umyć miski w K-4)" value="${esc(formVal('newTask'))}">
@@ -1348,7 +1468,7 @@
   function renderEditForm(dog){
     const opts=Object.keys(DIF).map(k=>
       `<option value="${k}" ${dog.dif===k?'selected':''}>${DIF[k].label}</option>`).join('');
-    const forever = dog.noteUntil === NOTE_FOREVER;
+    const notes = dogNotes(dog).filter(n => n.text);
     return `<li class="dog" style="border-left-color:${(DIF[dog.dif]||DIF.easy).color}">
       <div class="row"><span class="name">Edycja: ${esc(dogLabel(dog))}</span></div>
       <div class="editform">
@@ -1359,29 +1479,96 @@
           <select data-ef="dif">${opts}</select>
         </div>
         ${teamField('data-ef="team"', 'data-ef="teamNew"', teamClean(dog.team), '')}
-        <div class="adminrow">
-          <input type="text" data-ef="note" maxlength="80" value="${esc(dog.note)}" placeholder="Notatka (np. zdjęcia o 12:00)">
-        </div>
-        <div class="adminrow">
-          <input type="date" data-ef="noteUntil" value="${esc(forever || !noteDated(dog) ? '' : dog.noteUntil)}"
-                 min="${esc(state.today||'')}" ${forever?'disabled':''}>
-          <label class="check"><input type="checkbox" data-ef="noteForever" ${forever?'checked':''}> nigdy nie znika</label>
-        </div>
+        <div class="efsec">📌 Notatki</div>
+        <div class="noterows">${(notes.length ? notes : [{text:'', until:''}]).map(noteRowHtml).join('')}</div>
+        <div class="adminrow"><button class="btn ghost noteadd${notes.length >= NOTES_MAX ? ' hidden' : ''}" type="button" data-act="noteAdd">+ Notatka</button></div>
+        <div class="hint">Każda notatka ma własny termin. Pusta data = notatka znika przy najbliższym czyszczeniu, jak dotąd.
+        Datę ustaw tylko wtedy, gdy notatka ma dotrwać do konkretnego dnia — np. w środę
+        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.
+        „Nigdy nie znika" — notatka zostaje, dopóki ktoś jej sam nie skasuje.</div>
         <div class="adminrow">
           <select data-ef="walks">
             <option value="1" ${dog.walks!==2?'selected':''}>1 spacer dziennie</option>
             <option value="2" ${dog.walks===2?'selected':''}>2 spacery dziennie</option>
           </select>
         </div>
-        <div class="hint">Pusta data = notatka znika przy najbliższym czyszczeniu, jak dotąd.
-        Datę ustaw tylko wtedy, gdy notatka ma dotrwać do konkretnego dnia — np. w środę
-        wpisujesz spacer zapoznawczy zaplanowany na niedzielę. Zniknie po tym dniu.
-        „Nigdy nie znika" — notatka zostaje, dopóki ktoś jej sam nie skasuje.</div>
+        ${tickField(dog)}
         <div class="adminrow">
           <button class="btn add-btn" data-act="editSave" data-id="${dog.id}">Zapisz</button>
           <button class="btn ghost" data-act="editCancel">Anuluj</button>
         </div>
       </div></li>`;
+  }
+
+  /** Jedna notatka w edycji psa: treść i ✕, pod nimi termin i „nigdy nie znika" (wiersz `[data-noterow]`). */
+  function noteRowHtml(n){
+    const forever = n.until === NOTE_FOREVER;
+    return `<div class="noterow" data-noterow>
+        <div class="adminrow">
+          <input type="text" data-ef="note" maxlength="80" value="${esc(n.text)}" placeholder="Notatka (np. zdjęcia o 12:00)">
+          <button class="btn del" type="button" data-act="noteDel" title="Usuń notatkę">✕</button>
+        </div>
+        <div class="adminrow">
+          <input type="date" data-ef="noteUntil" value="${esc(forever || !noteDated(n) ? '' : n.until)}"
+                 min="${esc(state.today||'')}" ${forever?'disabled':''}>
+          <label class="check"><input type="checkbox" data-ef="noteForever" ${forever?'checked':''}> nigdy nie znika</label>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Odkleszczanie w edycji psa (1.6): metoda — brak, jedna z metod psów z katalogu albo „Inna metoda…" z polem do
+   * wpisania (jak grupa psa); okres — liczba i tygodnie / miesiące; następne — dzień, w którym kończy się obecne
+   * (decyzja właściciela; pusty = od dziś). Bez metody reszta pól jest schowana.
+   */
+  function tickField(dog){
+    const t = tickOf(dog), methods = knownMethods(dog.id);
+    const sel = t ? t.method : '';
+    // jedyny pies z tą metodą — jej nie ma w knownMethods (bez tego psa), a ma być na liście, po kolei
+    if(sel && methods.indexOf(sel) < 0){ methods.push(sel); methods.sort((a, b) => a.localeCompare(b, 'pl', {numeric:true})); }
+    const opt = (v, label) => `<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(label)}</option>`;
+    return `<div class="efsec">💊 Odkleszczanie</div>
+      <div class="adminrow teamrow">
+        <select data-ef="tick">${opt('', 'brak')}${methods.map(m => opt(m, m)).join('')}${opt(TICK_NEW, 'Inna metoda…')}</select>
+        <input type="text" data-ef="tickNew" maxlength="${TICK_MAX}" placeholder="Nazwa, np. Bravecto" value="" class="hidden">
+      </div>
+      <div class="tickmore${t ? '' : ' hidden'}">
+        <div class="adminrow teamrow">
+          <span class="teamlbl">co</span>
+          <input type="number" data-ef="tickN" min="1" max="52" step="1" inputmode="numeric" value="${t ? t.n : ''}">
+          <select data-ef="tickU">
+            <option value="t" ${t && t.u==='t'?'selected':''}>tyg.</option>
+            <option value="m" ${!t || t.u==='m'?'selected':''}>mies.</option>
+          </select>
+        </div>
+        <div class="adminrow teamrow">
+          <span class="teamlbl">następne</span>
+          <input type="date" data-ef="tickNext" value="${esc(t ? t.next : '')}">
+        </div>
+        <div class="hint">Następne — dzień, w którym kończy się obecne (pusto = od dziś). Tydzień przed nim przy psie
+        pojawia się 💊 przypomnienie, a w tym dniu — zadanie dla wolontariuszy. Odhaczenie zadania liczy kolejny termin od dnia odhaczenia.</div>
+      </div>`;
+  }
+
+  /**
+   * Odkleszczanie z formularza edycji: {method, n, u, next} albo {method: ''} (bez odkleszczania), albo null — błąd,
+   * komunikat już poszedł. Te same reguły co tickInput_ na serwerze (kolejka ponawia nieudany zapis — komunikat od razu).
+   */
+  function readTickForm(id){
+    const sel = ef('tick');
+    const method = sel === TICK_NEW ? tickClean(ef('tickNew'), knownMethods(id)) : tickClean(sel);
+    if(sel === TICK_NEW && !method){ toast('Wpisz nazwę metody odkleszczania'); viewEl.querySelector('[data-ef="tickNew"]').focus(); return null; }
+    if(!method) return {method: ''};
+    const n = Number(ef('tickN')), u = ef('tickU') === 't' ? 't' : 'm';
+    if(!ef('tickN') || !Number.isInteger(n) || n < 1 || n > TICK_LIMITS[u]){
+      toast('Odkleszczanie: co ile — od 1 do ' + TICK_LIMITS[u] + (u === 't' ? ' tygodni' : ' miesięcy'));
+      viewEl.querySelector('[data-ef="tickN"]').focus(); return null;
+    }
+    const next = ef('tickNext');
+    if(next && state.bizDate && (next < addDays(state.bizDate, -366) || next > addDays(state.bizDate, 2*366))){
+      toast('Następne odkleszczanie — najwyżej rok wstecz i dwa lata naprzód'); return null;
+    }
+    return {method, n, u, next};
   }
 
   /**
@@ -2324,7 +2511,7 @@
   const HELPER_NAME_MAP_MAX = 600;                  // HELPER_LIMITS.NAME_MAP
   const HELPER_FEATURES = [
     ['evening', 'skład na jutro — wieczorem'], ['eveningAlways', '…codziennie (wyłączone: tylko gdy coś nie gra)'],
-    ['morning', 'dziś rano — gdy coś nie gra'],
+    ['morning', 'skład na dziś — rano, z zadaniami na dziś'], ['morningAlways', '…codziennie (wyłączone: tylko gdy coś nie gra)'],
     ['week', 'przegląd tygodnia'], ['newPoll', 'nowa ankieta (daty, przypięcie)'], ['members', 'nowe osoby w grupie'],
     ['lastWeek', 'miniony tydzień — poniedziałek rano'], ['weather', 'pogoda'], ['commands', 'odpowiedzi na pytania w prywatnym czacie'],
   ];
@@ -3140,6 +3327,27 @@
     enqueue('setTaskDone',[id,t.done],{key:keyTask(id)});
   }
 
+  /**
+   * Zadanie „💊 Odkleszczanie" psa `id`: odhaczenie (termin już jest) albo cofnięcie odhaczonego dziś. Od razu na ekranie
+   * tak, jak policzy serwer (termin = dziś + okres); serwer dostaje termin / „ostatnio" z ekranu (`seen`) i zmienia tylko
+   * ten stan — powtórka po zaginionej odpowiedzi niczego nie przesuwa drugi raz (setTickDone).
+   */
+  function doTickToggle(id){
+    const dog = findDog(id), t = tickOf(dog), today = state.bizDate;
+    if(!t || !today) return;
+    let done, seen;
+    if(t.next <= today){ done = true; seen = t.next; dog.tick = Object.assign({}, t, {last: today, next: addPeriod(today, t.n, t.u)}); }
+    else if(t.last === today){ done = false; seen = t.last; dog.tick = Object.assign({}, t, {next: t.last, last: ''}); }
+    else return;
+    // najpierw do kolejki, potem przerysowanie — zadanie od razu ma kręciołek „zapisuję" (jak akcje na spacerach)
+    enqueue('setTickDone', [id, done, seen], {key: keyTick(id), reconcile: res => {
+      const d = findDog(id);
+      if(d && res && Number(res.id) === id) d.tick = res.tick || null;
+      safeRender();
+    }});
+    render('self');
+  }
+
   /* =========================================================
      ZDARZENIA
      ========================================================= */
@@ -3202,6 +3410,44 @@
   function ef(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return el?el.value.trim():''; }
   function efChecked(name){ const el=viewEl.querySelector(`[data-ef="${name}"]`); return !!(el && el.checked); }
 
+  /**
+   * Notatki z formularza edycji psa: [{text, until}] po kolei, puste odpadają; termin bez treści nic nie znaczy.
+   * null — błąd (termin z przeszłości), komunikat już poszedł.
+   */
+  function readNotesForm(){
+    const out = [];
+    for(const row of viewEl.querySelectorAll('[data-noterow]')){
+      const q = s => row.querySelector(s);
+      const text = q('[data-ef="note"]').value.trim();
+      if(!text) continue;
+      const until = q('[data-ef="noteForever"]').checked ? NOTE_FOREVER : q('[data-ef="noteUntil"]').value;
+      if(until && until !== NOTE_FOREVER && state.today && until < state.today){
+        toast('Data notatki nie może być z przeszłości'); q('[data-ef="noteUntil"]').focus(); return null;
+      }
+      out.push({text, until});
+    }
+    return out;
+  }
+  /** „+ Notatka" — pusty wiersz pod ostatnim (DOM wprost: edycja psa wstrzymuje przerysowanie, busyEditing). */
+  function addNoteRow(btn){
+    const form = btn.closest('.editform'), rows = form && form.querySelector('.noterows');
+    if(!rows || rows.querySelectorAll('[data-noterow]').length >= NOTES_MAX) return;
+    rows.insertAdjacentHTML('beforeend', noteRowHtml({text:'', until:''}));
+    btn.classList.toggle('hidden', rows.querySelectorAll('[data-noterow]').length >= NOTES_MAX);
+    invalidateHtml();
+    rows.lastElementChild.querySelector('[data-ef="note"]').focus();
+  }
+  /** ✕ przy notatce — wiersz znika (ostatni zostaje, tylko pusty), zapis dopiero przy „Zapisz". */
+  function delNoteRow(btn){
+    const row = btn.closest('[data-noterow]'), form = btn.closest('.editform');
+    if(!row || !form) return;
+    if(form.querySelectorAll('[data-noterow]').length > 1) row.remove();
+    else row.outerHTML = noteRowHtml({text:'', until:''});
+    const add = form.querySelector('.noteadd');
+    if(add) add.classList.remove('hidden');
+    invalidateHtml();
+  }
+
   /** Otwiera pole "Twoje imię" przy jednym spacerze psa, zamykając wszystkie inne. */
   function openEntry(id, n, clickedBtn){
     viewEl.querySelectorAll('.entry').forEach(el=>el.classList.add('hidden'));
@@ -3222,9 +3468,22 @@
   /** Zmiana godziny czyszczenia i przełącznik „nigdy nie znika" — to 'change', nie 'click'. */
   viewEl.addEventListener('change',e=>{
     if(e.target.matches && e.target.matches('[data-ef="noteForever"]')){
-      // notatka na stałe nie ma terminu — pole daty wyłączamy, żeby nie udawało, że coś znaczy
-      const until = viewEl.querySelector('[data-ef="noteUntil"]');
+      // notatka na stałe nie ma terminu — pole daty wyłączamy, żeby nie udawało, że coś znaczy (w wierszu tej notatki)
+      const row = e.target.closest('[data-noterow]') || viewEl;
+      const until = row.querySelector('[data-ef="noteUntil"]');
       if(until) until.disabled = e.target.checked;
+      return;
+    }
+    if(e.target.matches && e.target.matches('[data-ef="tick"]')){
+      // odkleszczanie: „Inna metoda…" — pole na nazwę; metoda z listy — okres jak u psa z tą metodą; brak — reszta schowana
+      const form = e.target.closest('.editform') || viewEl, v = e.target.value;
+      const box = form.querySelector('[data-ef="tickNew"]'), more = form.querySelector('.tickmore');
+      if(box) box.classList.toggle('hidden', v !== TICK_NEW);
+      if(more) more.classList.toggle('hidden', !v);
+      const p = v && v !== TICK_NEW ? methodPeriod(v) : null;
+      if(p){ form.querySelector('[data-ef="tickN"]').value = p.n; form.querySelector('[data-ef="tickU"]').value = p.u; }
+      invalidateHtml();                              // DOM zmieniony poza render()
+      if(v === TICK_NEW && box) box.focus();
       return;
     }
     if(e.target.id!=='resetHour') return;
@@ -3321,23 +3580,31 @@
 
     /* --- wolontariusze: zadania (✕ ma własny data-act, więc tu nie wpada) --- */
     if(act==='taskToggle') doTaskToggle(id);
+    if(act==='tickToggle') doTickToggle(id);
 
     /* --- tryb edycji (rzadkie akcje — pełna synchronizacja z serwerem) --- */
     if(act==='edit'){ state.editId=id; render('self'); }
     if(act==='editCancel'){ state.editId=null; render('self'); }
+    if(act==='noteAdd'){ addNoteRow(btn); return; }
+    if(act==='noteDel'){ delNoteRow(btn); return; }
     if(act==='editSave'){
-      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),
-                    note:ef('note'),walks:Number(ef('walks'))===2?2:1,
-                    noteUntil: efChecked('noteForever') ? NOTE_FOREVER : ef('noteUntil')};
+      const fields={name:ef('name'),ident:ef('ident'),box:ef('box'),dif:ef('dif'),walks:Number(ef('walks'))===2?2:1};
       if(!fields.name && !fields.ident){ toast('Podaj imię lub nr identyfikacyjny'); return; }
-      if(fields.noteUntil && !fields.note) fields.noteUntil='';   // termin bez notatki nic nie znaczy
-      if(fields.noteUntil && fields.noteUntil!==NOTE_FOREVER && state.today && fields.noteUntil < state.today){
-        toast('Data notatki nie może być z przeszłości'); return;
-      }
+      const notes = readNotesForm();
+      if(!notes) return;
+      // pierwsza też jako note / noteUntil — tak ją zna serwer sprzed 1.6 i stara karta
+      Object.assign(fields, {notes, note: notes[0] ? notes[0].text : '', noteUntil: notes[0] ? notes[0].until : ''});
       fields.team = teamPicked(ef('team'), ef('teamNew'), id);
       if(fields.team === null){ toast('Wpisz nazwę grupy'); viewEl.querySelector('[data-ef="teamNew"]').focus(); return; }
+      fields.tick = readTickForm(id);
+      if(!fields.tick) return;
       const dog=findDog(id);
-      if(dog) Object.assign(dog, fields);           // optymistycznie od razu
+      if(dog){                                       // optymistycznie od razu — odkleszczanie tak, jak policzy serwer (writeTick_)
+        const old = tickOf(dog), t = fields.tick;
+        Object.assign(dog, fields, {tick: !t.method ? null : {method: t.method, n: t.n, u: t.u,
+          next: t.next || addPeriod(state.bizDate || state.today, t.n, t.u),
+          last: old && tickKey(old.method) === tickKey(t.method) && old.n === t.n && old.u === t.u ? old.last : ''}});
+      }
       state.editId=null;
       render('self');
       enqueue('updateDog',[id,fields,state.pin],{key:keyDog(id),reconcile:applyFull_});
@@ -3593,10 +3860,12 @@
    */
   const WHATS_NEW = [
     { v: '1.6', date: '', items: [
-        'Odkleszczanie: tydzień przed terminem przy psie pojawia się przypomnienie, a w dniu terminu — zadanie na liście. Odhaczenie zadania liczy następny termin od tego dnia.',
-        'Bot z „Grafiku” w porannej wiadomości wypisuje też zadania na dziś.',
+        'Przy psie może być kilka notatek — każda ze swoim terminem.',
+        'Odkleszczanie: tydzień przed terminem przy psie pojawia się 💊 przypomnienie, a w dniu terminu — zadanie na liście. Odhaczenie zadania liczy następny termin od tego dnia.',
+        'Bot z „Grafiku” (w fazie testów): rano skład na dziś, a pod nim zadania na dziś.',
       ], admin: [
-        'Odkleszczanie w edycji psa: metoda (z listy albo nowa), co ile tygodni lub miesięcy i data następnego.',
+        'Edycja psa: kilka notatek („+ Notatka”, każda z terminem albo „nigdy nie znika”) i odkleszczanie — metoda z listy albo nowa, co ile tygodni lub miesięcy, data następnego.',
+        'Pomocnik Grafiku: rano codziennie (przełącznik „…codziennie”) — skład na dziś z zadaniami.',
       ] },
     { v: '1.5', date: '29 października 2026', items: [
         'Pies na dwa spacery: po „Zarezerwuj” w polu 1/2 albo 2/2 przycisk „OK” mieści się w ramce, także na wąskim telefonie.',

@@ -20,9 +20,14 @@
 
 /**
  * Surowy wiersz zakładki Psy -> pies z katalogu (kim jest, bez stanu dnia).
- * `teamCol` — czy zakładka ma kolumnę grupy psa (hasTeamColumn_); bez niej każdy pies jest nasz.
+ * `own` — które kolumny dołożone później są nasze (ownCols_: grupa psa, dalsze notatki, odkleszczanie); czyjaś kolumna
+ * w tym miejscu się nie liczy — bez naszej grupy każdy pies jest nasz. Samo true/false (dawniej) — tylko grupa psa.
+ * `notes` — wszystkie notatki po kolei (1.6): pierwsza to `note` / `noteUntil`, jak dla kart sprzed 1.6.
+ * `tick` — odkleszczanie (1.6): {method, n, u, next, last} albo null.
  */
-function mapDogRow_(r, teamCol) {
+function mapDogRow_(r, own) {
+  const o = own && typeof own === 'object' ? own : { team: !!own };
+  const note = String(r[DOG.NOTE - 1] || ''), noteUntil = cellDate_(r[DOG.NOTE_UNTIL - 1]);
   return {
     id:        Number(r[DOG.ID - 1]),
     name:      String(r[DOG.NAME - 1] || ''),
@@ -30,23 +35,25 @@ function mapDogRow_(r, teamCol) {
     box:       String(r[DOG.BOX - 1] || ''),
     dif:       String(r[DOG.DIF - 1]) || 'easy',
     lastWalk:  cellDate_(r[DOG.LAST_WALK - 1]),
-    note:      String(r[DOG.NOTE - 1] || ''),
+    note:      note,
     walks:     Number(r[DOG.WALKS - 1]) === 2 ? 2 : 1,
-    noteUntil: cellDate_(r[DOG.NOTE_UNTIL - 1]),
-    team:      teamCol ? dogTeam_(r[DOG.TEAM - 1]) : '',
+    noteUntil: noteUntil,
+    team:      o.team ? dogTeam_(r[DOG.TEAM - 1]) : '',
+    notes:     (note ? [{ text: note, until: noteUntil }] : []).concat(o.notes ? parseNotes_(r[DOG.NOTES - 1]) : []),
+    tick:      o.tick ? tickOfCells_(r.slice(DOG.TICK - 1, DOG.TICK - 1 + TICK_COLS.length)) : null,
   };
 }
 
-/** Katalog z nagłówkiem w tym samym odczycie — po nim poznajemy, czy kolumna grupy psa jest nasza. */
+/** Katalog z nagłówkiem w tym samym odczycie — po nim poznajemy, które kolumny dołożone później są nasze. */
 function readDogCatalog_() {
   const sh = ss_().getSheetByName(SHEETS.DOGS);
   const last = sh.getLastRow();
   if (last < 2) return [];
   const rows = sh.getRange(1, 1, last, dogWidth_(sh)).getValues();
-  const teamCol = hasTeamColumn_(rows[0]);
+  const own = ownCols_(rows[0]);
   return rows.slice(1)
     .filter(r => r[DOG.ID - 1] !== '' && r[DOG.ID - 1] !== null)
-    .map(r => mapDogRow_(r, teamCol));
+    .map(r => mapDogRow_(r, own));
 }
 
 /**
@@ -69,51 +76,81 @@ function catalogLocked_() {
 }
 
 /**
- * Ile kolumn Psy wolno czytać: najwyżej tyle, ile zakładka ma. Kolumna grupy psa doszła w 1.3,
- * a getRange poza szerokość zakładki rzuca błędem — bez tego wdrożenie przed migrate() kładłoby
- * całą aplikację (to samo co z Historią, histWidth_).
+ * Ile kolumn Psy wolno czytać: najwyżej tyle, ile zakładka ma. Kolumna grupy psa doszła w 1.3, notatki
+ * i odkleszczanie w 1.6, a getRange poza szerokość zakładki rzuca błędem — bez tego wdrożenie przed
+ * migrate() kładłoby całą aplikację (to samo co z Historią, histWidth_).
  */
 function dogWidth_(sh) { return Math.min(DOG_WIDTH, sh.getMaxColumns()); }
 
-/**
- * Czy kolumna grupy psa to nasza kolumna — po nagłówku `grupa_psa`. Kolumna o tym numerze bez
- * tego nagłówka (pusta albo czyjaś własna, dopisana w arkuszu ręcznie) nie przenosi psów na listę
- * innych grup: każdy pies jest wtedy nasz.
- */
-function hasTeamColumn_(header) {
-  return !!header && String(header[DOG.TEAM - 1] == null ? '' : header[DOG.TEAM - 1]).trim() === DOG_HEADERS[DOG.TEAM - 1];
-}
-
-/**
- * Kolumna grupy psa — dokłada brakującą (kolumna, nagłówek, format tekstowy, zanim coś do niej
- * trafi). Zwraca false, gdy w jej miejscu stoi już czyjaś kolumna — z innym nagłówkiem albo bez
- * nagłówka, ale z wpisami pod nim (review PR #6: „kaganiec" przy Lunie robił z niej psa grupy
- * „kaganiec") — tej nie nadpisujemy. Tylko pod blokadą albo z edytora.
- */
-function dogColumns_(sh) {
-  const missing = DOG_WIDTH - sh.getMaxColumns();
-  if (missing > 0) sh.insertColumnsAfter(sh.getMaxColumns(), missing);
-  const head = teamHead_(sh);
-  if (head === DOG_HEADERS[DOG.TEAM - 1]) return true;
-  if (head || teamCellsUsed_(sh)) return false;
-  sh.getRange(1, DOG.TEAM).setValue(DOG_HEADERS[DOG.TEAM - 1]);
-  sh.getRange(1, DOG.TEAM, sh.getMaxRows(), 1).setNumberFormat('@');
-  return true;
-}
-
-/** Nagłówek kolumny grupy psa ('' — pusty albo zakładka węższa). */
-function teamHead_(sh) {
-  if (sh.getMaxColumns() < DOG.TEAM) return '';
-  const v = sh.getRange(1, DOG.TEAM).getValue();
+/** Nagłówek kolumny `col` z wiersza nagłówków ('' — pusty albo zakładka węższa). */
+function headOf_(header, col) {
+  const v = header ? header[col - 1] : '';
   return String(v == null ? '' : v).trim();
 }
 
-/** Czy pod nagłówkiem kolumny grupy psa coś stoi (same spacje się nie liczą). */
-function teamCellsUsed_(sh) {
+/**
+ * Które kolumny dołożone później są nasze — po nagłówkach: `grupa_psa` (1.3), `notatki` (1.6), cztery kolumny
+ * odkleszczania (1.6, tylko wszystkie razem). Kolumna o tym numerze bez naszego nagłówka (pusta albo czyjaś własna,
+ * dopisana w arkuszu ręcznie) się nie liczy: pies jest wtedy nasz, bez dalszych notatek i bez odkleszczania.
+ */
+function ownCols_(header) {
+  const ours = c => headOf_(header, c) === DOG_HEADERS[c - 1];
+  return { team: ours(DOG.TEAM), notes: ours(DOG.NOTES), tick: TICK_COLS.every(ours) };
+}
+
+/** Wiersz nagłówków zakładki Psy (jedno wywołanie). */
+function dogHeader_(sh) { return sh.getRange(1, 1, 1, dogWidth_(sh)).getValues()[0]; }
+
+/** Nasze kolumny zakładki (ownCols_) — prosto z arkusza. */
+function dogOwn_(sh) { return ownCols_(dogHeader_(sh)); }
+
+/**
+ * Nasze kolumny `cols` (dołożone później) — dokłada brakujące (kolumny, nagłówek, format tekstowy, zanim coś do nich
+ * trafi). Zwraca false, gdy w miejscu którejś stoi już czyjaś kolumna — z innym nagłówkiem albo bez nagłówka, ale
+ * z wpisami pod nim (review PR #6: „kaganiec" przy Lunie robił z niej psa grupy „kaganiec") — tej nie nadpisujemy,
+ * a z kilku kolumn naraz (odkleszczanie) nie zakładamy wtedy żadnej. Tylko pod blokadą albo z edytora.
+ */
+function dogColumnsFor_(sh, cols) {
+  const missing = Math.max.apply(null, cols) - sh.getMaxColumns();   // tylko do potrzebnej — reszta, kiedy będzie potrzebna
+  if (missing > 0) sh.insertColumnsAfter(sh.getMaxColumns(), missing);
+  const header = dogHeader_(sh), todo = [];
+  for (let i = 0; i < cols.length; i++) {
+    const c = cols[i], head = headOf_(header, c);
+    if (head === DOG_HEADERS[c - 1]) continue;
+    if (head || colUsed_(sh, c)) return false;
+    todo.push(c);
+  }
+  todo.forEach(c => {
+    sh.getRange(1, c).setValue(DOG_HEADERS[c - 1]);
+    sh.getRange(1, c, sh.getMaxRows(), 1).setNumberFormat('@');
+  });
+  return true;
+}
+
+/** Kolumna grupy psa (1.3) — patrz dogColumnsFor_. */
+function dogColumns_(sh) { return dogColumnsFor_(sh, [DOG.TEAM]); }
+
+/** Czy pod nagłówkiem kolumny `col` coś stoi (same spacje się nie liczą). */
+function colUsed_(sh, col) {
   const last = sh.getLastRow();
-  if (last < 2) return false;
-  return sh.getRange(2, DOG.TEAM, last - 1, 1).getValues()
+  if (last < 2 || sh.getMaxColumns() < col) return false;
+  return sh.getRange(2, col, last - 1, 1).getValues()
     .some(r => String(r[0] == null ? '' : r[0]).trim() !== '');
+}
+
+/**
+ * Czy da się zapisać kolumny `cols` (pod blokadą, PRZED jakimkolwiek innym zapisem psa — żeby błąd nie zostawił psa
+ * zapisanego w połowie). `need` — jest co zapisać: dokłada brakujące, a gdy w ich miejscu stoją czyjeś — wyraźny błąd,
+ * nie cisza (`what` — czego nie zapisano). Bez `need` (pusto do zapisania) — zapis tylko tam, gdzie kolumny już są
+ * nasze: przy zakładce bez nich i tak nic w nich nie ma. Zwraca: pisać czy nie.
+ */
+function colsWritable_(sh, cols, need, what) {
+  if (!need) { const own = dogHeader_(sh); return cols.every(c => headOf_(own, c) === DOG_HEADERS[c - 1]); }
+  if (dogColumnsFor_(sh, cols)) return true;
+  const L = c => String.fromCharCode(64 + c), a = cols[0], b = cols[cols.length - 1];
+  throw new Error((a === b ? 'Kolumna ' + a + ' (' + L(a) + ') w zakładce Psy jest zajęta'
+                           : 'Kolumny ' + a + '–' + b + ' (' + L(a) + '–' + L(b) + ') w zakładce Psy są zajęte') +
+                  ' przez inne dane — ' + what + ' nie zapisano. Przesuń tamte dane w arkuszu w inne miejsce.');
 }
 
 /** Grupa psa do porównań: „G7", „g 7" i „ g7 " to ta sama grupa. */
@@ -141,7 +178,7 @@ function dogTeam_(v, known) {
  * nasza (przy zakładce bez niej każdy pies i tak jest nasz). Zwraca: pisać czy nie.
  */
 function teamWritable_(sh, team) {
-  if (!team) return teamHead_(sh) === DOG_HEADERS[DOG.TEAM - 1];
+  if (!team) return dogOwn_(sh).team;
   if (dogColumns_(sh)) return true;
   throw new Error('Kolumna ' + DOG.TEAM + ' (O) w zakładce Psy jest zajęta przez inne dane — grupy psa nie zapisano. ' +
                   'Przesuń tamtą kolumnę w arkuszu w inne miejsce.');
@@ -153,6 +190,141 @@ function teamWritable_(sh, team) {
  */
 function knownTeams_(exceptId) {
   return readDogCatalog_().filter(d => d.team && d.id !== Number(exceptId)).map(d => d.team);
+}
+
+/* ---------- NOTATKI (1.6) — opis przy NOTES_MAX w Config.gs ---------- */
+
+/** Treść notatki: jedna linia (kolumna `notatki` trzyma notatkę w linii), najwyżej MAX_LEN.NOTE znaków. */
+function noteText_(v) { return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_LEN.NOTE).trim(); }
+
+/**
+ * Dalsze notatki z kolumny `notatki`: linia = „termin|treść" (termin rrrr-mm-dd albo „nigdy"). Linia wpisana w arkuszu
+ * ręcznie bez terminu (bez „|" albo z czymś innym przed nim) to cała treść, bez terminu — jak notatka bez terminu:
+ * do najbliższego czyszczenia.
+ */
+function parseNotes_(v) {
+  return String(v == null ? '' : v).split(/\r?\n/).map(line => {
+    const i = line.indexOf('|');
+    const head = i >= 0 ? line.slice(0, i).trim() : null;
+    const dated = head === NOTE_FOREVER || isDate_(head);
+    return { text: noteText_(dated || head === '' ? line.slice(i + 1) : line), until: dated ? head : '' };
+  }).filter(n => n.text);
+}
+
+/** Dalsze notatki do kolumny `notatki` (odwrotność parseNotes_). */
+function notesCell_(list) { return list.map(n => (n.until || '') + '|' + n.text).join('\n'); }
+
+/**
+ * Notatki z panelu: lista {text, until} (1.6) — puste odpadają, termin jak dotąd jedynej (noteUntil_: bez terminu =
+ * do najbliższego czyszczenia, „nigdy", dzień). Karta sprzed 1.6 przysyła jedną (note, noteUntil) — to pierwsza
+ * notatka, a dalsze zostają, jakie były (updateDog).
+ */
+function notesOf_(data) {
+  const raw = Array.isArray(data && data.notes) ? data.notes : [{ text: data && data.note, until: data && data.noteUntil }];
+  if (raw.length > NOTES_MAX * 2) throw new Error('Przy psie najwyżej ' + NOTES_MAX + ' notatek');
+  const out = raw.map(n => {
+    const text = noteText_(n && n.text);
+    return { text: text, until: noteUntil_(n && n.until, text) };
+  }).filter(n => n.text);
+  if (out.length > NOTES_MAX) throw new Error('Przy psie najwyżej ' + NOTES_MAX + ' notatek');
+  return out;
+}
+
+/* ---------- ODKLESZCZANIE (1.6) — opis przy TICK_SOON_DAYS w Config.gs ---------- */
+
+/** Metoda do porównań: „Bravecto", „bravecto" i „Bra vecto" to ta sama metoda. */
+function tickKey_(m) { return String(m == null ? '' : m).replace(/\s+/g, '').toLowerCase(); }
+
+/**
+ * Metoda z panelu albo z arkusza: bez znaków sterujących, spacje ujednolicone, najwyżej MAX_LEN.TICK znaków. `known` —
+ * metody psów z katalogu: ta sama wpisana inaczej („bravecto" przy istniejącej „Bravecto") dostaje pisownię już
+ * używaną, jak grupa psa (dogTeam_). Ta sama reguła w Script.html (tickClean).
+ */
+function tickMethod_(v, known) {
+  const s = String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ')
+    .trim().slice(0, MAX_LEN.TICK).trim();
+  const k = tickKey_(s);
+  if (!k) return '';
+  return (known || []).filter(m => tickKey_(m) === k)[0] || s;
+}
+
+/** Okres z arkusza: „3m" (miesiące), „12t" (tygodnie), też „3 M" → {n, u}; poza TICK_LIMITS albo śmieci — null. */
+function tickEvery_(v) {
+  const m = String(v == null ? '' : v).trim().toLowerCase().match(/^(\d{1,3})\s*([tm])$/);
+  if (!m) return null;
+  const n = Number(m[1]), u = m[2];
+  return n >= 1 && n <= TICK_LIMITS[u] ? { n: n, u: u } : null;
+}
+
+/**
+ * Termin przesunięty o okres: tygodnie — dni kalendarza; miesiące — ten sam dzień miesiąca, a gdy go nie ma, ostatni
+ * (31.01 + 1 m = 28.02 albo 29.02). Czysta arytmetyka na kalendarzu, jak addDays_. Ta sama w Script.html (addPeriod).
+ */
+function addPeriod_(iso, n, u) {
+  if (u === 't') return addDays_(iso, 7 * n);
+  const p = String(iso).split('-').map(Number);
+  const m = p[1] - 1 + n, y = p[0] + Math.floor(m / 12), mm = ((m % 12) + 12) % 12;
+  const end = new Date(Date.UTC(y, mm + 1, 0)).getUTCDate();
+  const pad = x => String(x).padStart(2, '0');
+  return y + '-' + pad(mm + 1) + '-' + pad(Math.min(p[2], end));
+}
+
+/**
+ * Odkleszczanie z czterech komórek (metoda, okres, następne, ostatnio) → {method, n, u, next, last}. Bez metody albo
+ * z okresem czy terminem, z których nic się nie da odczytać (wpisane w arkuszu ręcznie) — null: bez przypomnienia
+ * i bez zadania, a w panelu pies bez odkleszczania do ustawienia od nowa.
+ */
+function tickOfCells_(c) {
+  const method = tickMethod_(c[0]), ev = tickEvery_(c[1]), next = cellDate_(c[2]), last = cellDate_(c[3]);
+  if (!method || !ev || !isDate_(next)) return null;
+  return { method: method, n: ev.n, u: ev.u, next: next, last: isDate_(last) ? last : '' };
+}
+
+/**
+ * Odkleszczanie z panelu: {method, n, u, next} → sprawdzone (przed blokadą) albo błąd; bez metody — null (pies bez
+ * odkleszczania). `next` — termin następnego, czyli dzień, w którym kończy się obecne (decyzja właściciela 29.10:
+ * psy już są na jakiejś metodzie); pusty = od dziś (writeTick_ liczy dziś + okres).
+ */
+function tickInput_(v) {
+  if (!v || typeof v !== 'object') return null;
+  const method = tickMethod_(v.method);
+  if (!method) return null;
+  const u = v.u === 't' || v.u === 'm' ? v.u : '';
+  if (!u) throw new Error('Okres odkleszczania: wybierz tygodnie albo miesiące');
+  const n = Number(v.n);
+  if (!Number.isInteger(n) || n < 1 || n > TICK_LIMITS[u]) {
+    throw new Error('Okres odkleszczania: od 1 do ' + TICK_LIMITS[u] + (u === 't' ? ' tygodni' : ' miesięcy'));
+  }
+  const next = String(v.next == null ? '' : v.next).trim();
+  if (next && !isDate_(next)) throw new Error('Nieprawidłowa data następnego odkleszczania');
+  const current = businessDate_();
+  if (next && (next < addDays_(current, -366) || next > addDays_(current, 2 * 366))) {
+    throw new Error('Następne odkleszczanie — najwyżej rok wstecz i dwa lata naprzód');
+  }
+  return { method: method, n: n, u: u, next: next };
+}
+
+/** Metody psów z katalogu — do ujednolicenia nowo wpisanej (tickMethod_). Bez psa `exceptId`, jak knownTeams_. */
+function knownMethods_(exceptId) {
+  return readDogCatalog_().filter(d => d.tick && d.id !== Number(exceptId)).map(d => d.tick.method);
+}
+
+/**
+ * Zapis odkleszczania psa (pod blokadą): metoda w pisowni już używanej, okres, termin (pusty = dziś + okres). Ta sama
+ * metoda i okres — dzień ostatniego odhaczenia zostaje (poprawiony sam termin); inna metoda albo okres — nowy cykl, bez
+ * „zrobione dziś". `t` null — pies bez odkleszczania: cztery puste komórki, a razem z nimi znika przypomnienie i zadanie.
+ */
+function writeTick_(sh, row, t, id) {
+  const range = sh.getRange(row, DOG.TICK, 1, TICK_COLS.length);
+  let vals = ['', '', '', ''];
+  if (t) {
+    const cur = range.getValues()[0], ev = tickEvery_(cur[1]);
+    const method = tickMethod_(t.method, knownMethods_(id));
+    const same = tickKey_(cur[0]) === tickKey_(method) && !!ev && ev.n === t.n && ev.u === t.u;
+    const last = same ? cellDate_(cur[3]) : '';
+    vals = [method, t.n + t.u, t.next || addPeriod_(businessDate_(), t.n, t.u), isDate_(last) ? last : ''];
+  }
+  range.setNumberFormat('@').setValues([vals]);
 }
 
 /* ---------- SPACERY (zakładka Spacery) ---------- */
@@ -890,16 +1062,19 @@ function noteUntil_(v, note) {
   return isDate_(s) && s > current ? s : current;
 }
 
-/** Wymusza: pies musi mieć imię LUB identyfikator (nowy pies bywa bez imienia). */
+/**
+ * Wymusza: pies musi mieć imię LUB identyfikator (nowy pies bywa bez imienia). `notes` — wszystkie notatki (notesOf_);
+ * `note` / `noteUntil` — pierwsza z nich (kolumny notatka / notatka_do, jak dotąd).
+ */
 function dogFields_(data) {
   const name  = clean_(data && data.name,  MAX_LEN.NAME);
   const ident = clean_(data && data.ident, MAX_LEN.IDENT);
   const box   = clean_(data && data.box,   MAX_LEN.BOX);
-  const note  = clean_(data && data.note,  MAX_LEN.NOTE);
   const walks = Number(data && data.walks) === 2 ? 2 : 1;
   if (!name && !ident) throw new Error('Podaj imię lub nr identyfikacyjny');
-  return { name, ident, box, dif: validDif_(data && data.dif), note, walks,
-           noteUntil: noteUntil_(data && data.noteUntil, note) };
+  const notes = notesOf_(data), first = notes[0] || { text: '', until: '' };
+  return { name, ident, box, dif: validDif_(data && data.dif), note: first.text, walks,
+           noteUntil: first.until, notes };
 }
 
 /**
@@ -951,55 +1126,103 @@ function teamOfInput_(v, exceptId) {
 }
 
 /**
- * data = { name, ident, box, dif, team } — wszystko opcjonalne poza regułą wyżej. `team` — grupa
- * psa (1.3); brak (karty sprzed 1.3) albo nasza = pies naszej grupy.
+ * data = { name, ident, box, dif, team, notes, tick } — wszystko opcjonalne poza regułą wyżej. `team` — grupa
+ * psa (1.3); brak (karty sprzed 1.3) albo nasza = pies naszej grupy. `notes`, `tick` — notatki i odkleszczanie
+ * (1.6; formularz „Dodaj psa" ich nie ma, ale wywołanie z nimi działa jak w updateDog).
  * `token` — jedno stuknięcie „Dodaj" w panelu (1.2): ten sam token drugi raz niczego nie dodaje,
  * tylko oddaje stan (patrz dogAdds_). Brak tokenu (karty sprzed 1.2) = dodanie jak dawniej.
  */
 function addDog(data, pin, token) {
   requirePin_(pin);
   const d = dogFields_(data);
+  const tick = tickInput_(data && data.tick);
   const t = /^[A-Za-z][A-Za-z0-9_-]{7,63}$/.test(String(token == null ? '' : token)) ? String(token) : '';
   return withLock_(() => {
     const adds = t ? dogAdds_() : null;
     if (adds && Object.prototype.hasOwnProperty.call(adds, t)) return getData();   // ten pies już jest
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const team = teamOfInput_(data && data.team);
-    const writeTeam = teamWritable_(sh, team);      // przed dodaniem: zajęta kolumna nie zostawi psa bez grupy
+    // przed dodaniem: zajęta kolumna nie zostawi psa bez grupy, notatek czy odkleszczania
+    const writeTeam = teamWritable_(sh, team);
+    const writeNotes = d.notes.length > 1 && colsWritable_(sh, [DOG.NOTES], true, 'dalszych notatek');
+    const writeTick = !!tick && colsWritable_(sh, TICK_COLS, true, 'odkleszczania');
     const id = nextId_(sh);
     sh.appendRow([id, d.name, '', '', d.dif, STATUS.FREE, '', '', '',
                   d.note, d.walks, '', '', d.noteUntil]);
     const row = sh.getLastRow();
     setTextFields_(sh, row, d.ident, d.box);
     if (writeTeam && team) sh.getRange(row, DOG.TEAM).setValue(team);
+    if (writeNotes) sh.getRange(row, DOG.NOTES).setValue(notesCell_(d.notes.slice(1)));
+    if (writeTick) writeTick_(sh, row, tick, id);
     if (adds) noteDogAdd_(adds, t, id);
     return getData();
   });
 }
 
 /**
- * Edycja psa: nadanie/zmiana imienia, identyfikatora, boksu, trudności, liczby spacerów, grupy.
- * Bez `team` w danych (karta sprzed 1.3) grupa zostaje, jaka była — inaczej otwarta stara karta
- * przy każdej poprawce imienia przenosiłaby psa innej grupy na naszą listę.
+ * Edycja psa: nadanie/zmiana imienia, identyfikatora, boksu, trudności, liczby spacerów, grupy, notatek (1.6)
+ * i odkleszczania (1.6). Bez `team` w danych (karta sprzed 1.3) grupa zostaje, jaka była — inaczej otwarta stara karta
+ * przy każdej poprawce imienia przenosiłaby psa innej grupy na naszą listę. Tak samo karta sprzed 1.6: bez `notes`
+ * przysyła tylko pierwszą notatkę (dalsze zostają), a bez `tick` odkleszczanie zostaje, jakie było.
  */
 function updateDog(id, data, pin) {
   requirePin_(pin);
   const d = dogFields_(data);
   const setTeam = !!data && data.team != null;
+  const setNotes = !!data && Array.isArray(data.notes);
+  const setTick = !!data && data.tick != null;
+  const tick = setTick ? tickInput_(data.tick) : null;
   return withLock_(() => {
     const sh = ss_().getSheetByName(SHEETS.DOGS);
     const row = rowById_(sh, id);
     if (row > 0) {
       const team = setTeam ? teamOfInput_(data.team, id) : '';
-      const writeTeam = setTeam && teamWritable_(sh, team);   // przed resztą: błąd nie zostawi psa zapisanego w połowie
+      // przed resztą: błąd zajętej kolumny nie zostawi psa zapisanego w połowie
+      const writeTeam = setTeam && teamWritable_(sh, team);
+      const writeNotes = setNotes && colsWritable_(sh, [DOG.NOTES], d.notes.length > 1, 'dalszych notatek');
+      const writeTick = setTick && colsWritable_(sh, TICK_COLS, !!tick, 'odkleszczania');
       sh.getRange(row, DOG.IDENT, 1, 2).setNumberFormat('@');        // numer i boks jako tekst, przed wartością
       sh.getRange(row, DOG.NAME, 1, 4).setValues([[d.name, d.ident, d.box, d.dif]]);
       sh.getRange(row, DOG.NOTE, 1, 2).setValues([[d.note, d.walks]]);
       sh.getRange(row, DOG.NOTE_UNTIL).setValue(d.noteUntil);   // kolumna niesąsiadująca z notatką
       if (writeTeam) sh.getRange(row, DOG.TEAM).setValue(team);
+      if (writeNotes) sh.getRange(row, DOG.NOTES).setValue(notesCell_(d.notes.slice(1)));
+      if (writeTick) writeTick_(sh, row, tick, id);
       trimSlots_(Number(id));
     }
     return getData();
+  });
+}
+
+/**
+ * Odhaczenie zadania „💊 Odkleszczanie" (1.6) — wolontariusze, bez PIN-u, jak zadania. `done` true: tylko gdy termin
+ * już jest (dziś albo minął), a `seen` — termin z ekranu — to wciąż obecny (inaczej ktoś odhaczył chwilę wcześniej albo
+ * prowadząca zmieniła termin: nic). Wtedy „ostatnio" = dziś, termin = dziś + okres — od dnia odhaczenia, nie od starego
+ * terminu: zrobione dzień później liczy się od tego dnia (prośba właściciela). `done` false — cofnięcie pomyłki: tylko
+ * odhaczone dziś (`seen` = „ostatnio" z ekranu); zadanie wraca jako dzisiejsze. Dzień = dzień rezerwacyjny, jak przy
+ * zadaniach. Dwa takie same wywołania dają to samo co jedno (powtórka po zaginionej odpowiedzi niczego nie przesuwa
+ * drugi raz) — dlatego w RETRIABLE. Zwraca {id, tick} — odkleszczanie psa po zmianie (null — pies bez odkleszczania).
+ */
+function setTickDone(id, done, seen) {
+  return withLock_(() => {
+    const sh = ss_().getSheetByName(SHEETS.DOGS);
+    const row = rowById_(sh, id);
+    if (row < 0 || !dogOwn_(sh).tick) return { id: Number(id), tick: null };
+    const t = tickOfCells_(sh.getRange(row, DOG.TICK, 1, TICK_COLS.length).getValues()[0]);
+    const out = { id: Number(id), tick: t };
+    if (!t) return out;
+    const today = businessDate_(), s = String(seen == null ? '' : seen);
+    if (done) {
+      if (t.next > today || (s && s !== t.next)) return out;
+      t.last = today;
+      t.next = addPeriod_(today, t.n, t.u);
+    } else {
+      if (t.last !== today || (s && s !== t.last)) return out;
+      t.next = t.last;
+      t.last = '';
+    }
+    sh.getRange(row, DOG.TICK_NEXT, 1, 2).setNumberFormat('@').setValues([[t.next, t.last]]);
+    return out;
   });
 }
 

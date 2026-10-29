@@ -963,6 +963,7 @@ function helperCtx_(s) {
     catalog: () => memo.c || (memo.c = readDogCatalog_()),
     hist: () => memo.h || (memo.h = readHistoryDays_(addDays_(today_(), -HELPER_HIST_DAYS), addDays_(today_(), -1))),
     slots: () => memo.s || (memo.s = readSlots_(walksSheet_())),
+    tasks: () => memo.t || (memo.t = readTasks_()),
     weather: () => memo.w !== undefined ? memo.w : (memo.w = s.features.weather ? helperWeather_() : null),
   };
 }
@@ -1028,8 +1029,11 @@ function helperSquadRoles_(st, voters) {
   return out;
 }
 
-/** Skład dnia jako wiadomość. `ctx` — dane aplikacji (helperCtx_). */
-function helperDayText_(s, st, d, ctx) {
+/**
+ * Skład dnia jako wiadomość. `ctx` — dane aplikacji (helperCtx_). `opts.tasks` — z zadaniami na ten dzień pod składem
+ * (1.6, poranna wiadomość: „po tym, kto jest na dniu — zadania na dziś", prośba właściciela).
+ */
+function helperDayText_(s, st, d, ctx, opts) {
   const info = helperDay_(s, st, d);
   const L = [];
   const n = info.voters.length;
@@ -1057,11 +1061,37 @@ function helperDayText_(s, st, d, ctx) {
   }
   // nic z czatu (27.10.2026, decyzja właściciela): o obecności mówi tylko ankieta — bez cytatów, „🔀 pisze, że…"
   // i „🚫 zapowiedziana nieobecność"; wiadomość ma też docelowo iść do „Grafiku", gdzie czat i tak jest
+  if (opts && opts.tasks) L.push.apply(L, helperTaskLines_(st, d, ctx));
   L.push.apply(L, helperDogLines_(s, st, d, info, ctx));
   const w = ctx.weather();
   const f = w && w[d];
   if (f) L.push('🌦 ' + f.lo + '–' + f.hi + '°C' + (f.rain != null ? ', deszcz ' + f.rain + '%' : '') + (f.hi >= HELPER_HEAT ? ' 🔥 upał' : ''));
   return L.join('\n');
+}
+
+/**
+ * Zadania na dzień `d` (1.6) — te same, co na liście dnia w aplikacji: zwykłe nieodhaczone z dniem do `d` włącznie
+ * (z wiekiem, jak „od 2 dni") i „💊 Odkleszczanie" psów z terminem do `d` (wyliczone z psów, jak w Script.html —
+ * tickTasks). Brak zadań — nic. Najwyżej HELPER_TASKS_MAX linijek, reszta jako „…i jeszcze N". Tekst bez numerów
+ * telefonów (noPhones_): wiadomość „gotowa" czyta cały „Grafik". Błąd odczytu — szczegóły do dziennika, jak przy psach.
+ */
+function helperTaskLines_(st, d, ctx) {
+  let tasks = [], catalog = [];
+  try { tasks = ctx.tasks(); catalog = ctx.catalog(); }
+  catch (e) { helperLog_(st, 'err', 'zadania: ' + (e && e.message || e)); return ['📋 nie udało się odczytać zadań']; }
+  const out = [];
+  catalog.forEach(x => {
+    if (x.tick && x.tick.next <= d) out.push('💊 Odkleszczanie: ' + dogLabel_(x.name, x.ident, x.id) + (x.box ? ', boks ' + x.box : '') + ' — ' + x.tick.method);
+  });
+  tasks.forEach(t => {
+    if (t.done || (t.date && t.date > d)) return;
+    const age = t.date && isDate_(t.date) ? helperDaysBetween_(t.date, d) : 0;
+    out.push(t.text + (age === 1 ? ' (od wczoraj)' : age > 1 ? ' (od ' + age + ' dni)' : ''));
+  });
+  if (!out.length) return [];
+  const shown = out.slice(0, HELPER_TASKS_MAX).map(t => '• ' + noPhones_(t));
+  if (out.length > HELPER_TASKS_MAX) shown.push('• …i jeszcze ' + (out.length - HELPER_TASKS_MAX));
+  return ['📋 *Zadania na dziś:*'].concat(shown);
 }
 
 /** Psy w składzie dnia: ile naszych i spacerów, kto czeka najdłużej, psy dla wyznaczonych osób, rezerwacje. */
@@ -1311,9 +1341,13 @@ function helperSchedule_(s, st, run) {
     if (p && helperOnce_(st, 'poll|' + id, run, () => helperSend_(s, st, helperPollText_(st, p), run, 'newPoll')) !== true) st.queue.push(id);
   });
 
+  // rano (1.6, decyzja właściciela 29.10): codziennie skład na dziś z zadaniami; wyłączone „codziennie" — jak dotąd, tylko
+  // gdy coś nie gra (wtedy też z zadaniami)
   if (f.morning && inWin(s.morning)) helperOnce_(st, 'mo|' + T, run, () => {
     const info = helperDay_(s, st, T);
-    if (helperProblems_(s, st, info).length) return helperSend_(s, st, helperDayText_(s, st, T, ctx), run, 'morning');
+    if (f.morningAlways || helperProblems_(s, st, info).length) {
+      return helperSend_(s, st, helperDayText_(s, st, T, ctx, { tasks: true }), run, 'morning');
+    }
   });
   if (f.lastWeek && wd === 1 && inWin(s.morning)) helperOnce_(st, 'lw|' + T, run, () => helperSend_(s, st, helperLastWeekText_(s, st, ctx), run, 'lastWeek'));
 
@@ -1604,7 +1638,7 @@ function helperPreview(pin, kind, send) {
   requirePin_(pin);
   const s = helperSettings_(), st = helperLoad_(), ctx = helperCtx_(s);
   const T = today_();
-  const text = kind === 'dzis' ? helperDayText_(s, st, T, ctx)
+  const text = kind === 'dzis' ? helperDayText_(s, st, T, ctx, { tasks: true })   // jak poranna wiadomość — z zadaniami
     : kind === 'tydzien' ? helperWeekText_(s, st)
     : kind === 'miniony' ? helperLastWeekText_(s, st, ctx)
     : kind === 'stan' ? helperStatusText_(s, st)

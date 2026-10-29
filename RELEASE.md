@@ -106,6 +106,9 @@ Kolejność:
   - „Wrócił ✓" całej grupy;
   - zmiana składu i „Rozwiąż".
 - [ ] **Psy innych grup:** „Bierze G7" → „✓ G7" → „Cofnij".
+- [ ] **Notatki i 💊 odkleszczanie** (od 1.6): przy psie kilka notatek (każda tylko na dniach do swojego terminu);
+  💊 przypomnienie tydzień przed terminem (na górze, nad 📌); w dniu terminu zadanie „💊 Odkleszczanie" — odhaczenie
+  (przypomnienie znika, w katalogu następny termin = dziś + okres) i cofnięcie tego samego dnia.
 - [ ] **Miniony dzień:** lista z numerami psów, spacery grupowe, „📋 Skopiuj treść" (bez wysyłania maila).
 - [ ] **Dwie karty:** zmiana z jednej widać w drugiej najpóźniej po ~15 s.
 - [ ] **„Co nowego?":** lista otwiera się i zamyka; pasek „Nowa wersja" znika na dobre.
@@ -117,6 +120,8 @@ PIN wpisuje właściciel.
 - [ ] **Pies próbny:**
   - dodanie;
   - edycja: imię, 2 spacery, grupa innej grupy, notatka;
+  - od 1.6: kilka notatek („+ Notatka", ✕, „nigdy nie znika" w swoim wierszu) i odkleszczanie (metoda z listy i nowa,
+    okres, następne, „brak") — zmiana widać od razu u wolontariusza, a po „brak" nie zostaje żadne zadanie;
   - zaraz po edycji akcja na jego spacerze widzi zmianę.
 - [ ] **Zadanie:** dodanie na dziś i na jutro, odhaczenie.
 - [ ] **Panel** (od 1.5 w zwijanych sekcjach — rozwinąć stuknięciem w nagłówek, drugie zwija):
@@ -124,7 +129,8 @@ PIN wpisuje właściciel.
   - Lista i e-mail: ustawienia maila (bez zapisu);
   - WhatsApp: stan konta, bez wysyłek;
   - pomocnik Grafiku (od 1.5): na teście sekcja „— produkcja" wyszarzona, „— test" działa — stan (czeka na produkcję albo
-    pracuje), „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu.
+    pracuje), „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu; od 1.6 podgląd „dziś"
+    ze „📋 Zadania na dziś" i przełącznik „…codziennie" przy „rano".
 - [ ] **Sprzątanie:** usunięcie psa próbnego i zadań, wyjście z trybu edycji.
 
 ## 3. Wynik

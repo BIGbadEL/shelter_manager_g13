@@ -49,8 +49,14 @@ pytającego — te mają zwykły włącznik.
    i ostrzeżenia, psy (ile naszych, ile spacerów, kto czeka najdłużej, psy dla
    wyznaczonych osób), pogoda. W niedzielę na górze: czy jest ankieta na nowy tydzień.
    `eveningAlways` — wysyłaj codziennie (na czas testów); wyłączone = tylko, gdy jest problem.
-2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, **tylko gdy jest problem**
-   (mniej niż minimum, brak fioletowego, kandydat bez fioletowego, brak ankiety).
+2. **Dziś rano** (`morning`) — o godzinie „rano" (domyślnie 7) skład na dziś, a pod składem (po tym, kto jest na
+   dniu) **„📋 Zadania na dziś"** (1.6, prośba właściciela): zwykłe zadania z listy dnia — nieodhaczone, z dniem do
+   dziś, z wiekiem („od 2 dni") — i „💊 Odkleszczanie: <pies>, boks … — <metoda>" psów z terminem do dziś; te same, co
+   widzą wolontariusze w aplikacji. Najwyżej `HELPER_TASKS_MAX` (10) linijek, reszta jako „…i jeszcze N"; numery telefonów
+   w treści zadań maskowane (`noPhones_`), błąd odczytu — „nie udało się odczytać zadań", szczegóły w dzienniku. Bez zadań —
+   bez tej części. `morningAlways` (1.6, decyzja właściciela 29.10, domyślnie włączone) — **codziennie**; wyłączone =
+   jak dawniej, tylko gdy jest problem (mniej niż minimum, brak fioletowego, kandydat bez fioletowego, brak ankiety) — wtedy
+   też z zadaniami. Podgląd „dziś" w panelu pokazuje tę samą wiadomość.
 3. **Przegląd tygodnia** (`week`) — w wybrane dni (domyślnie niedziela i środa) o godzinie „wieczorem":
    7 najbliższych dni — liczba osób, ⚠️ słabe dni, dni bez ankiety, podpowiedź „ktoś z niedzieli (6) na
    sobotę (2)?".
