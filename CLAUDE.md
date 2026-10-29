@@ -1160,7 +1160,11 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   **Na teście @50 (29.10, 06:38, `0e34a7d`)** — razem z 13 poprawkami po review PR #8 (decyzje właściciela 28.10: nr 5 —
   poprawka od razu, nr 7 — próg 5 min, nr 8 — wariant „bez dni"; HELPER.md, B87–B90, S147b). **@51 (29.10, 07:11, `4c976a7`)**
   — 5 poprawek po drugim review (decyzje właściciela 29.10: nr 1 — wersja ostrożna przy głosach, nr 5 — pytanie o „gotowe"
-  tylko przy włączonym pomocniku).
+  tylko przy włączonym pomocniku). **@52 (29.10, 07:29, `031d82f`)** — data wydania w „Co nowego" i wpis o pomocniku (prośba
+  właściciela 29.10). **Test wydania na @52 (29.10, RELEASE.md):** strona i `doGet` w normie (1,14 / 0,82 s), `getData` —
+  mediana 1,80 s (+1%), ale 90% (+35%) i trzy rezerwacje naraz ponad progiem. Kod odczytu i zapisu bez zmian, wolne odczyty
+  bez wpisu w Dzienniku (czas minął przed naszym kodem), wolniejszy dzień Google — **wydanie przyjęte przez właściciela
+  29.10**. Test w Chrome bez błędów.
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
