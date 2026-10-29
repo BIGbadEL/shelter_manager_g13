@@ -1211,6 +1211,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   wieczorem). Arkusz: kolumny P–T w Psy (Arkusz wyżej) — **przed wdrożeniem na produkcję mają być tam puste**; nowe
   `CACHE_PREFIX` (`g13c2:`) — ponowne wdrożenie 1.6 w ciągu 6 h od cofnięcia do 1.5: najpierw `migrate()` (jak przy 1.4).
   Cofnięcie do 1.5: dalsze notatki i odkleszczanie zostają w arkuszu, 1.5 ich nie widzi (pierwsza notatka — tak).
+  **Na teście @53 (29.10, 14:45, `40a9090`)** — strona otwiera się na 1.6; metod odkleszczania na teście jeszcze nikt nie
+  ustawił. Pomocnik testu (włączony) od następnego ranka pisze do właściciela codziennie, z zadaniami na dziś.
 - **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
   ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
   testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie
