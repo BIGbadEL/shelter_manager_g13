@@ -1289,7 +1289,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   „Raport do schroniska — formularz") wkleić link do formularza i „Zapisz" — PIN-u Claude nie wpisuje; przed wydaniem na
   produkcji to samo w panelu produkcji, a jeśli produkcja nie ma zgody na połączenia (`authorizeWhatsApp()` nigdy tam nie
   uruchomione) — najpierw ona. Formularz z linkiem wysyła odpowiedź do schroniska naprawdę — na teście tylko otworzyć,
-  nie „Prześlij".
+  nie „Prześlij". **Na teście @54 (29.10, 17:17, `9db3fce`)** — strona otwiera się na nowym kodzie (odczyt listy bez
+  błędów); ramki jeszcze nie widać, dopóki w panelu testu nie ma linku do formularza.
 - **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
   ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
   testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie
