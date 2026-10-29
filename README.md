@@ -111,8 +111,8 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.1.2 | pełna Historia dostaje wiersze zamiast zatrzymać nocne czyszczenie, e-mail z listą psów dla schroniska (przycisk w minionym dniu, treść w panelu) | `release/1.1.2` (`e0df6c8`, merge `7546154`) | @19, 2026-10-03 |
 | 1.2 | zarządzanie aplikacją — ustawienia maila w panelu, ankieta tygodniowa na WhatsAppie, dziennik spowolnień, przegląd kodu | `release/1.2` (`0ae939a`, merge `7cbd870`) | @20, 2026-10-08 |
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
-| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) = `main` | @22, 2026-10-23 |
-| 1.5 | (w przygotowaniu) „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów (na produkcji wyłączony, dopóki go nie włączyć; funkcje „gotowe" piszą do „Grafiku", pracuje jeden naraz); Panel w zwijanych sekcjach | `release/1.5` | — |
+| 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) | @22, 2026-10-23 |
+| 1.5 | „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów (na produkcji wyłączony, dopóki go nie włączyć; funkcje „gotowe" piszą do „Grafiku", pracuje jeden naraz); Panel w zwijanych sekcjach | `release/1.5` (`bdd0812`, merge `c5ba23d`) = `main` | @23, 2026-10-29 |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -674,7 +674,7 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ## Naprawione bugi (changelog)
 
-### 1.5 — w przygotowaniu (`release/1.5`)
+### 1.5 — wdrożone 2026-10-29 (@23)
 
 - **„OK" przy imieniu wychodził poza ramkę pola 2/2** (zgłoszenie z testu, Android, 360 px). Pole „Twoje imię"
   w układzie flex trzymało domyślną szerokość pola tekstowego (ok. 20 znaków fontu telefonu) i w węższym polu

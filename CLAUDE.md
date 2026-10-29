@@ -976,7 +976,8 @@ arkuszem, linkiem i PIN-em; kod jedzie do obu z tego repo. Test ma własny plik 
   w README. Wydane: **1.0** = wdrożenie @16 = `0cc01e0`, **1.1** = @17 = `ee58018` (2026-09-28),
   **1.1.1** = @18 = `985dc1a` (merge `31721b5`, 2026-10-01), **1.1.2** = @19 = `e0df6c8`
   (merge `7546154`, 2026-10-03), **1.2** = @20 = `0ae939a` (merge `7cbd870`, 2026-10-08),
-  **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09), **1.4** = @22 = `caba4e4` (merge `9ebfb21`, 2026-10-23).
+  **1.3** = @21 = `c68a141` (merge `6f38943`, 2026-10-09), **1.4** = @22 = `caba4e4` (merge `9ebfb21`, 2026-10-23),
+  **1.5** = @23 = `bdd0812` (merge `c5ba23d`, 2026-10-29).
 - **„Co nowego" (od 1.4) — każda wersja dopisuje wpis na górze `WHATS_NEW` w `Script.html`**, w gałęzi
   wydania, z datą wdrożenia przed `deploy:prod` (pusta data = niewydana, T6). Pisane dla wolontariuszy
   (decyzja właściciela): krótko, po ludzku, co widać na ekranie — „poprawa sortowania", nie jego reguły;
@@ -1120,7 +1121,20 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   (5 zakładek, 505 wpisów Historii), równoległe odczyty, sieć i waga strony. Możliwe kierunki (do decyzji właściciela):
   krótsza praca pod blokadą, stan strony i odczyty z `CacheService` zamiast arkusza, odczyt trzech zakładek jednym
   wywołaniem (Sheets API — nowa zgoda).
-- **Produkcja: wersja 1.4 (PR #7, `caba4e4`, merge `9ebfb21`) od 2026-10-23, 19:02 — wdrożenie @22** (test: @38, ta sama
+- **Produkcja: wersja 1.5 (PR #8, `bdd0812`, merge `c5ba23d`) od 2026-10-29, 13:35 — wdrożenie @23** (test: @52, ta sama
+  treść aplikacji, 07:29). „OK" w polu 2/2 w ramce, pomocnik Grafiku, Panel w zwijanych sekcjach (niżej, „Wersja 1.5 —
+  przygotowanie"). **Pomocnik na produkcji wyłączony** — włącza go właściciel w panelu produkcji (sekcja „Pomocnik Grafiku —
+  produkcja": grupa „Grafik", kontakt, funkcje „w teście", „włączony"; członków i klasy pobrać i ustawić od nowa); wyzwalacz
+  `helperTick` zakłada się sam przy włączeniu. Arkusz bez zmian, `migrate()` niepotrzebne, bez nowych uprawnień (`UrlFetchApp`
+  od 1.2). Test wydania 29.10 na @52 — dwa progi przekroczone, wydanie przyjęte przez właściciela (RELEASE.md). Poprzednia to
+  1.4 = @22 = `caba4e4` (gałąź `release/1.3.1`) — do niej się cofa zwykłym `deploy:prod` z tej gałęzi; **przy włączonym
+  pomocniku najpierw wyłączyć go w panelu produkcji** (zdejmuje wyzwalacz i wysyła testowi „koniec"), bo inaczej wyzwalacz
+  co 10 min woła funkcję, której 1.4 nie ma; właściwości `helper*` 1.4 nie czyta, pamięć podręczna ma ten sam kształt.
+  **Po wdrożeniu do sprawdzenia:** na telefonie pasek „Nowa wersja 1.5" i lista zmian, „OK" w polu 2/2, spacer grupowy;
+  po pierwszym czyszczeniu na 1.5 (29.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; po włączeniu pomocnika na produkcji —
+  HELPER.md, punkt 6 (sygnał do testu: panel produkcji „doszedł ✓", panel testu „Czeka"; przejęcie po wyłączeniu; pierwsza
+  wiadomość funkcji „gotowej" w „Grafiku").
+- **Wersja 1.4 (PR #7, `caba4e4`, merge `9ebfb21`) od 2026-10-23, 19:02 — wdrożenie @22** (test: @38, ta sama
   treść, 18:29; produkcja dopiero po 19:00 — godzina czyszczenia 18:00–18:59, choć czyszczenie już przeszło). „Co nowego?",
   szybsze otwieranie strony i zapisy (niżej). Arkusz bez zmian, bez nowych uprawnień i wyzwalaczy, `migrate()` niepotrzebne.
   Poprzednia to 1.3 = @21 = `c68a141` (gałąź `release/1.3`) — do niej się cofa zwykłym `deploy:prod` z tej gałęzi; stary kod
