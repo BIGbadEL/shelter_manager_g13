@@ -1152,6 +1152,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   wydania 1.5 na produkcji sygnału nie ma, więc pomocnik testu pracuje jak dotąd. **Po wydaniu do sprawdzenia** (HELPER.md,
   punkt 6): czy sygnał dochodzi (panel produkcji „doszedł ✓", panel testu „Czeka"), przejęcie po wyłączeniu na produkcji,
   pierwsza wiadomość funkcji „gotowej" w „Grafiku"; członków i klasy trzeba pobrać i ustawić w panelu produkcji od nowa.
+  **Na teście @50 (29.10, 06:38, `0e34a7d`)** — razem z 13 poprawkami po review PR #8 (decyzje właściciela 28.10: nr 5 —
+  poprawka od razu, nr 7 — próg 5 min, nr 8 — wariant „bez dni"; HELPER.md, B87–B90, S147b).
 - **Wersja 1.4 — przygotowanie** (gałąź `release/1.3.1`, PR #7): „Co nowego?" przy nazwie aplikacji i pasek „Nowa
   wersja" (test @31, „W panelu admina" — @32); po pomiarze opóźnień (decyzja właściciela: punkty 1 i 2 z czterech)
   krótsza praca pod blokadą i stan startowy z pamięci podręcznej (Konwencje, „Pamięć podręczna"). Arkusz bez zmian,
