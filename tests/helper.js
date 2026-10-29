@@ -223,11 +223,12 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && env.st().log.some(l => /kolejka bramki/.test(l.m)) && !/tok3n/.test(helperProps()), r2 && r2.err);
   env.gw.fail = null;
 
+  env.setNow('2026-10-25T10:36:00+02:00');                  // po progu helperTick (5 min od poprzedniego przebiegu — B90)
   env.props.helperBusy = String(env.now());                // drugi przebieg w tym samym czasie (wyzwalacz + „Sprawdź teraz")
   const before = env.gw.received;
   check('przebieg w toku: drugi nic nie robi', env.tick() === null && env.gw.received === before);
   check('„Sprawdź teraz" w tym czasie — komunikat', /właśnie pracuje/.test(throws(() => env.api.helperRunNow(TEST_PIN))));
-  env.setNow('2026-10-25T10:45:00+02:00');                  // znacznik sprzed 15 minut — przebieg ubity w połowie
+  env.setNow('2026-10-25T10:45:00+02:00');                  // znacznik sprzed 9 minut — przebieg ubity w połowie
   check('znacznik „w toku" starszy niż ' + 8 + ' min — przebieg rusza', env.tick() !== null && env.gw.received > before && !env.props.helperBusy);
 
   env.gw.fail = url => /receiveNotification/.test(url) ? { code: 400, body: '{"message":"INVALID_PARAM webhookUrl"}' } : null;
@@ -314,6 +315,82 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('„Warszawski dzień zwierząt" — bez dnia, osobno', O('Warszawski dzień zwierząt', 'Grafik 15-21.06', '2026-06-14').d === ''
     && O('Warszawski dzień zwierząt', 'Grafik 15-21.06', '2026-06-14').x !== '');
   check('bez dat w pytaniu („Weekend bez AW") — najbliższy tydzień', O('Sobota', 'Weekend bez AW', '2026-04-24').d === '2026-04-25');
+
+  // review PR #8, nr 4a: ankieta wysłana w środku tygodnia na bieżący weekend to nie pomyłka w datach
+  const mid1 = R('Grafik 26.06 - 28.06 z podziałem na rano/wieczór', '2026-06-25'), mid2 = R('Grafik 30.10-01.11', '2026-10-28');
+  check('ankieta w środku tygodnia na ten weekend („26.06 - 28.06" w czwartek 25.06, „30.10-01.11" w środę 28.10) — bez ostrzeżenia o datach',
+    mid1.wrong === false && mid1.from === '2026-06-26' && mid2.wrong === false, JSON.stringify([mid1, mid2]));
+  check('...ankieta na dni, które już minęły („21-27.10" wysłana 28.10) — z ostrzeżeniem', R('Grafik 21-27.10', '2026-10-28').wrong === true);
+
+  // review PR #8, nr 4b: ankieta poznana najpierw z głosu — gdy przyjdzie sama ankieta, dni i daty od dnia jej wysłania
+  const quiet = { weekDays: [], features: { evening: false, morning: false, newPoll: false, members: false, lastWeek: false, weather: false } };
+  const tue = build({ now: '2026-10-27T12:00:00+02:00' });
+  on(tue, quiet);
+  tue.push(vote('TUE', ANIA, ['Środa'], '2026-10-27T11:00:00+02:00', { q: Q }));
+  tue.tick();
+  tue.push(pollMsg('TUE', Q, OPTS, '2026-10-25T10:13:00+02:00'));
+  tue.tick('2026-10-27T12:10:00+02:00');
+  check('„Grafik 26.10-01.11" z niedzieli, pierwszy głos we wtorek — po przyjściu ankiety bez ostrzeżenia o datach', pollOf(tue, 'TUE').wrong === false,
+    JSON.stringify(pollOf(tue, 'TUE')));
+  const late = build({ now: '2026-11-10T12:00:00+02:00' });
+  on(late, quiet);
+  late.push(vote('LATE', ANIA, ['Wtorek'], '2026-11-10T11:00:00+02:00', { q: Q }));
+  late.tick();
+  const lb = Object.assign({}, pollOf(late, 'LATE'));
+  late.push(pollMsg('LATE', Q, OPTS, '2026-10-25T10:13:00+02:00'));
+  late.tick('2026-11-10T12:10:00+02:00');
+  const la = pollOf(late, 'LATE');
+  check('pierwszy głos dwa tygodnie po ankiecie (zakres zgadnięty od dnia głosu) — po przyjściu ankiety zakres 26.10–01.11, wtorek = 27.10, głos na swoim dniu',
+    lb.wrong === true && la.from === '2026-10-26' && la.to === '2026-11-01' && la.days[1].d === '2026-10-27' && la.wrong === false
+    && votersOn(late, 'LATE', '2026-10-27').join() === ANIA, JSON.stringify({ before: [lb.from, lb.wrong], after: [la.from, la.wrong, la.days[1].d] }));
+
+  // review PR #8, nr 5: gdy bramka podaje w powiadomieniu pełny stan ankiety, jeden głos kogoś innego to nie drugi adres nadawcy
+  const full = (id, who, votes, iso) => ({ typeWebhook: 'incomingMessageReceived', idMessage: id, timestamp: ts(iso),
+    senderData: { chatId: GRAFIK, sender: who, senderName: '' },
+    messageData: { typeMessage: 'pollUpdateMessage', pollMessageData: { stanzaId: 'P5', name: Q,
+      votes: OPTS.map(o => ({ optionName: o, optionVoters: votes[o] || [] })) } } });
+  const fs5 = build();
+  on(fs5, quiet);
+  fs5.push(pollMsg('P5', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P5', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           vote('P5', BASIA, ['Wtorek'], '2026-10-25T10:16:00+02:00', { name: 'Basia' }));
+  fs5.tick();
+  fs5.push(full('FS5', ANIA, { 'Wtorek': [BASIA] }, '2026-10-25T11:00:00+02:00'));   // Ania wycofuje wszystko — zostaje Basia
+  fs5.tick('2026-10-25T11:05:00+02:00');
+  check('pełny stan z jednym głosem innej osoby: bez powiązania adresów, Ania bez głosów, Basia dalej na wtorek',
+    !fs5.st().alias[ANIA] && !pollOf(fs5, 'P5').v[ANIA] && votersOn(fs5, 'P5', '2026-10-27').join() === BASIA,
+    JSON.stringify({ alias: fs5.st().alias, v: pollOf(fs5, 'P5').v }));
+  const LA = '157000000000201@lid', LB = '157000000000202@lid';
+  const fs6 = build();
+  on(fs6, quiet);
+  fs6.push(pollMsg('P5', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           full('FS6a', ANIA, { 'Poniedziałek': [LA] }, '2026-10-25T10:15:00+02:00'),                      // Ania sama w ankiecie — jej @lid
+           full('FS6b', BASIA, { 'Poniedziałek': [LA], 'Wtorek': [LB] }, '2026-10-25T10:16:00+02:00'),
+           full('FS6c', BASIA, { 'Poniedziałek': [LA] }, '2026-10-25T11:00:00+02:00'));                     // Basia wycofuje wszystko
+  fs6.tick();
+  check('adresy @lid: Ania powiązana ze swoim @lid; wycofanie Basi (został głos Ani) — bez powiązania Basi z cudzym @lid, jej głos zdjęty',
+    fs6.st().alias[ANIA] === LA && !fs6.st().alias[BASIA] && !pollOf(fs6, 'P5').v[LB] && votersOn(fs6, 'P5', '2026-10-26').join() === LA,
+    JSON.stringify({ alias: fs6.st().alias, v: pollOf(fs6, 'P5').v }));
+  const fs7 = build();
+  on(fs7, quiet);
+  fs7.push(pollMsg('P5', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           full('FS7a', ANIA, { 'Poniedziałek': [LA] }, '2026-10-25T10:15:00+02:00'),
+           full('FS7b', BASIA, { 'Poniedziałek': [LA], 'Wtorek': [LB] }, '2026-10-25T10:16:00+02:00'),
+           full('FS7c', ANIA, { 'Wtorek': [LB] }, '2026-10-25T11:00:00+02:00'));                           // Ania (ma już głos) wycofuje wszystko
+  fs7.tick();
+  check('...wycofanie Ani, która ma już głos pod swoim @lid (został @lid Basi) — powiązanie Ani bez zmian, jej głos zdjęty, Basia zostaje',
+    fs7.st().alias[ANIA] === LA && !pollOf(fs7, 'P5').v[LA] && votersOn(fs7, 'P5', '2026-10-27').join() === LB,
+    JSON.stringify({ alias: fs7.st().alias, v: pollOf(fs7, 'P5').v }));
+  const LC = '157000000000203@lid';
+  const fs8 = build();
+  on(fs8, quiet);
+  fs8.push(pollMsg('P5', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           full('FS8a', BASIA, { 'Poniedziałek': [LC], 'Wtorek': [BASIA] }, '2026-10-25T10:16:00+02:00'),  // głos Celiny pod nieznanym @lid
+           full('FS8b', CELINA, { 'Wtorek': [BASIA] }, '2026-10-25T11:00:00+02:00'));                         // Celina wycofuje wszystko
+  fs8.tick();
+  check('...wycofanie Celiny (jej głos tylko pod nieznanym @lid), został głos Basi (@c.us) — dwa adresy @c.us to dwie osoby: bez powiązania, głos @lid zdjęty',
+    !fs8.st().alias[CELINA] && !pollOf(fs8, 'P5').v[LC] && votersOn(fs8, 'P5', '2026-10-27').join() === BASIA,
+    JSON.stringify({ alias: fs8.st().alias, v: pollOf(fs8, 'P5').v }));
 })();
 
 /* ---------- B77: o obecności mówi tylko ankieta ---------- */
@@ -876,7 +953,7 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && JSON.parse(T.api.doPost(undefined).getContent()).ok === false);
   const other = build({ now: '2026-10-26T10:10:00+02:00', props: { greenApiToken: 'innyToken' } });
   P.gw.peer = other;
-  P.tick('2026-10-26T10:12:00+02:00');
+  P.tick('2026-10-26T10:15:00+02:00');
   check('inna instancja bramki (inny token — osobna kolejka): sygnał odrzucony, ten test się nie wstrzymuje; produkcja widzi błąd',
     other.api.helperWaits_() === false && P.api.helperPanel_().lease.ok === false && /podpis/.test(P.api.helperPanel_().lease.err), JSON.stringify(P.api.helperPanel_().lease));
   P.gw.peer = T;
@@ -918,6 +995,145 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('aplikacja testowa nie odpowiada — przebieg produkcji idzie dalej, w panelu błąd sygnału', r !== null && P.api.helperPanel_().lease.ok === false
     && /404/.test(P.api.helperPanel_().lease.err), JSON.stringify(P.api.helperPanel_().lease));
   check('test nigdy nie wysyła sygnału (nikogo nie wstrzymuje)', T.gw.leases.length === 0);
+})();
+
+/* ---------- B87: wiadomość, której bramka nie przyjęła albo zatrzymał sufit, idzie w następnym przebiegu (review PR #8, nr 2–3) ---------- */
+(()=>{
+  console.log('B87: pomocnik — wiadomość zatrzymana błędem bramki albo sufitem nie dostaje znacznika „wysłana" i idzie później; zmiana składu grupy nie ginie');
+  // nr 2: „nowe osoby" — bramka odrzuca wysyłkę (400): punkt odniesienia składu zostaje stary, następny przebieg wysyła
+  const env = build({ now: '2026-10-25T20:05:00+02:00' });
+  on(env, { weekDays: [], features: { evening: false, morning: false, newPoll: false, lastWeek: false, weather: false } });
+  env.gw.members = [ANIA, BASIA];
+  env.push(text(KASIA, 'Kasia', 'Cześć', '2026-10-25T20:00:00+02:00'));
+  env.tick();                                                       // punkt odniesienia
+  env.gw.members = [ANIA, BASIA, KASIA];
+  let failed = 0;
+  env.gw.fail = (url, opts) => /\/sendMessage\//.test(url) && /skład grupy/.test(JSON.parse(opts.payload).message) && !failed++
+    ? { code: 400, body: '{"message":"Bad request"}' } : null;
+  env.tick('2026-10-26T20:05:00+02:00');
+  check('bramka odrzuca „nowe osoby" (400) — nic nie poszło, błąd w dzienniku', failed === 1 && !env.msgs().some(m => /nowe osoby/.test(m))
+    && env.st().log.some(l => l.k === 'err' && /^mem: /.test(l.m)), JSON.stringify(env.st().log.slice(-3)));
+  env.tick('2026-10-26T20:15:00+02:00');
+  check('następny przebieg — „👋 nowe osoby: Kasia" idzie, zmiana składu nie zginęła', env.msgs().filter(m => /👋 nowe osoby: Kasia/.test(m)).length === 1,
+    env.msgs().join(' | '));
+
+  // nr 3: sufit na przebieg (HELPER_SEND_MAX) — siódma wiadomość idzie w następnym przebiegu, nie przepada na cały dzień
+  const cap = build({ now: '2026-10-31T20:05:00+02:00' });
+  on(cap, { min: 1, weekDays: [0], features: { lastWeek: false, weather: false } });
+  cap.gw.members = [ANIA, BASIA];
+  cap.tick();                                                       // sobota: punkt odniesienia składu grupy
+  cap.gw.members = [ANIA, BASIA, KASIA];
+  cap.push(pollMsg('P2', 'Grafik 02-08.11', OPTS, '2026-11-01T19:58:00+02:00'),
+           text(OWNER, 'Grzesiek', 'jutro', '2026-11-01T20:00:00+02:00', OWNER),
+           text(OWNER, 'Grzesiek', 'stan', '2026-11-01T20:01:00+02:00', OWNER),
+           text(OWNER, 'Grzesiek', 'pomoc', '2026-11-01T20:02:00+02:00', OWNER));
+  const n0 = cap.msgs().length;
+  cap.tick('2026-11-01T20:05:00+02:00');
+  const first = cap.msgs().slice(n0);
+  check('niedziela 20:05: ' + cap.conf.HELPER_SEND_MAX + ' wiadomości (3 odpowiedzi, nowa ankieta, skład, przegląd), „nowe osoby" zatrzymane sufitem — bez znacznika',
+    first.length === cap.conf.HELPER_SEND_MAX && !first.some(m => /nowe osoby/.test(m)) && cap.st().log.some(l => /limit wiadomości \(na przebieg\)/.test(l.m))
+    && !cap.st().marks['mem|2026-11-01'], first.map(m => m.split('\n')[1]).join(' | '));
+  cap.tick('2026-11-01T20:15:00+02:00');
+  check('...następny przebieg: „nowe osoby" idą', cap.msgs().slice(n0 + first.length).some(m => /👋 nowe osoby/.test(m)) && !!cap.st().marks['mem|2026-11-01'],
+    cap.msgs().slice(n0 + first.length).join(' | '));
+
+  // sufit dzienny (HELPER_DAY_MAX — liczy też odpowiedzi na pytania): niewysłane nie dostaje znacznika, nowa ankieta czeka w kolejce
+  const day = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(day, { weekDays: [], features: { members: false, lastWeek: false, weather: false } });
+  day.tick();
+  const x = JSON.parse(day.props.helperState);
+  x.sent = { day: '2026-10-26', n: day.conf.HELPER_DAY_MAX };
+  day.props.helperState = JSON.stringify(x);
+  day.push(pollMsg('P3', Q, OPTS, '2026-10-26T19:58:00+02:00'));
+  day.tick('2026-10-26T20:05:00+02:00');
+  check('sufit dzienny: skład na jutro i nowa ankieta nie wyszły — bez znacznika „wysłana", ankieta czeka w kolejce', day.gw.sent.length === 0
+    && !day.st().marks['ev|2026-10-26'] && !day.st().marks['poll|P3'] && day.st().queue.indexOf('P3') >= 0, JSON.stringify({ marks: day.st().marks, queue: day.st().queue }));
+  day.tick('2026-10-27T10:05:00+02:00');
+  check('...następnego dnia nowa ankieta idzie', day.msgs().some(m => /Nowa ankieta w Grafiku/.test(m)), day.msgs().join(' | '));
+})();
+
+/* ---------- B88: spóźniony głos w dawnej ankiecie bez dat nie przejmuje dni bieżącej (review PR #8, nr 8) ---------- */
+(()=>{
+  console.log('B88: pomocnik — ankieta poznana tylko z głosu i bez dat w pytaniu nie dostaje dni, dopóki nie przyjdzie sama (decyzja właściciela 28.10); przy limicie ankiet wypada pierwsza');
+  const env = build({ now: '2026-10-28T12:00:00+02:00' });
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  const WEEKEND = { q: 'Weekend bez AW', options: ['Sobota', 'Niedziela'] };
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', ANIA, ['Sobota'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           vote('P1', BASIA, ['Sobota'], '2026-10-25T10:16:00+02:00', { name: 'Basia' }),
+           vote('W1', KASIA, ['Sobota'], '2026-10-28T11:00:00+02:00', Object.assign({ name: 'Kasia' }, WEEKEND)),
+           text(OWNER, 'Grzesiek', 'sobota', '2026-10-28T11:30:00+02:00', OWNER));
+  env.tick();
+  const ans = env.last();
+  check('„sobota": skład z bieżącej ankiety — 2 os. (Ania, Basia), nie z dawnej „Weekend bez AW"', /\*Sobota 31\.10\*: 2 os\./.test(ans)
+    && /👥 Ania, Basia/.test(ans) && !/Kasia/.test(ans), ans);
+  const w1 = pollOf(env, 'W1');
+  check('dawna ankieta znana tylko z głosu — bez dni', !!w1 && w1.days.every(o => !o.d), JSON.stringify(w1 && w1.days));
+  ['W2', 'W3', 'W4', 'W5'].forEach((id, i) => env.push(vote(id, DAWID, ['Sobota'], '2026-10-28T12:0' + i + ':00+02:00', WEEKEND)));
+  env.tick('2026-10-28T12:10:00+02:00');
+  check('limit ' + env.conf.HELPER_LIMITS.POLLS + ' ankiet: bieżąca zostaje, wypadają najpierw ankiety bez dni', !!pollOf(env, 'P1')
+    && env.st().polls.length === env.conf.HELPER_LIMITS.POLLS, env.st().polls.map(p => p.id).join());
+  // przyszła sama ankieta (np. z historii czatu) — dni od dnia jej wysłania
+  env.push(Object.assign(pollMsg('W5', WEEKEND.q, WEEKEND.options, '2026-10-23T09:00:00+02:00'),
+    { typeWebhook: 'incomingMessageReceived', senderData: { chatId: GRAFIK, sender: EWA, chatName: 'Grafik' } }));
+  env.tick('2026-10-28T12:20:00+02:00');
+  const w5 = pollOf(env, 'W5');
+  check('...sama ankieta przyszła: dni od dnia jej wysłania (piątek 23.10 → sobota 24.10)', !!w5 && w5.days[0].d === '2026-10-24', JSON.stringify(w5 && w5.days));
+})();
+
+/* ---------- B89: do wiadomości (także do „Grafiku") bez szczegółów błędów i bez numerów telefonów (review PR #8, nr 6 i 10) ---------- */
+(()=>{
+  console.log('B89: pomocnik — błąd arkusza psów: w składzie bez szczegółów, szczegóły w dzienniku; nazwa z WhatsAppa będąca numerem telefonu — osoba jako „#N"');
+  const env = build({ now: '2026-10-25T10:20:00+02:00' });
+  on(env, { min: 1, weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P1', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           vote('P1', KASIA, ['Poniedziałek'], '2026-10-25T10:16:00+02:00', { name: '+48 601 000 006' }),
+           text(DAWID, '48 601 000 004', 'Hej', '2026-10-25T10:17:00+02:00'));
+  env.tick();
+  env.sheets['Psy'].getRange = () => { throw new Error('Service Spreadsheets timed out while accessing document with id 1AbCdEfGhIjKlMnO'); };
+  env.tick('2026-10-25T20:05:00+02:00');
+  const ev = env.msgs().filter(m => /Jutro — poniedziałek 26\.10/.test(m))[0] || '';
+  check('arkusz psów nie odpowiada: w składzie tylko „🐕 nie udało się odczytać psów", szczegóły w dzienniku pomocnika', /🐕 nie udało się odczytać psów/.test(ev)
+    && !/document with id|timed out|1AbC/.test(ev) && env.st().log.some(l => l.k === 'err' && /^psy: .*timed out/.test(l.m)), ev);
+  check('nazwa z WhatsAppa = numer telefonu: w składzie numer osoby („#N"), bez cyfr numeru', /👥 Ania, #\d+$/m.test(ev) && !/601 000 00|60100000/.test(ev)
+    && !env.st().people[KASIA] && !env.st().people[DAWID], ev + ' | ' + JSON.stringify(env.st().people));
+  env.gw.members = [ANIA, KASIA];
+  env.gw.contacts = [{ id: KASIA, name: '+48 601 000 006', type: 'user' }, { id: ANIA, name: 'Ania', contactName: 'Ania K', type: 'user' }];
+  const r = env.api.getHelperMembers(TEST_PIN);
+  check('lista członków: kontakt z numerem jako nazwą — w panelu sam numer osoby, bez cyfr numeru', r.list.some(x => x.name === 'Ania K') && r.list.filter(x => !x.name).length === 1
+    && !/601 000 00|60100000|\+48/.test(JSON.stringify(env.api.helperPanel_().roster)), JSON.stringify(r.list));
+  // lista zapisana jeszcze przed poprawką — z numerem jako nazwą: maskowana też przy odczycie
+  env.props.helperRoster = JSON.stringify({ at: env.now(), chatId: GRAFIK, chatName: 'Grafik', list: [[DAWID, '+48 601 000 004'], [ANIA, 'Ania K']] });
+  const old = env.api.helperPanel_().roster;
+  check('...lista zapisana przed poprawką (nazwa = numer) — w panelu też bez cyfr', !/601 000 00|60100000|\+48/.test(JSON.stringify(old)) && old.list.some(x => x.name === 'Ania K'),
+    JSON.stringify(old && old.list));
+})();
+
+/* ---------- B90: koszt — publiczny helperTick, historia czatu tylko wtedy, gdy potrzebna (review PR #8, nr 7 i 12) ---------- */
+(()=>{
+  console.log('B90: pomocnik — helperTick najwyżej raz na 5 min (publiczny: może go wołać każdy z linkiem), „Sprawdź teraz" bez progu; historia czatu tylko dla dni, o których mówią wiadomości tej pory');
+  const P = build({ now: '2026-10-26T10:00:00+02:00', props: { env: 'prod' } });
+  on(P, { weekDays: [], features: { newPoll: false, members: false, weather: false } });
+  P.tick();
+  const c0 = P.http.calls.length;
+  check('drugi helperTick w tej samej chwili — nic: ani bramki, ani sygnału dla testu', P.tick() === null && P.http.calls.length === c0,
+    P.http.calls.slice(c0).map(c => c.url.replace(/tok3n5ecret/, '…')).join(' | '));
+  check('...4 minuty później też nic', P.tick('2026-10-26T10:04:00+02:00') === null && P.http.calls.length === c0);
+  check('„Sprawdź teraz" (właściciel, z PIN-em) — bez progu', !!P.api.helperRunNow(TEST_PIN).run && P.http.calls.length > c0);
+  check('zwykły wyzwalacz 10 min później — przebieg', P.tick('2026-10-26T10:14:00+02:00') !== null);
+
+  // pełna ankieta na bieżący tydzień — przebiegi co 10 min przez dobę bez czytania historii czatu
+  const env = build({ now: '2026-10-27T19:45:00+02:00' });
+  on(env, { weekDays: [], features: { newPoll: false, members: false, lastWeek: false, weather: false } });
+  env.push(pollMsg('P1', Q, OPTS, '2026-10-25T10:13:00+02:00'), vote('P1', ANIA, ['Środa', 'Czwartek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }));
+  env.tick();
+  const h0 = env.gw.historyCalls.length;                           // pierwszy przebieg (powiadomienia włączone) — historia raz
+  for (let t = Date.parse('2026-10-27T19:55:00+02:00'); t <= Date.parse('2026-10-28T20:55:00+02:00'); t += 10 * 60000) env.tick(new Date(t).toISOString());
+  check('pełna ankieta: od wt 19:55 do śr 20:55 (wieczór, rano, wieczór) bez czytania historii czatu', h0 === 1 && env.gw.historyCalls.length === h0,
+    'historia: ' + env.gw.historyCalls.length);
+  check('...a wiadomości o swoich porach poszły (skład na środę i na czwartek)', env.msgs().some(m => /Jutro — środa 28\.10/.test(m))
+    && env.msgs().some(m => /Jutro — czwartek 29\.10/.test(m)), env.msgs().map(m => m.split('\n')[1]).join(' | '));
 })();
 
 /* ---------- B74 (ciąg dalszy): na teście w żadnym scenariuszu nic nie poszło do grupy ---------- */

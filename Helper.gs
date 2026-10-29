@@ -85,9 +85,13 @@ function helperYmd_(d, m, ref) {
   return best;
 }
 
-/** Nazwa z WhatsAppa bez dopisku grupy („Ania Kowalska Schronisko G13" → „Ania Kowalska"). */
+/**
+ * Nazwa z WhatsAppa bez dopisku grupy („Ania Kowalska Schronisko G13" → „Ania Kowalska") i bez numerów telefonu: nazwą profilu
+ * bywa sam numer („+48 600 111 222"), a nazwa idzie do składu dnia (przy „gotowej" — do całego „Grafiku") i do panelu
+ * (review PR #8; numery nie opuszczają serwera — decyzja właściciela 27.10). Sam numer → '' (osoba będzie „#17").
+ */
 function helperShort_(n) {
-  return String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ')
+  return noPhones_(String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]+/g, ' ')).replace(/…/g, ' ').replace(/\s+/g, ' ')
     .replace(/\s*(schronisko\s*)?g\s*13\s*$/i, '').trim().slice(0, 40);
 }
 
@@ -109,10 +113,10 @@ function helperNameOnly_(s, st, id) {
   const phones = same.filter(x => HELPER_PRIVATE.test(x)).map(x => x.split('@')[0]);
   const own = Object.keys(named).filter(k => k.charAt(0) !== '#' && phones.some(d => d.slice(-k.length) === k))[0];
   if (own) return named[own];
-  const roster = same.filter(x => st.rosterNames[x])[0];
-  if (roster) return st.rosterNames[roster];
-  const p = same.filter(x => st.people[x] && st.people[x].n)[0];
-  return p ? st.people[p].n : '';
+  // nazwy zapisane przed maskowaniem w helperShort_ (review PR #8) — przy odczycie jeszcze raz
+  const roster = same.map(x => helperShort_(st.rosterNames[x])).filter(Boolean)[0];
+  if (roster) return roster;
+  return same.map(x => helperShort_(st.people[x] && st.people[x].n)).filter(Boolean)[0] || '';
 }
 /** „#17 = Ania" (numer osoby) albo „123 = Ania" (końcówka numeru telefonu), w linijkach albo po przecinku → {'#17': 'Ania', '123': 'Ania'}. */
 function helperNameMap_(text) {
@@ -447,11 +451,16 @@ function helperRelease_() {
  * Wyzwalacz co HELPER_TICK_MIN minut. Publiczna (wyzwalacz nie woła funkcji z „_"), więc dostępna też
  * z przeglądarki — dlatego niczego nie przyjmuje: wywołana z zewnątrz robi to samo co wyzwalacz, a raporty
  * mają znaczniki „wysłany", więc nie da się nią zasypać właściciela wiadomościami. Nigdy nie rzuca.
- * Na teście z ważnym sygnałem produkcji nic nie robi — pracuje tamten pomocnik (jeden aktywny).
+ * Na teście z ważnym sygnałem produkcji nic nie robi — pracuje tamten pomocnik (jeden aktywny). Najwyżej raz na
+ * HELPER_TICK_GAP_MIN minut od końca poprzedniego przebiegu (review PR #8): wołana w pętli robiłaby przebieg co kilka sekund
+ * i zjadała dzienne limity konta (połączenia z bramką, zapisy właściwości), od których zależą ankieta i lista dnia.
+ * „Sprawdź teraz" (helperRunNow, PIN) progu nie ma.
  */
 function helperTick() {
   const s = helperSettings_();
   if (!s.enabled || !greenApi_() || helperWaits_()) return null;
+  const x = helperJson_(PROP_HELPER_STATE, {});
+  if (x && x.stat && Date.now() - Number(x.stat.at) < HELPER_TICK_GAP_MIN * 60000) return null;
   try { return helperRun_(s, false); } catch (e) { return null; }
 }
 
@@ -754,7 +763,9 @@ function helperPerson_(st, id, name, at) {
 /**
  * Daty ankiety z pytania: „Grafik 26.10-01.11", „Grafik 05-11.10", „Niedziela 16.08". Bez dat — w niedzielę tydzień
  * od jutra (jak ankieta bota, pollMonday_), w inny dzień najbliższe 7 dni. Daty daleko od dnia utworzenia to pomyłka w pytaniu
- * („Grafik 05-11.11" wysłane 4.10) — wtedy też najbliższy tydzień, a `wrong` mówi, że daty się nie zgadzają.
+ * („Grafik 05-11.11" wysłane 4.10) — wtedy też najbliższy tydzień, a `wrong` mówi, że daty się nie zgadzają. Bliskie daty są
+ * `wrong`, gdy zakres skończył się przed dniem wysłania albo zaczyna się po spodziewanym tygodniu — ankieta w środku tygodnia
+ * na bieżący weekend („26.06 - 28.06" w czwartek) jest w porządku (review PR #8: dawniej zawsze „nie pasują").
  */
 function helperRange_(q, ref) {
   const t = String(q || '');
@@ -777,7 +788,7 @@ function helperRange_(q, ref) {
   }
   const near = helperDaysBetween_(ref, from) >= -7 && helperDaysBetween_(ref, from) <= 14;
   if (!near) return { from: expect.from, to: expect.to, parsed: true, wrong: true, said: { from, to } };
-  return { from, to, parsed: true, wrong: from > expect.to || to < expect.from, said: { from, to } };
+  return { from, to, parsed: true, wrong: to < ref || from > expect.to, said: { from, to } };
 }
 
 /**
@@ -816,34 +827,48 @@ function helperPollDays_(q, opts, at) {
  * Ankieta po identyfikatorze (z wiadomości o ankiecie albo z pierwszego głosu). `created` — wiadomość o samej ankiecie
  * (znamy chwilę jej wysłania), `full` — znamy wszystkie głosy od początku (helperEvent_). Ankieta poznana dopiero
  * z głosu albo z historii sprzed włączenia powiadomień jest `partial`: głosy oddane wcześniej nigdy do nas nie dojdą.
+ * Poznana z głosu ma dni od dnia głosu — gdy przyjdzie sama ankieta (wcześniejsza chwila), dni i daty liczą się od dnia jej
+ * wysłania (review PR #8; numery odpowiedzi w głosach zostają ważne). Poznana z głosu i bez dat w pytaniu (`nodays`) nie ma
+ * dni wcale, dopóki nie przyjdzie sama: dni od dnia głosu byłyby zgadywaniem — dawna „Weekend bez AW" przejmowała dni bieżącej
+ * ankiety (decyzja właściciela 28.10). Ponad HELPER_LIMITS.POLLS wypadają najpierw takie, potem najstarsze.
  */
 function helperPollOf_(st, id, name, opts, at, created, full) {
   if (!id) return null;
   let p = st.polls.filter(x => x.id === id)[0];
   if (p) {
     if (name && !p.q) p.q = String(name).slice(0, 120);
-    if (opts.length > p.opts.length) {
-      p.opts = opts.map(o => o.slice(0, 60));
-      const pd = helperPollDays_(p.q, p.opts, p.t);
-      p.days = pd.days; p.from = pd.range.from; p.to = pd.range.to; p.wrong = !!pd.range.wrong;
-    }
-    if (created) { p.t = Math.min(p.t, at); if (full) p.partial = false; }
+    const grown = opts.length > p.opts.length, earlier = created && at < p.t, dated = created && p.nodays;
+    if (grown) p.opts = opts.map(o => o.slice(0, 60));
+    if (created) { p.t = Math.min(p.t, at); if (full) p.partial = false; delete p.nodays; }
+    if (grown || earlier || dated) helperPollDaysSet_(p);
     return p;
   }
-  const pd = helperPollDays_(name, opts, at);
-  p = { id: String(id).slice(0, 64), q: String(name || '').slice(0, 120), t: at, opts: opts.map(o => o.slice(0, 60)),
-        days: pd.days, from: pd.range.from, to: pd.range.to, wrong: !!pd.range.wrong, v: {}, vt: {},
+  p = { id: String(id).slice(0, 64), q: String(name || '').slice(0, 120), t: at, opts: opts.map(o => o.slice(0, 60)), v: {}, vt: {},
         partial: !(created && full) };
+  if (!created && !helperRange_(p.q, helperDate_(at)).parsed) p.nodays = true;
+  helperPollDaysSet_(p);
   st.polls.push(p);
   st.polls.sort((a, b) => a.t - b.t);
-  while (st.polls.length > HELPER_LIMITS.POLLS) st.polls.shift();
+  while (st.polls.length > HELPER_LIMITS.POLLS) {
+    const k = st.polls.findIndex(x => x.nodays);
+    st.polls.splice(k >= 0 ? k : 0, 1);
+  }
   return p;
+}
+/** Dni i daty ankiety od jej chwili (p.t); ankieta `nodays` — odpowiedzi bez dni i bez ostrzeżenia o datach. */
+function helperPollDaysSet_(p) {
+  const pd = helperPollDays_(p.q, p.opts, p.t);
+  p.days = p.nodays ? pd.days.map(o => Object.assign({}, o, { d: '' })) : pd.days;
+  p.from = pd.range.from; p.to = pd.range.to; p.wrong = !p.nodays && !!pd.range.wrong;
 }
 
 /**
- * Głos (pollUpdateMessage). Dokumentacja bramki: powiadomienie dotyczy jednej osoby. Bierzemy to, co pewne:
- * jedna osoba w odpowiedziach — jej aktualne wybory (a gdy jej numer jest w innym formacie niż nadawca,
- * zapamiętujemy powiązanie — alias); nikt — nadawca wycofał wszystko; dwie i więcej — pełny stan ankiety.
+ * Głos (pollUpdateMessage). Dokumentacja bramki: powiadomienie dotyczy jednej osoby — ale czy nie niesie pełnego stanu
+ * ankiety, nie sprawdziliśmy (HELPER.md). Bierzemy to, co pewne przy obu: nikt w odpowiedziach — nadawca wycofał wszystko;
+ * dwie osoby i więcej — pełny stan; jedna — sam nadawca (ten sam adres albo jego drugi adres, `@lid` zamiast `@c.us` —
+ * zapamiętujemy powiązanie, alias), a gdy to nie może być on — pełny stan: nadawca wycofał wszystko i został jeden głos kogoś
+ * innego (review PR #8: dawniej powiązanie z tą osobą „sklejało" dwie osoby — imię, klasa, numer osoby). Drugi adres nadawcy
+ * to tylko adres innego rodzaju, którego nikt inny już nie ma, gdy nadawca nie ma jeszcze głosu w tej ankiecie.
  * Wypisania z dni (ktoś był na liście dnia i zniknął) idą do st.gone — skład dnia pokazuje „wypisali się".
  */
 function helperApplyVotes_(st, sender, pd, at) {
@@ -868,13 +893,13 @@ function helperApplyVotes_(st, sender, pd, at) {
   const sec = Math.floor(at / 1000);
   const newer = w => !(poll.vt[w] > sec);
   const put = (w, idx) => { if (!newer(w)) return; if (idx) poll.v[w] = idx.sort((a, b) => a - b); else delete poll.v[w]; poll.vt[w] = sec; };
-  if (voters.length >= 2) {
+  const one = voters.length === 1 ? voters[0] : '';
+  if (voters.length >= 2 || (one && !helperSelf_(st, poll, sender, one))) {
     voters.forEach(w => put(w, by[w]));
     Object.keys(poll.v).forEach(w => { if (!by[w]) put(w, null); });
-  } else if (voters.length === 1) {
-    const w = voters[0];
-    if (sender && sender !== w) st.alias[sender] = w;
-    put(w, by[w]);
+  } else if (one) {
+    if (sender && sender !== one) st.alias[sender] = one;
+    put(one, by[one]);
   } else {
     put(st.alias[sender] || sender, null);
   }
@@ -882,6 +907,17 @@ function helperApplyVotes_(st, sender, pd, at) {
     const was = helperDatesOf_(poll, before[w]), now = helperDatesOf_(poll, poll.v[w] || []);
     was.filter(d => now.indexOf(d) < 0).forEach(d => st.gone.push({ d, w, at }));
   });
+}
+
+/**
+ * Czy głosujący `w` (jedyny w powiadomieniu) to sam nadawca: ten sam adres, znany drugi adres (alias, lista członków) albo
+ * adres innego rodzaju (`@lid` ↔ `@c.us`), którego nikt inny nie ma, gdy nadawca nie ma jeszcze głosu w tej ankiecie.
+ */
+function helperSelf_(st, poll, sender, w) {
+  if (!sender || sender === w || st.alias[sender] === w || (st.links && st.links[w] === sender)) return true;
+  if (/@lid$/.test(sender) === /@lid$/.test(w)) return false;
+  if (helperSame_(st, sender).some(x => poll.v[x] || poll.vt[x])) return false;
+  return !Object.keys(st.alias).some(k => st.alias[k] === w) && !(st.links && st.links[w]);
 }
 
 /** Dni, na które wskazują wybrane odpowiedzi (tylko zwykłe — bez dopisków i „Nie mogę"). */
@@ -1021,7 +1057,8 @@ function helperDayText_(s, st, d, ctx) {
 function helperDogLines_(s, st, d, info, ctx) {
   const L = [];
   let catalog = [];
-  try { catalog = ctx.catalog(); } catch (e) { return ['🐕 (nie udało się odczytać psów: ' + (e && e.message || e) + ')']; }
+  // szczegóły błędu (tekst Google z identyfikatorem arkusza) — do dziennika, nie do wiadomości: skład „gotowy" czyta cały „Grafik"
+  try { catalog = ctx.catalog(); } catch (e) { helperLog_(st, 'err', 'psy: ' + (e && e.message || e)); return ['🐕 nie udało się odczytać psów']; }
   const ours = catalog.filter(x => !x.team);
   if (!ours.length) return L;
   const walks = ours.reduce((a, x) => a + (x.walks === 2 ? 2 : 1), 0), n = info.voters.length;
@@ -1175,16 +1212,23 @@ function helperSendCard_(s, st, nr) {
   return '';
 }
 
-/** Raz na klucz (`ev|2026-10-24`…): znacznik po wysłaniu albo po nieznanym wyniku (bramka mogła wysłać). */
+/**
+ * Raz na klucz (`ev|2026-10-24`…): znacznik po wysłaniu albo po nieznanym wyniku (bramka mogła wysłać). `fn` zwraca false —
+ * wiadomość zatrzymał sufit (helperSend_): bez znacznika, następny przebieg spróbuje znowu (review PR #8 — dawniej przepadała
+ * na cały dzień); nic nie zwraca — świadomie nic nie poszło (rano bez problemu) i znacznik jest. Zwraca: true — znacznik
+ * postawiony, false — sufit, undefined — błąd.
+ */
 function helperOnce_(st, key, run, fn) {
-  if (st.marks[key]) return;
+  if (st.marks[key]) return true;
   try {
-    fn();
+    if (fn() === false) return false;
     st.marks[key] = Date.now();
+    return true;
   } catch (e) {
     if (e && e.unknown) st.marks[key] = Date.now();
     run.err = run.err || String(e && e.message || e);
     helperLog_(st, 'err', key.split('|')[0] + ': ' + (e && e.message || e));
+    return undefined;
   }
 }
 
@@ -1204,17 +1248,22 @@ function helperSchedule_(s, st, run) {
   // idzie innym wywołaniem bramki, więc działa i bez powiadomień); nieznany stan bramki — cisza
   const gate = st.gate;
   if (!gate || !gate.ok) {
-    if (gate) helperOnce_(st, 'gate|' + T, run, () => { helperSend_(s, st, helperGateText_(gate), run); });
-    if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => { helperMembers_(s, st, run, true); });
+    if (gate) helperOnce_(st, 'gate|' + T, run, () => helperSend_(s, st, helperGateText_(gate), run));
+    if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => helperMembers_(s, st, run, true));
     return;
   }
-  // historia czatu: zaraz po włączeniu powiadomień, przy „Sprawdź teraz" i przed wiadomościami o swojej porze, gdy na
-  // któryś z najbliższych dni nie ma ankiety albo zna ją tylko częściowo (najwyżej co HELPER_HISTORY_GAP_H godzin)
-  const week = [];
-  for (let k = 0; k <= 7; k++) week.push(addDays_(T, k));
-  const blind = week.some(d => { const p = helperPollFor_(st, d); return !p || p.partial; });
-  const due = inWin(s.evening) || inWin(s.morning);
-  if (st.catchUp || run.manual || (blind && due && Date.now() - (st.histAt || 0) >= HELPER_HISTORY_GAP_H * 3600000)) {
+  // historia czatu: zaraz po włączeniu powiadomień, po przerwie, przy „Sprawdź teraz" i przed wiadomościami o swojej porze,
+  // gdy na dzień, o którym mówią, nie ma ankiety albo zna ją tylko częściowo (najwyżej co HELPER_HISTORY_GAP_H godzin). Tylko
+  // te dni (review PR #8): rano — dziś, wieczorem — jutro, w dni przeglądu tygodnia — 7 dni; dawniej zawsze 8 dni, a ankiety
+  // na następny tydzień do niedzieli nie ma, więc historia szła co rano i co wieczór także przy pełnej ankiecie
+  const need = [];
+  if (f.morning && inWin(s.morning)) need.push(T);
+  if (inWin(s.evening)) {
+    if (f.evening) need.push(addDays_(T, 1));
+    if (f.week && s.weekDays.indexOf(wd) >= 0) for (let k = 1; k <= 7; k++) need.push(addDays_(T, k));
+  }
+  const blind = need.some(d => { const p = helperPollFor_(st, d); return !p || p.partial; });
+  if (st.catchUp || run.manual || (blind && Date.now() - (st.histAt || 0) >= HELPER_HISTORY_GAP_H * 3600000)) {
     try { helperCatchUp_(s, st, run); }
     catch (e) { helperLog_(st, 'err', 'historia czatu: ' + (e && e.message || e)); }
   }
@@ -1232,52 +1281,55 @@ function helperSchedule_(s, st, run) {
     } catch (e) { helperLog_(st, 'err', 'odpowiedź: ' + (e && e.message || e)); }
   });
 
-  // dalej wiadomości funkcji — każda z kluczem funkcji: „gotowa" na produkcji idzie do „Grafiku" (helperDest_)
+  // dalej wiadomości funkcji — każda z kluczem funkcji: „gotowa" na produkcji idzie do „Grafiku" (helperDest_). Callback zwraca
+  // wynik helperSend_: zatrzymana sufitem (false) nie dostaje znacznika i idzie w następnym przebiegu (helperOnce_)
   const queue = st.queue.splice(0, st.queue.length);
   if (f.newPoll) queue.forEach(id => {
     const p = st.polls.filter(x => x.id === id)[0];
-    if (p) helperOnce_(st, 'poll|' + id, run, () => { helperSend_(s, st, helperPollText_(st, p), run, 'newPoll'); });
+    // nowa ankieta zatrzymana sufitem wraca do kolejki (inaczej zdjęta z niej nie poszłaby już nigdy)
+    if (p && helperOnce_(st, 'poll|' + id, run, () => helperSend_(s, st, helperPollText_(st, p), run, 'newPoll')) === false) st.queue.push(id);
   });
 
   if (f.morning && inWin(s.morning)) helperOnce_(st, 'mo|' + T, run, () => {
     const info = helperDay_(s, st, T);
-    if (helperProblems_(s, st, info).length) helperSend_(s, st, helperDayText_(s, st, T, ctx), run, 'morning');
+    if (helperProblems_(s, st, info).length) return helperSend_(s, st, helperDayText_(s, st, T, ctx), run, 'morning');
   });
-  if (f.lastWeek && wd === 1 && inWin(s.morning)) helperOnce_(st, 'lw|' + T, run, () => {
-    helperSend_(s, st, helperLastWeekText_(s, st, ctx), run, 'lastWeek');
-  });
+  if (f.lastWeek && wd === 1 && inWin(s.morning)) helperOnce_(st, 'lw|' + T, run, () => helperSend_(s, st, helperLastWeekText_(s, st, ctx), run, 'lastWeek'));
 
   if (f.evening && inWin(s.evening)) helperOnce_(st, 'ev|' + T, run, () => {
     const D = addDays_(T, 1), info = helperDay_(s, st, D);
     if (!f.eveningAlways && !helperProblems_(s, st, info).length) return;
     const top = wd === 0 && !info.poll ? '⚠️ *Nie widzę jeszcze ankiety na nowy tydzień* (w historii czatu też jej nie ma)\n' : '';
-    helperSend_(s, st, top + helperDayText_(s, st, D, ctx), run, 'evening');
+    return helperSend_(s, st, top + helperDayText_(s, st, D, ctx), run, 'evening');
   });
-  if (f.week && s.weekDays.indexOf(wd) >= 0 && inWin(s.evening)) helperOnce_(st, 'wk|' + T, run, () => {
-    helperSend_(s, st, helperWeekText_(s, st), run, 'week');
-  });
-  if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => { helperMembers_(s, st, run, true); });
+  if (f.week && s.weekDays.indexOf(wd) >= 0 && inWin(s.evening)) helperOnce_(st, 'wk|' + T, run, () => helperSend_(s, st, helperWeekText_(s, st), run, 'week'));
+  if (f.members && inWin(s.evening)) helperOnce_(st, 'mem|' + T, run, () => helperMembers_(s, st, run, true));
 }
 
 /**
  * Skład grupy z bramki (getGroupData) porównany z poprzednim: nowe osoby i odejścia. Pierwszy raz — tylko punkt
  * odniesienia. Nowa osoba nie zobaczy ankiety wysłanej przed jej dołączeniem (WhatsApp nie pokazuje historii).
+ * Nowy punkt odniesienia dopiero po wysłaniu (review PR #8): gdy bramka odrzuci wiadomość albo zatrzyma ją sufit, następny
+ * przebieg policzy tę samą różnicę — dawniej zmiana składu ginęła na zawsze. Zwraca wynik helperSend_ (false — sufit).
  */
 function helperMembers_(s, st, run, send) {
   const g = greenCall_('getGroupData', { groupId: s.chatId });
   const ids = (g && Array.isArray(g.participants) ? g.participants : []).map(p => String(p && p.id || '')).filter(Boolean).sort();
   if (!ids.length) throw new Error('bramka nie podała składu grupy');
-  const prev = st.members;
-  st.members = { at: Date.now(), ids };
-  if (!prev || !send) return;
+  const prev = st.members, now = { at: Date.now(), ids };
+  if (!prev || !send) { st.members = now; return; }
   const plus = ids.filter(x => prev.ids.indexOf(x) < 0), minus = prev.ids.filter(x => ids.indexOf(x) < 0);
-  if (!plus.length && !minus.length) return;
+  if (!plus.length && !minus.length) { st.members = now; return; }
   try { helperNrsGive_(st, plus); } catch (e) { /* bez numeru — „bez nazwy"; nada go następny przebieg */ }
   const L = ['*Grafik — skład grupy* (' + ids.length + ' os.)'];
   if (plus.length) L.push('👋 nowe osoby: ' + plus.map(w => helperName_(s, st, w)).join(', ')
     + ' — nie zobaczą ankiety wysłanej przed dołączeniem; niech napiszą dostępność w czacie');
   if (minus.length) L.push('🚪 wyszli: ' + minus.map(w => helperName_(s, st, w)).join(', '));
-  helperSend_(s, st, L.join('\n'), run, 'members');
+  // wyjątek (bramka odrzuciła albo nie odpowiedziała) — punkt odniesienia zostaje; przy braku odpowiedzi wiadomość mogła dojść
+  // i następnego dnia pójdzie jeszcze raz (lepiej dwa razy niż wcale)
+  const sent = helperSend_(s, st, L.join('\n'), run, 'members');
+  if (sent) st.members = now;
+  return sent;
 }
 
 /* ---------- pytania w prywatnym czacie ---------- */

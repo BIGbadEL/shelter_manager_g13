@@ -242,6 +242,7 @@ const HELPER_LIMITS = { MIN_MAX: 10, NAME_MAP: 600, POLLS: 4, PEOPLE: 100, GONE:
                         SEEN: 60, LOG: 30, PANEL_LOG: 15, CMDS: 3, MESSAGE: 3500, ROSTER: 150, IDS: 250 };
 const HELPER_BYTES = 8000;
 const HELPER_TICK_MIN = 10;          // wyzwalacz helperTick co tyle minut (Apps Script: 1, 5, 10, 15 albo 30)
+const HELPER_TICK_GAP_MIN = 5;       // helperTick (publiczny) najwcześniej tyle minut po końcu poprzedniego przebiegu — decyzja właściciela 28.10
 const HELPER_RECEIVE_S = 5;          // receiveNotification czeka na powiadomienie najwyżej tyle sekund (bramka: 5–60)
 const HELPER_MAX_EVENTS = 40;        // powiadomień na przebieg
 const HELPER_INTAKE_MS = 150000;     // najdłużej tyle czytamy kolejkę w jednym przebiegu

@@ -300,7 +300,7 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   (dziennik pisze się, gdy blokada bywa zakorkowana; zgubiony wpis to cała szkoda) i **żaden jego błąd
   nie zatrzymuje odczytu ani zapisu** (podwójny try/catch, B62). Na zwykłej pracy nic nie kosztuje.
   Panel: `getDiagnostics().diag`. Bez imion i treści.
-- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B86, S145–S147; decyzja właściciela 24.10.2026:
+- **Pomocnik Grafiku** (1.5, faza testów; `Helper.gs`, `HELPER.md`, B74–B90, S145–S147b; decyzja właściciela 24.10.2026:
   „lepiej więcej funkcji niż mniej — co źle działa, wyłączymy") — bot czyta grupę „Grafik" z **kolejki powiadomień
   bramki** (`receiveNotification` → `deleteNotification`, metoda DELETE — `greenCall_` ma 4. argument `http`; pusta
   odpowiedź bramki = `null`) i składa wiadomości: skład na jutro, dziś rano przy problemie, przegląd tygodnia, nowa
@@ -340,9 +340,14 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   „koniec"; pomocnik testu z ważnym sygnałem czeka (`helperWaits_`: wyzwalacz nic nie robi, „Sprawdź teraz" odmawia).
   Sygnał podpisany tokenem bramki (HMAC; wspólny token = wspólna kolejka), świeży, nie starszy od zapisanego; produkcja go nie
   przyjmuje. Po przerwie dłuższej niż `HELPER_STALE_MIN` pomocnik doczytuje historię czatu. Stan (członkowie, klasy, numery
-  osób) jest osobny w każdej aplikacji. **`doPost` to jedyne wejście POST** — publiczne, przyjmuje tylko ten sygnał. Głosy: powiadomienie dotyczy jednej osoby (dokumentacja bramki) — jedna
-  w odpowiedziach = jej wybory, nikt = wycofała wszystko, dwie i więcej = pełny stan; numer głosującego bywa w innym
-  formacie niż nadawcy (`@lid`) — `alias`; głos to stan osoby z czasem (`vt`) — starszy niż znany nic nie zmienia.
+  osób) jest osobny w każdej aplikacji. **`doPost` to jedyne wejście POST** — publiczne, przyjmuje tylko ten sygnał. Głosy
+  (dokumentacja bramki: powiadomienie dotyczy jednej osoby — niesprawdzone, więc reguły działają przy obu): nikt w odpowiedziach =
+  nadawca wycofał wszystko, dwie i więcej = pełny stan, jedna = sam nadawca albo — gdy to nie może być on — pełny stan; drugi
+  adres nadawcy (`@lid` ↔ `@c.us`, `alias`) tylko innego rodzaju, niczyj i gdy nadawca nie ma jeszcze głosu w ankiecie
+  (`helperSelf_`, review PR #8, B76); głos to stan osoby z czasem (`vt`) — starszy niż znany nic nie zmienia. Ankieta poznana
+  tylko z głosu i bez dat w pytaniu nie ma dni (`nodays`), dopóki nie przyjdzie sama (decyzja właściciela 28.10, B88);
+  wiadomość zatrzymana sufitem albo odrzucona przez bramkę idzie w następnym przebiegu (`helperOnce_`: callback zwraca wynik
+  `helperSend_`, false = bez znacznika — B87); `helperTick` najwcześniej `HELPER_TICK_GAP_MIN` po poprzednim przebiegu (B90).
   **Bramka nie oddaje bieżącego wyniku ankiety** — tylko zdarzenia osób z czasu, gdy powiadomienia w instancji były
   włączone. Test 24–25.10: wszystkie wyłączone, pomocnik ślepy, a pisał „W Grafiku nie ma ankiety" — teraz
   **`helperGate_`** (getSettings co przebieg, dopóki czegoś brakuje): bez powiadomień zamiast składów jedno ostrzeżenie
@@ -629,7 +634,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **1978 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **2015 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -658,7 +663,7 @@ grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z back
 serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku, Panel w sekcjach) — S145c czeka na skrócony
 `T.helperWait`. **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
 klikają pola jak dotąd; nowy test, który sprawdza, co widać, rozwija sekcję stuknięciem w nagłówek (`openSec`).
-**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B80): bramka na niby z kolejką jak
+**Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B90): bramka na niby z kolejką jak
 prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
 żadna wiadomość ze wszystkich scenariuszy nie poszła do grupy.
 
@@ -827,7 +832,13 @@ i podgląd zawsze do kontaktu; nagłówek bez 🧪, w dzienniku „do Grafiku:")
 produkcji, POST na adres wdrożenia testowego, bez tokenu; test z ważnym sygnałem nie rusza kolejki, „Sprawdź teraz" odmawia;
 podróbka, śmieci, inny token, sygnał sprzed 15 min, spóźniony „pracuję" po „koniec" — odrzucone; produkcja nie przyjmuje;
 „koniec" i wygaśnięcie — test przejmuje kolejkę i doczytuje historię; aplikacja testowa nie odpowiada — przebieg produkcji
-idzie dalej, błąd w panelu), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
+idzie dalej, błąd w panelu), B87–B90 poprawki po review PR #8 (B87 wiadomość odrzucona przez bramkę albo zatrzymana sufitem
+nie dostaje znacznika i idzie w następnym przebiegu, „nowe osoby" nie giną, nowa ankieta wraca do kolejki; B88 ankieta poznana tylko
+z głosu i bez dat — bez dni, przy limicie wypada pierwsza; B89 błąd arkusza bez szczegółów w składzie, nazwa-numer telefonu jako
+„#N" także w zapisanej liście; B90 helperTick najwyżej raz na 5 min, historia czatu tylko dla dni z wiadomości tej pory; w B76 —
+daty ankiety w środku tygodnia, dni po przyjściu ankiety poznanej z głosu, głos z pełnym stanem bez fałszywego powiązania adresów;
+w B69 — sekret kluczy raz na wykonanie, karta sprzed 27.10 nie kasuje kontaktu; w B70 — data z godziną w `noPhones_`; S147b —
+pytanie przy zmianie grupy i włączeniu z „gotowymi"), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy

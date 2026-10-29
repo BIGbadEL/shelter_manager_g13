@@ -3454,11 +3454,15 @@
       const f = readHelperForm();
       const problem = helperProblem(f, h.configured);   // od razu: zapis jest w RETRIABLE (jak ankieta)
       if(problem){ toast(problem); return; }
-      // funkcja, która od tego zapisu zacznie pisać do całej grupy — najpierw pytanie (co pójdzie, widać w podglądzie)
-      const was = (h.settings && h.settings.ready) || {};
-      const added = HELPER_READY.filter(k => f.ready[k] && !was[k]);
-      if(added.length && !ask('Do grupy „' + (f.chatName || 'Grafik') + '" — do wszystkich jej członków — zaczną iść: '
-        + added.map(k => HELPER_LABEL[k]).join(', ') + '.\nTekst jak w podglądzie: imiona z kontaktów bota i z „Imiona", klasy 🟣 🟠 🌱, wypisani. Zapisać?')) return;
+      // zapis, po którym coś zaczyna pisać do grupy — nowa funkcja „gotowa", „gotowe" do innej grupy albo włączenie pomocnika
+      // z zapisanymi „gotowymi" (review PR #8: zmiana grupy na ogłoszenia społeczności szła bez pytania) — najpierw pytanie
+      // z grupą i całą listą (co pójdzie, widać w podglądzie)
+      const saved = h.settings || {}, was = saved.ready || {};
+      const ready = HELPER_READY.filter(k => f.ready[k]);
+      const added = ready.filter(k => !was[k]);
+      const starts = added.length || (ready.length && (f.chatId !== saved.chatId || (f.enabled && !saved.enabled)));
+      if(starts && !ask('Do grupy „' + (f.chatName || 'Grafik') + '" — do wszystkich jej członków — zaczną iść: '
+        + ready.map(k => HELPER_LABEL[k]).join(', ') + '.\nTekst jak w podglądzie: imiona z kontaktów bota i z „Imiona", klasy 🟣 🟠 🌱, wypisani. Zapisać?')) return;
       enqueue('setHelperSettings',[f,state.pin],{key:'helper',reconcile:res=>{
         applyHelperPanel(res);
         state.helperDraft = null;

@@ -15,7 +15,7 @@ i test"). Funkcje, które się nie sprawdzą, wyłącza się pojedynczo w panelu
 24.10.2026).
 
 Kod: `Helper.gs` (wejście sygnału — `doPost` w `WebApp.gs`). Panel: sekcje „Pomocnik Grafiku — produkcja" i „— test"
-(działa sekcja tego środowiska, druga jest wyszarzona) i „Członkowie". Testy: B74–B86 (`tests/helper.js`), S145–S147
+(działa sekcja tego środowiska, druga jest wyszarzona) i „Członkowie". Testy: B74–B90 (`tests/helper.js`), S145–S147b
 (`tests/scenarios21.js`), T8 (`tests/tooling.js`).
 
 ## Skąd ten pomysł — co się dzieje w „Grafiku"
@@ -119,14 +119,29 @@ zmieniają), B78, B79, B82. **Nie przywracać bez decyzji właściciela.**
   (`incomingWebhook`), o ankietach (`pollMessageWebhook`), o wiadomościach wysłanych z API i z telefonu
   (`outgoingAPIMessageWebhook`, `outgoingMessageWebhook` — bez nich nie ma powiadomień o ankietach) i **pusty
   adres webhooka** (inaczej `receiveNotification` daje 400).
-- **Głosy** (`pollUpdateMessage`): dokumentacja mówi, że powiadomienie dotyczy jednej osoby. Pomocnik bierze
-  z niego to, co pewne: jedna osoba w odpowiedziach = jej aktualne wybory; nikt = ta osoba wycofała wszystko;
-  dwie i więcej = pełny stan ankiety. Numer głosującego bywa w innym formacie niż numer nadawcy (`@lid`
-  zamiast `@c.us`) — pomocnik zapamiętuje to powiązanie (`alias`).
+- **Głosy** (`pollUpdateMessage`): dokumentacja mówi, że powiadomienie dotyczy jednej osoby, ale czy nie niesie pełnego
+  stanu ankiety, nie sprawdziliśmy (niżej, „Do sprawdzenia", punkt 3). Pomocnik bierze z niego to, co pewne przy obu
+  (review PR #8, nr 5; decyzja właściciela 28.10 — poprawka od razu, nie po sprawdzeniu): nikt w odpowiedziach = nadawca
+  wycofał wszystko; dwie osoby i więcej = pełny stan ankiety; **jedna osoba** = sam nadawca — ten sam adres albo jego drugi
+  adres (`@lid` zamiast `@c.us`; pomocnik zapamiętuje to powiązanie, `alias`), a gdy to nie może być on — pełny stan
+  (nadawca wycofał wszystko, został jeden głos kogoś innego; pozostałym głosy zdjęte). **Drugi adres nadawcy** to tylko
+  adres innego rodzaju (`@lid` ↔ `@c.us`), którego nikt inny już nie ma (powiązanie, lista członków), i tylko wtedy, gdy
+  nadawca nie ma jeszcze głosu w tej ankiecie — pod żadnym ze swoich znanych adresów (`helperSelf_`). Dawniej każda jedna
+  osoba inna niż nadawca stawała się jego drugim adresem: przy pełnym stanie wycofanie głosu „sklejało" dwie osoby (imię,
+  klasa, numer osoby — także w wiadomości do „Grafiku"), a głos wycofującego zostawał (B76).
 - **Daty ankiety** z pytania („Grafik 26.10-01.11", „Niedziela 16.08", „Nowy grafik 01-05.07") i odpowiedzi
   (dzień tygodnia, „27.07", „rano/wieczór"); bez dat w pytaniu — tydzień od najbliższego poniedziałku.
   Odpowiedź z dopiskiem („Niedziela - AW", „Warszawski dzień zwierząt") liczy się osobno, nie do składu dnia;
-  „Nie mogę" — nigdzie.
+  „Nie mogę" — nigdzie. **„Daty nie pasują"** tylko wtedy, gdy zakres skończył się przed dniem wysłania ankiety albo
+  zaczyna się po spodziewanym tygodniu (albo jest daleko od dnia wysłania — pomyłka w pytaniu); ankieta w środku tygodnia
+  na bieżący weekend („26.06 - 28.06" w czwartek) jest w porządku (review PR #8, nr 4; B76).
+- **Ankieta poznana najpierw z głosu** (pierwszy głos przyszedł przed samą ankietą — np. sprzed włączenia powiadomień)
+  ma dni liczone od dnia głosu; gdy przyjdzie sama ankieta (kolejka albo historia czatu), dni i daty liczą się od nowa
+  od dnia jej wysłania (numery odpowiedzi w głosach zostają ważne). **Poznana tylko z głosu i bez dat w pytaniu nie ma
+  dni wcale** (`nodays`), dopóki nie przyjdzie sama: dni od dnia głosu byłyby zgadywaniem — spóźniony głos w dawnej
+  „Weekend bez AW" przejmował dni bieżącej ankiety, a skład soboty pokazywał osoby z dawnej ankiety (review PR #8, nr 8;
+  decyzja właściciela 28.10 — wariant „bez dni"). Ponad limit ankiet (`HELPER_LIMITS.POLLS`) wypadają najpierw takie,
+  potem najstarsze — bieżąca zostaje (B88).
 - **Bez tych powiadomień pomocnik jest ślepy** — tak było na teście 24–25.10.2026: wszystkie cztery wyłączone, kolejka
   pusta, a pomocnik pisał „W Grafiku nie ma jeszcze ankiety", choć ankieta wyszła o 10:13 i ludzie głosowali od rana.
   Dlatego sprawdza ustawienia bramki (`getSettings`) przy każdym przebiegu, dopóki czegoś brakuje (potem co
@@ -134,8 +149,11 @@ zmieniają), B78, B79, B82. **Nie przywracać bez decyzji właściciela.**
   pokazuje to samo.
 - **Bramka nie oddaje bieżącego wyniku ankiety** (`getMessage` daje ankietę bez głosów) — głosy są tylko jako zdarzenia
   osób, w kolejce i w historii czatu (`getChatHistory`), i tylko te, które przyszły przy włączonych powiadomieniach.
-  Pomocnik **czyta historię czatu** zaraz po włączeniu powiadomień, przy „Sprawdź teraz" i przed wiadomością o swojej
-  porze, gdy na któryś z najbliższych dni nie zna ankiety albo zna ją częściowo (najwyżej co `HELPER_HISTORY_GAP_H` h).
+  Pomocnik **czyta historię czatu** zaraz po włączeniu powiadomień, po przerwie (niżej, „Produkcja i test"), przy
+  „Sprawdź teraz" i przed wiadomością o swojej porze, gdy na dzień, o którym ona mówi, nie zna ankiety albo zna ją
+  częściowo (najwyżej co `HELPER_HISTORY_GAP_H` h): rano — dziś, wieczorem — jutro, w dni przeglądu tygodnia — 7 dni.
+  Dawniej zawsze 8 najbliższych dni, a ankiety na następny tydzień do niedzieli nie ma — historia szła co rano i co
+  wieczór także przy pełnej ankiecie (review PR #8, nr 12; B90).
   Ankietę wysłaną przez bota historia ma zawsze (wiadomość z API). **Ankieta sprzed włączenia powiadomień jest niepełna**:
   „co najmniej N os.", „≥" w przeglądzie i od kiedy pomocnik zna głosy; pełny obraz — od następnej ankiety (B81, B82).
   Głos to stan osoby z czasem (`vt`): starszy niż już znany nic nie zmienia, więc historia i kolejka mogą podawać te same
@@ -187,7 +205,12 @@ właściciela 27.10): nie idą do `getData`, do panelu (PIN) ani do tekstu wiado
 i numery osób „#17"; numer telefonu wychodzi tylko w karcie kontaktu na WhatsAppa właściciela. **Wybór kontaktu w panelu**
 (lista dnia i pomocnik — `getDayReportContacts`) też bez numeru (27.10, decyzja właściciela): pozycja to nazwa, a wartość — klucz
 kontaktu (`contactKey_`, HMAC z sekretem projektu); zapisany odbiorca w panelu to klucz i nazwa, adres zostaje na serwerze.
-Tekst błędów bramki, który idzie do panelu, ma numery zamaskowane (`noPhones_`).
+Tekst błędów bramki, który idzie do panelu, ma numery zamaskowane (`noPhones_`; daty — także z godziną — zostają).
+**Nazwa z WhatsAppa bywa numerem telefonu** („+48 600 111 222" jako nazwa profilu) — `helperShort_` maskuje numery w każdej
+nazwie (nadawca, lista członków, udostępniony kontakt), a sam numer to brak nazwy: osoba jest wtedy „#17"; nazwy zapisane
+wcześniej — maskowane przy odczycie (review PR #8, nr 10; B89). **Szczegóły błędów nie idą do wiadomości** (skład „gotowy" czyta
+cały „Grafik"): gdy arkusz psów nie odpowiada, w składzie jest „🐕 nie udało się odczytać psów", a tekst Google (z identyfikatorem
+arkusza) — w dzienniku pomocnika (review PR #8, nr 6).
 Tokeny bramki — jak dotąd tylko we właściwościach (`greenCall_` wycina je z błędów); sygnał produkcji dla testu ma podpis
 zrobiony tokenem, nie token. **Wiadomość funkcji „gotowej" czyta cała grupa** — imiona w niej to nazwy z kontaktów telefonu bota
 i z pola „Imiona", więc nazwy kontaktów powinny nadawać się do „Grafiku" (bez prywatnych dopisków).
@@ -196,13 +219,20 @@ i z pola „Imiona", więc nazwy kontaktów powinny nadawać się do „Grafiku"
 
 - Wiadomość do kontaktu prywatnego z ustawień (B74); do „Grafiku" tylko funkcja „gotowa", tylko na produkcji, tylko do
   grupy z ustawień (`helperDest_` sprawdza to przy każdej wysyłce, B85). Najwyżej `HELPER_SEND_MAX` na przebieg
-  i `HELPER_DAY_MAX` na dzień (wspólnie). Karta kontaktu — tylko do kontaktu, osobno najwyżej `HELPER_CARD_MAX` na dzień.
+  i `HELPER_DAY_MAX` na dzień (wspólnie, z odpowiedziami na pytania). Karta kontaktu — tylko do kontaktu, osobno najwyżej
+  `HELPER_CARD_MAX` na dzień. **Wiadomość zatrzymana sufitem albo odrzucona przez bramkę nie dostaje znacznika „wysłana"**
+  i idzie w następnym przebiegu (nowa ankieta wraca do kolejki); „nowe osoby" zmieniają punkt odniesienia składu grupy
+  dopiero po wysłaniu — dawniej taka wiadomość przepadała na cały dzień, a zmiana składu na zawsze (review PR #8, nr 2–3; B87).
+  Nieznany wynik (bramka nie odpowiedziała — mogła wysłać) — znacznik jest, jak dotąd.
 - Pracuje jeden pomocnik naraz — sygnał produkcji, podpisany tokenem bramki (B86, wyżej).
 - Numery osób nadają dwa miejsca (przebieg i „Pobierz członków"), więc zawsze pod blokadą skryptu ze świeżym odczytem
   (`helperNrsAdd_`); przebieg bierze ją na chwilę i tylko wtedy, gdy ktoś nowy nie ma numeru (bez flush i pamięci podręcznej).
 - Jeden przebieg naraz (`helperBusy`, `HELPER_BUSY_MS`) — wyzwalacz i „Sprawdź teraz" się nie dublują.
 - `helperTick` jest publiczne (wyzwalacz), więc nic nie przyjmuje: przebieg wywołany z zewnątrz robi to samo
-  co wyzwalacz, a raporty mają znaczniki „wysłany" — nie da się nim zasypać właściciela wiadomościami.
+  co wyzwalacz, a raporty mają znaczniki „wysłany" — nie da się nim zasypać właściciela wiadomościami. Rusza najwcześniej
+  `HELPER_TICK_GAP_MIN` (5) minut po końcu poprzedniego przebiegu (decyzja właściciela 28.10): wołane w pętli robiłoby
+  przebieg co kilka sekund i zjadało dzienne limity konta (połączenia z bramką, zapisy właściwości), od których zależą
+  ankieta i lista dnia (review PR #8, nr 7; B90). „Sprawdź teraz" (PIN) progu nie ma.
 - Błąd bramki nie wychodzi z wyzwalacza (inaczej mail od Google co 10 minut) — zostaje w dzienniku pomocnika
   w panelu.
 - Pomocnik nie pisze do arkusza i nie bierze blokady aplikacji na czas wywołań bramki.
@@ -212,7 +242,8 @@ i z pola „Imiona", więc nazwy kontaktów powinny nadawać się do „Grafiku"
 1. Czy po włączeniu powiadomień w konsoli przychodzą głosy na ankietę wysłaną z produkcji (`outgoingAPIMessageReceived`
    z ankietą, potem `pollUpdateMessage`) — „stan" w prywatnym czacie albo dziennik pomocnika w panelu.
 2. W jakim formacie przychodzą numery głosujących (`@c.us` czy `@lid`) i czy nazwy osób się zgadzają.
-3. Czy pełna lista głosujących w powiadomieniu to cały stan ankiety, czy jedna osoba.
+3. Czy pełna lista głosujących w powiadomieniu to cały stan ankiety, czy jedna osoba. Kod od 28.10 radzi sobie z oboma
+   (wyżej, „Głosy"); odpowiedź mówi, czy reguła „drugiego adresu" nie jest za ostrożna albo za śmiała.
 4. Które wiadomości są pomocne, a które to szum — wyłączyć w panelu.
 5. Numer osoby i karta (27.10, @46): „Pobierz członków" — czy wszyscy mają numer i 📲 (brak 📲 = grupa podała konto `@lid`
    bez kontaktu w telefonie bota); 📲 i „kto 17" — czy karta dochodzi z nazwą „Imię #17" i otwiera właściwą osobę;

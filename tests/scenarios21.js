@@ -371,6 +371,45 @@ function S147(){
   check('bez błędów', [app, wait, pd, plain, failed].every(a => a.errors.length === 0), [app, wait, pd, plain, failed].map(a => a.errors.join('; ')).join(' | '));
 }
 
+/* ---------- S147b: pytanie także przy zmianie grupy i przy włączeniu, gdy coś jest już „gotowe" (review PR #8, nr 1) ---------- */
+function S147b(){
+  console.log('S147b: pomocnik na produkcji — zapis, po którym „gotowe" zaczną pisać do innej grupy albo w ogóle zaczną pisać (włączenie), najpierw pyta');
+  const COMMUNITY = '120363000000000009@g.us';
+  const PROD = (o, s) => HELPER(Object.assign({env: 'prod'}, o), s);
+  const saved = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true, ready: Object.assign({}, NOT_READY, {evening: true})};
+  const app = openPanel(PROD({trigger: true}, saved));
+  openSec(app, 'botProd');
+  app.click('[data-act="pollChats"]');
+  respondTo(app, 'getPollChats', [{id: GRAFIK, name: 'Grafik'}, {id: COMMUNITY, name: 'G13'}]);
+  fill(app, {'#helperChat': COMMUNITY});
+  let asked = '';
+  app.window.confirm = m => { asked = m; return false; };
+  app.click('[data-act="helperSave"]');
+  check('zmiana grupy przy funkcji „gotowej" — pytanie z nową grupą i listą „gotowych"; „Anuluj" — nic nie idzie',
+    /Do grupy „G13"/.test(asked) && /skład na jutro — wieczorem/.test(asked) && !calls(app, 'setHelperSettings').length, asked);
+  app.window.confirm = () => true;
+  app.click('[data-act="helperSave"]');
+  check('...„OK" — zapis z nową grupą', !!lastCall(app, 'setHelperSettings') && lastCall(app, 'setHelperSettings').args[0].chatId === COMMUNITY);
+
+  const off = openPanel(PROD({trigger: false}, Object.assign({}, saved, {enabled: false})));
+  openSec(off, 'botProd');
+  fill(off, {'#helperEnabled': true});
+  asked = '';
+  off.window.confirm = m => { asked = m; return false; };
+  off.click('[data-act="helperSave"]');
+  check('włączenie pomocnika z zapisanymi „gotowymi" — pytanie; „Anuluj" — nic nie idzie', /Do grupy „Grafik"/.test(asked) && /skład na jutro — wieczorem/.test(asked)
+    && !calls(off, 'setHelperSettings').length, asked);
+
+  const same = openPanel(PROD({trigger: true}, saved));
+  openSec(same, 'botProd');
+  asked = '';
+  same.window.confirm = m => { asked = m; return true; };
+  fill(same, {'#helperMin': '4'});
+  same.click('[data-act="helperSave"]');
+  check('ta sama grupa, pomocnik był włączony — zapis bez pytania', asked === '' && !!lastCall(same, 'setHelperSettings') && lastCall(same, 'setHelperSettings').args[0].min === 4);
+  check('bez błędów', [app, off, same].every(a => a.errors.length === 0), [app, off, same].map(a => a.errors.join('; ')).join(' | '));
+}
+
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */
 async function S145c(){
   console.log('S145c: pomocnik — odpowiedź nie przyszła (google.script.run nie oddzwonił): po T.helperWait przyciski wracają');
@@ -384,7 +423,7 @@ async function S145c(){
 }
 
 (async () => {
-  for(const s of [S144, S145, S145b, S145d, S146, S147, S145c]){
+  for(const s of [S144, S145, S145b, S145d, S146, S147, S147b, S145c]){
     try{ await s(); }
     catch(e){ failures++; console.log('  FAIL wyjątek w teście | ' + (e && e.stack || e)); }
   }

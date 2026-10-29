@@ -2384,6 +2384,29 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   check('klucz z sekretem projektu — ten sam kontakt w innym projekcie ma inny klucz (z numeru klucza nie policzysz)',
     other.api.getDayReportContacts(TEST_PIN)[0].key !== list[0].key && env.props.keySecret.length > 30
     && JSON.stringify(env.api.getDiagnostics(TEST_PIN)).indexOf(env.props.keySecret) < 0);
+  // sekret czytany raz na wykonanie (review PR #8, nr 9): dawniej osobne wywołanie usługi na każdy kontakt — przy 300 kontaktach
+  // zapis z kolejki potrafił przekroczyć watchdog (12 s)
+  const many = reportEnv({ on: false });
+  const big = [];
+  for (let i = 0; i < 50; i++) big.push({ id: '486001' + String(i).padStart(5, '0') + '@c.us', name: 'K' + i, contactName: 'Kontakt ' + String(i).padStart(2, '0'), type: 'user' });
+  many.http.handler = url => /\/getContacts\//.test(url) ? { code: 200, body: JSON.stringify(big) } : { code: 404, body: '' };
+  many.api.getDayReportContacts(TEST_PIN);                     // sekret powstaje
+  let secretGets = 0;
+  many.failProps((k, op) => { if (k === 'keySecret' && op === 'get') secretGets++; return false; });
+  const keys = many.api.getDayReportContacts(TEST_PIN), fromPick = secretGets;
+  many.api.setDayReportSettings({ enabled: false, chatKey: keys[49].key, chatName: 'Kontakt 49' }, TEST_PIN);
+  many.failProps(null);
+  check('sekret kluczy — najwyżej raz na wykonanie: „Pobierz kontakty" (50 kontaktów) i zapis po kluczu', fromPick <= 1 && secretGets - fromPick <= 1
+    && JSON.parse(many.props.dayReport).chatId === big[49].id, fromPick + ' / ' + (secretGets - fromPick));
+  // karta otwarta jeszcze z 1.4 w chwili wdrożenia nie zna klucza: pusty `chatId` od niej to „nie znam", nie „wyczyść"
+  // (review PR #8, nr 11; w 1.4 nie dało się wyczyścić wybranego kontaktu — lista nie ma wtedy pustej pozycji)
+  const keep = reportEnv();
+  keep.api.setDayReportSettings({ enabled: false, chatId: '', chatName: '' }, TEST_PIN);
+  const kept = JSON.parse(keep.props.dayReport);
+  check('karta sprzed 27.10 bez klucza: pusty kontakt nie kasuje zapisanego, włącznik się zapisuje', kept.chatId === ANIA && kept.chatName === 'Ania prowadząca'
+    && kept.enabled === false, JSON.stringify(kept));
+  keep.api.setDayReportSettings({ enabled: false, chatKey: '', chatName: '' }, TEST_PIN);
+  check('...karta z kluczem i pustym kontaktem — kontakt zdjęty jak dotąd', JSON.parse(keep.props.dayReport).chatId === '');
 
   // wyłączone (kontakt zapisany): czyszczenie nic nie wysyła
   env.api.setDayReportSettings({ enabled: false, chatId: ANIA, chatName: 'Ania prowadząca' }, TEST_PIN);
@@ -2472,6 +2495,11 @@ const LIST_0408 = 'Dzień dobry,\nPrzesyłam listę spacerową z 04.08.2026 z gr
   check('...numer z odpowiedzi bramki zamaskowany — w panelu i w komunikacie z „Wyślij listę" (daty zostają)', /zły numer: …, …/.test(p4.last.msg)
     && /400/.test(e4err) && /zły numer: …, …/.test(e4err) && !/600100200|600 100 200/.test(p4.last.msg + e4err)
     && e4.api.noPhones_('2026-10-26, 600-100-200') === '2026-10-26, …', p4.last.msg + ' | ' + e4err);
+  // data z godziną to nie numer telefonu (review PR #8, nr 13); numer zaraz po dacie — dalej zamaskowany
+  const ts13 = 'Bramka: błąd 500 (at 2026-10-26 18:40:05)';
+  check('data z godziną zostaje, numery nie: „+48 600 111 222", „48600111222", „…@c.us", numer po dacie', e4.api.noPhones_(ts13) === ts13
+    && ['+48 600 111 222', '48600111222', '48600111222@c.us'].every(x => e4.api.noPhones_('nr ' + x) === 'nr …')
+    && e4.api.noPhones_('2026-10-26 48600111222') === '2026-10-26 …', e4.api.noPhones_(ts13) + ' | ' + e4.api.noPhones_('2026-10-26 48600111222'));
 
   // limit planu Developer (3 czaty w miesiącu) — bramka odpowiada 466: po ludzku, pewne „nie wyszła"
   const e6 = reportEnv({ send: () => ({ code: 466, body: JSON.stringify({ correspondentsStatus: { used: 3, total: 3 } }) }) });
