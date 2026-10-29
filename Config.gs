@@ -85,6 +85,21 @@ const TICK_SOON_DAYS = 7;
 const TICK_LIMITS = { t: 52, m: 12 };
 
 /**
+ * Raport do schroniska (1.6, prośba właściciela 29.10) — formularz Microsoft Forms schroniska otwierany z gotową datą
+ * i psami (opis w Shelter.gs). SHELTER_HOST — adres formularzy (stamtąd definicja i strona formularza);
+ * SHELTER_KEEP_DAYS — jak długo pamiętamy, kto otwierał raport dnia; SHELTER_RECENT_DAYS — tyle ostatnich dni tej pamięci
+ * jedzie w getData (starsze — z minionym dniem, getHistoryDays); SHELTER_REFRESH_H — definicja starsza niż tyle godzin
+ * odświeża się przy nocnym czyszczeniu; SHELTER_KEYS_MAX — najwięcej psów zapamiętanych w raporcie jednego dnia.
+ * SHELTER_LIMITS: pozycje na liście psów w formularzu (ile, jak długie), długość linku z panelu, bajty jednej właściwości.
+ */
+const SHELTER_HOST = 'https://forms.cloud.microsoft';
+const SHELTER_KEEP_DAYS = 62;
+const SHELTER_RECENT_DAYS = 14;
+const SHELTER_REFRESH_H = 20;
+const SHELTER_KEYS_MAX = 120;
+const SHELTER_LIMITS = { CHOICES: 300, CHOICE: 200, LINK: 500, BYTES: 8000 };
+
+/**
  * Psy innych grup (1.3). Pomagamy wyprowadzać psy innych grup wolontariuszy, a żeby zapisy szły
  * przez aplikację, te psy stoją w naszym katalogu. Na liście dnia to osobna lista pod naszą,
  * sortowana osobno (SORTING.md). Kolumna `grupa_psa`: pusta = nasza grupa (HOME_TEAM) — tak

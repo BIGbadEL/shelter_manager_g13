@@ -6,7 +6,7 @@ const vm = require('vm');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs','Diag.gs','Helper.gs'];
+const FILES = ['Config.gs','Utils.gs','Settings.gs','Dogs.gs','Tasks.gs','History.gs','Setup.gs','WebApp.gs','Poll.gs','Diag.gs','Helper.gs','Shelter.gs'];
 
 /* ---------- atrapa arkusza ---------- */
 let sheetSeq = 0;
@@ -137,7 +137,7 @@ function makeContext(opts){
   });
   const triggers = [];
   // UrlFetchApp: każde wywołanie trafia do `http.calls`, a odpowiada `http.handler(url, opts)` —
-  // {code, body} albo wyjątek (awaria sieci). Bez handlera: 500, żeby niezamierzone wywołanie było widać.
+  // {code, body, headers} albo wyjątek (awaria sieci). Bez handlera: 500, żeby niezamierzone wywołanie było widać.
   const http = { calls: [], handler: null };
   const consent = { granted: [], asked: [] };
 
@@ -270,7 +270,8 @@ function makeContext(opts){
       fetch(url, opts){
         http.calls.push({ url, opts: opts || {} });
         const r = http.handler ? http.handler(url, opts || {}) : { code: 500, body: '' };
-        return { getResponseCode: () => r.code, getContentText: () => r.body };
+        return { getResponseCode: () => r.code, getContentText: () => r.body,
+                 getHeaders: () => Object.assign({}, r.headers), getAllHeaders: () => Object.assign({}, r.headers) };
       },
     },
   };
@@ -298,13 +299,17 @@ function makeContext(opts){
                           helperRange_, helperOptDay_, helperLoad_,
                           getHelperMembers, setHelperRole, sendHelperContact, helperNr_, helperWho_, helperNameMap_, noPhones_,
                           doPost, helperWaits_,
-                          notesOf_, noteText_, parseNotes_, notesCell_, setTickDone, addPeriod_, tickEvery_, tickMethod_ };
+                          notesOf_, noteText_, parseNotes_, notesCell_, setTickDone, addPeriod_, tickEvery_, tickMethod_,
+                          setShelterForm, checkShelterForm, shelterReportOpened, shelterLink_, shelterNightly_, shelterPanel_,
+                          shelterForClient_, shelterOpenedIn_ };
     ;globalThis.__conf = { DOG, DOG_WIDTH, DOG_HEADERS, HISTORY_DAYS, WALK_HEADERS, MAX_DAYS_AHEAD,
                            VOLUNTEER_COLORS, VOLUNTEER_MAX, VOLUNTEER_DAYS, WALK, WALKS_BACKUP, DEFAULT_POLL, POLL_LIMITS,
                            DIAG_SLOW_MS, DIAG_KEEP, DIAG_BYTES, DIAG_REPORT_MAX, PROP_DIAG_SERVER, PROP_DIAG_PHONES,
                            CACHE_PREFIX, CACHE_KEY, DEFAULT_HELPER, HELPER_LIMITS, HELPER_FEATURES, HELPER_SEND_MAX, HELPER_DAY_MAX, HELPER_CARD_MAX,
                            HELPER_TICK_MIN, HELPER_BYTES, HELPER_READY, HELPER_LEASE_MIN, HELPER_STALE_MIN, HELPER_TEST_APP,
-                           NOTES_MAX, TICK_SOON_DAYS, TICK_LIMITS, TICK_COLS };
+                           NOTES_MAX, TICK_SOON_DAYS, TICK_LIMITS, TICK_COLS,
+                           SHELTER_HOST, SHELTER_PAGE, SHELTER_KEEP_DAYS, SHELTER_RECENT_DAYS, SHELTER_REFRESH_H, SHELTER_KEYS_MAX,
+                           SHELTER_LIMITS, SHELTER_CONSENT, PROP_SHELTER_FORM, PROP_SHELTER_OPENED };
     // każde wywołanie z przeglądarki to w Apps Script nowe wykonanie: zmienne globalne od zera
     ;globalThis.__newExecution = () => { walksLayoutOk_ = false; propsMemo_ = null; lockDepth_ = 0;
                                          lockKeepsDogs_ = false; volLock_ = null; };

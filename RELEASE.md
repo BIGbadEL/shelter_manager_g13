@@ -78,6 +78,8 @@ Kolejność:
 - **Nie wolno:**
   - wysyłać nic WhatsAppem (limit bramki: 3 czaty w miesiącu na instancję wspólną z produkcją);
   - wysyłać maili;
+  - **wysyłać formularza schroniska** (od 1.6, raport do schroniska): to prawdziwy formularz — „Prześlij" zgłasza
+    spacery schronisku. Wolno go otworzyć i obejrzeć (data, zaznaczone psy), potem zamknąć kartę;
   - zmieniać godziny czyszczenia;
   - zapisywać ustawień panelu (wolno najwyżej zapis próbny z przywróceniem).
 - Okienka przeglądarki (`confirm`) wstrzymują rozszerzenie. Przyciski z pytaniem („Usuń psa", „Usuń
@@ -109,6 +111,10 @@ Kolejność:
 - [ ] **Notatki i 💊 odkleszczanie** (od 1.6): przy psie kilka notatek (każda tylko na dniach do swojego terminu);
   💊 przypomnienie tydzień przed terminem (na górze, nad 📌); w dniu terminu zadanie „💊 Odkleszczanie" — odhaczenie
   (przypomnienie znika, w katalogu następny termin = dziś + okres) i cofnięcie tego samego dnia.
+- [ ] **📝 Raport do schroniska** (od 1.6; formularz ustawiony w panelu): pod listą dnia po „Wrócił ✓" — liczba psów,
+  psy spoza formularza wypisane (inna grupa, bez numeru); link otwiera formularz w nowej karcie z datą i zaznaczonymi
+  psami — **bez „Prześlij"**, karta zamknięta; po powrocie „✓ Raport otwierany dziś o …", po kolejnym „Wrócił ✓" —
+  „Doślij nowe". To samo w minionym dniu (nad mailem). Otwarcie zapisuje się na serwerze — druga karta widzi je po ~15 s.
 - [ ] **Miniony dzień:** lista z numerami psów, spacery grupowe, „📋 Skopiuj treść" (bez wysyłania maila).
 - [ ] **Dwie karty:** zmiana z jednej widać w drugiej najpóźniej po ~15 s.
 - [ ] **„Co nowego?":** lista otwiera się i zamyka; pasek „Nowa wersja" znika na dobre.
@@ -127,6 +133,8 @@ PIN wpisuje właściciel.
 - [ ] **Panel** (od 1.5 w zwijanych sekcjach — rozwinąć stuknięciem w nagłówek, drugie zwija):
   - Diagnostyka: liczniki, Dziennik spowolnień;
   - Lista i e-mail: ustawienia maila (bez zapisu);
+  - Raport do schroniska — formularz (od 1.6): link, „sprawdzony …", porównanie formularza z katalogiem; „Sprawdź
+    formularz" (tylko odczyt formularza — wolno);
   - WhatsApp: stan konta, bez wysyłek;
   - pomocnik Grafiku (od 1.5): na teście sekcja „— produkcja" wyszarzona, „— test" działa — stan (czeka na produkcję albo
     pracuje), „Sprawdź bramkę", podgląd „jutro" / „tydzień" — bez „Wyślij mi" i bez zapisu; od 1.6 podgląd „dziś"

@@ -334,6 +334,20 @@
     border:2px solid var(--forest);}
   .mailbox{display:block;width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;
     background:#fff;color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.45;}
+  /* raport do schroniska (1.6): ramka pod listą bieżącego dnia i nad mailem w minionym dniu. Przycisk to link do formularza —
+     pełna szerokość, napis może zejść do drugiej linijki (liczba psów); „jeszcze raz" — z ramką, jak zapasowe „Skopiuj" */
+  .shelterbox{margin:16px 0 6px;padding:12px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);}
+  .shelterbox:empty{display:none;}
+  .shelter-go{display:block;width:100%;padding:12px 14px;background:var(--forest);color:#fff;font-size:15px;
+    text-align:center;text-decoration:none;white-space:normal;}
+  .shelter-go + .shelter-go{margin-top:8px;}
+  .shelter-go.again{padding:10px 14px;background:transparent;color:var(--forest);font-size:14px;border:2px solid var(--forest);}
+  .shelter-t{font-size:14px;font-weight:800;color:var(--forest);}
+  .shelter-ok{margin-bottom:8px;font-size:13px;font-weight:700;color:var(--forest);line-height:1.45;}
+  .hint.shelter-new{margin:0 0 8px;}
+  .shelter-w{margin-top:8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
+    font-size:12.5px;font-weight:600;line-height:1.45;overflow-wrap:anywhere;}
+  .shelterbox.past{margin:10px 0 0;}               /* miniony dzień: ramka nad mailem, pod napisem „Miniony dzień" */
   /* numer psa przy imieniu — jak „nr 258/26" na kafelku listy dnia */
   .hist-item .nr{color:var(--muted);font-size:12.5px;white-space:nowrap;}
   /* spacer grupowy: blade tło i pasek z prawej w kolorze grupy (--gbg / --gc), jak kafelek grupy
@@ -389,9 +403,9 @@
     font-size:12.5px;font-weight:700;}
   .maildirty.hidden{display:none;}
   /* ankieta tygodniowa na WhatsAppie — te same pola co mail; stan konta bota i ostatnia wysyłka */
-  .polldirty,.reportdirty{margin:-2px 0 8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
+  .polldirty,.reportdirty,.shelterdirty{margin:-2px 0 8px;padding:6px 10px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);
     font-size:12.5px;font-weight:700;}
-  .polldirty.hidden,.reportdirty.hidden{display:none;}
+  .polldirty.hidden,.reportdirty.hidden,.shelterdirty.hidden{display:none;}
   .pollstate{margin-bottom:9px;padding:6px 10px;border-radius:8px;font-size:12.5px;font-weight:700;
     background:var(--warn-bg);color:var(--warn-ink);overflow-wrap:anywhere;}   /* długi adres z błędu nie wychodzi z ramki */
   .pollstate.ok{background:#e2ebe3;color:var(--forest);}

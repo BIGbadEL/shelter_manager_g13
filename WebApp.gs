@@ -100,7 +100,9 @@ function include(filename) {
  *  - `businessDate` — bieżący dzień rezerwacyjny (od godziny resetu, nie od północy),
  *  - `mailTo`, `mailSubject`, `mailTemplate` — mail z listą spacerów dla schroniska (przycisk
  *              w minionym dniu, ustawiany w panelu). Odbiorca jest tu jawny dla każdego z linkiem,
- *              tak jak cała lista psów — to adres schroniska, nie osoby prywatnej.
+ *              tak jak cała lista psów — to adres schroniska, nie osoby prywatnej,
+ *  - `shelterForm` — formularz schroniska do raportu (1.6, Shelter.gs): numer formularza, pytania, lista psów;
+ *              null = bez raportu. `shelterOpened` — kto otwierał raport dnia, ostatnie SHELTER_RECENT_DAYS dni.
  *
  * Pole `walks` (wiersz na psa) zniknęło razem ze starym układem — karta z wersji
  * z datami, ale sprzed spacerów, bez niego wraca do stanu bieżącego dnia z `dogs`.
@@ -169,6 +171,8 @@ function readState_(parts, keep) {
     mailTemplate: mailTemplate_(),
     mailTo: mailTo_(),
     mailSubject: mailSubject_(),
+    shelterForm: shelterForClient_(),
+    shelterOpened: shelterOpenedIn_(addDays_(date, -SHELTER_RECENT_DAYS), date),
   };
   lap('reszta');
   return out;
@@ -183,14 +187,16 @@ function readState_(parts, keep) {
 function getDiagnostics(pin) {
   requirePin_(pin);
   const t = triggerInfo_();
-  let poll = null, dayReport = null, helper = null;
+  let poll = null, dayReport = null, helper = null, shelter = null;
   try { poll = pollPanel_(); } catch (e) { poll = null; }
   try { dayReport = dayReportPanel_(); } catch (e) { dayReport = null; }
   try { helper = helperPanel_(); } catch (e) { helper = null; }
+  try { shelter = shelterPanel_(); } catch (e) { shelter = null; }
   return {
     poll: poll,
     dayReport: dayReport,
     helper: helper,
+    shelter: shelter,
     diag: diagLog_(),
     resetHour: resetHour_(),
     triggerInstalled: t.installed,
@@ -219,6 +225,7 @@ function getHistory() {
  * Minione dni do podglądu (strzałka wstecz), od `from` do `to` włącznie.
  * Zakres przycinamy do dni faktycznie zamkniętych i do dwóch miesięcy naraz —
  * przeglądarka prosi o bloki po dwa tygodnie, więcej nie ma sensu ciągnąć na telefon.
+ * `shelterOpened` — kto otwierał raport tych dni (1.6, Shelter.gs): starsze niż ostatnie dni z getData.
  */
 function getHistoryDays(from, to) {
   if (!isDate_(from) || !isDate_(to)) throw new Error('Nieprawidłowa data');
@@ -226,7 +233,7 @@ function getHistoryDays(from, to) {
   const b = to < lastClosed ? String(to) : lastClosed;
   const floor = addDays_(b, -61);
   const a = from > floor ? String(from) : floor;
-  return { history: a > b ? [] : readHistoryDays_(a, b) };
+  return a > b ? { history: [], shelterOpened: {} } : { history: readHistoryDays_(a, b), shelterOpened: shelterOpenedIn_(a, b) };
 }
 
 function checkPin(pin) {

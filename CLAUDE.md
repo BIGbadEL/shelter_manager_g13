@@ -33,6 +33,7 @@ przy słabym zasięgu. To dyktuje wszystkie decyzje projektowe:
 | `Poll.gs` | WhatsApp (bramka Green API): ankieta tygodniowa (ustawienia, wyzwalacz `sendWeeklyPoll`, wysyłka, panel) i lista dnia do prowadzącej po nocnym czyszczeniu (1.3) |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z krokami (`diagServer_`), wpisy z telefonów (`reportDiag`), do Panelu (`diagLog_`) |
 | `Helper.gs` | pomocnik Grafiku (1.5, faza testów): kolejka powiadomień bramki → ankiety, głosy → wiadomości prywatnie do właściciela, a na produkcji funkcje „gotowe" do „Grafiku" (`helperTick` co 10 min); jeden aktywny (sygnał produkcji dla testu — `doPost` w `WebApp.gs`), panel, pytania w prywatnym czacie |
+| `Shelter.gs` | raport do schroniska (1.6): link do formularza Microsoft Forms z panelu (`setShelterForm`), odczyt i sprawdzenie definicji, odświeżanie (`checkShelterForm`, noc — `shelterNightly_`), pamięć „kto otwierał raport dnia" (`shelterReportOpened`) |
 | `Index.html` / `Styles.html` / `Script.html` | frontend, składany przez `<?!= include(...) ?>` |
 | `tests/` | dwa harnessy + scenariusze (patrz niżej) |
 | `scripts/warmup.js` | otwiera aplikację zaraz po `npm run deploy:*` (nie jedzie do Apps Script) |
@@ -234,6 +235,38 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   zawsze względem dziś („dziś", „jutro", „czw 05.11", „zaległe od 2 dni (wt 27.10)"); zadania odkleszczania przed zwykłymi,
   bez ✕ (usuwa się je razem z metodą). Karta sprzed 1.6 (bez `tick` w `updateDog`) odkleszczania nie rusza. Klient liczy
   termin tą samą arytmetyką co serwer (`addPeriod` = `addPeriod_`: miesiąc — ten sam dzień albo ostatni; S152).
+- **Raport do schroniska** (1.6, prośba właściciela 29.10: schronisko przysłało formularz grupy z wstępnym wypełnianiem;
+  `Shelter.gs`, B101–B106, S153–S158). Formularz Microsoft Forms grupy („Grupa G13"): pytanie o datę i lista psów (wybór
+  wielu) — nasze i psy innych grup, które schronisko tam dopisało (TTB). **„📝 Raport do schroniska" otwiera go z datą
+  i zaznaczonymi psami; „Prześlij" stuka człowiek — serwer niczego do schroniska nie wysyła** (i nie powinien: odpowiedź
+  wysyła osoba). Adres wstępnego wypełnienia (sprawdzony na prawdziwym formularzu 29.10): `…/Pages/ResponsePage.aspx?id=<form>&
+  <pytanie daty>=rrrr-mm-dd&<pytanie psów>=<encodeURIComponent(JSON z DOKŁADNĄ treścią pozycji)>` — pozycja z tabulatorem
+  („Draco\t0552/26") musi zostać z tabulatorem, inaczej się nie zaznaczy. **Definicję formularza czyta serwer** (`shelterFetch_`:
+  `ResponsePageStartup.ashx` — to samo, co pobiera formularz przy otwarciu, bez logowania; przeglądarka nie może — inna domena),
+  sprawdza (`shelterDef_`: `AllowPrefill`, pytanie o samą datę, lista z wyborem wielu, numery pytań; zły numer formularza
+  Microsoft oddaje jako 200 z błędem 1001) i trzyma we właściwości `shelterForm` {link, id, title, dateQ, dogQ, choices,
+  extra, active, at, t, err, errAt}. Link z panelu (`setShelterForm(link, pin)` — pełny albo krótki `…/e/…`, za
+  przekierowaniem tylko po hostach Microsoft Forms; `shelterLink_` = `shelterLinkProblem` w przeglądarce, S158); zapis dopiero
+  po udanym odczycie — zły link nie zastąpi działającego. Odświeżanie: `checkShelterForm(pin)` i noc (`shelterNightly_`
+  w `endOfDay`, po blokadzie, definicja starsza niż `SHELTER_REFRESH_H`); odczyt bez blokady, zapis pod blokadą ze świeżym
+  odczytem — formularz zmieniony w międzyczasie zostaje; nieudane zostawia ostatnią dobrą definicję z `err` (panel), nigdy
+  nie rzuca w nocy. Oba zapisy panelu idą **wprost, nie przez kolejkę i nie w RETRIABLE** (odczyt formularza to sekundy,
+  błąd ma przyjść od razu — `shelterCall`, `T.shelterWait`). **Brak zgody na UrlFetchApp** (projekt bez `authorizeWhatsApp()`)
+  = `SHELTER_CONSENT` z instrukcją. Link do formularza NIE trafia do repozytorium (każdy z nim może wysłać odpowiedź) —
+  testy mają wymyślony numer. `getData.shelterForm` = {page, id, title, dateQ, dogQ, choices, extra, active} albo null.
+  **Psa z pozycją łączy numer** (`shelterKey` w przeglądarce: ostatnie „liczba/rok", bez zer z przodu, rok dwucyfrowy —
+  „0552/26" = „552/26" = „552/2026"; bez wyrażeń wstecz — stare iPhone'y). Do raportu idą psy, które tego dnia wyszły Z NAMI
+  (`walked`; spacer `team` — nie) i mają jedną pozycję w formularzu, w kolejności formularza; poza nim (ramka mówi które):
+  numeru nie ma w formularzu (nasze — „powiedz prowadzącej", innych grup — z grupą), bez numeru, numer na kilku pozycjach
+  (nie zgadujemy). Miniony dzień — z wpisów Historii (grupa psa z katalogu po numerze). **Pamięć otwarć** (`shelterOpened`,
+  `shelterReportOpened(date, keys)` — publiczne bez PIN-u, dzień trwający albo miniony, numery tylko w kształcie
+  z `shelterKey`; suma psów, czas ostatniego otwarcia — RETRIABLE; `SHELTER_KEEP_DAYS` dni i `SHELTER_LIMITS.BYTES`):
+  drugi raport tego samego dnia podwoiłby spacery w schronisku, więc ramka mówi „✓ Raport otwierany dziś o 17:20 (8 psów).
+  Czy wysłany — nie wiemy." i daje „📝 Doślij nowe" (psy spoza tamtego otwarcia) oraz „Cały raport jeszcze raz" (z ramką,
+  z ostrzeżeniem). W `getData` ostatnie `SHELTER_RECENT_DAYS` dni, starsze z `getHistoryDays`; przeglądarka łączy je sumą
+  (`shelterMerge` — pamięć tylko rośnie, spóźniony odczyt niczego nie cofa). Zapis formularza i otwarcie raportu biorą
+  blokadę z `lockKeepsDogs_` (stan startowy w pamięci podręcznej niesie formularz i otwarcia — znacznik stanu się zmienia,
+  katalogu nie).
 - **Mail z listą spacerów dla schroniska — trzy ustawienia** we właściwościach: `mailTo`
   (`mailTo_()`, odbiorcy „a@b.pl, c@d.pl", brak = adres wpisuje się w poczcie), `mailSubject`
   (`mailSubject_()`, brak = `DEFAULT_MAIL_SUBJECT`), `mailTemplate` (`mailTemplate_()`, brak =
@@ -595,9 +628,19 @@ Interfejs jest **optymistyczny**: kliknięcie zmienia widok natychmiast, zapis l
 - **Panel w zwijanych sekcjach** (1.5, 28.10, prośba właściciela: „panel jest już za duży"; S147). `panelSec(key, title, body,
   {badge, off})`: nagłówek-przycisk (`data-act="panelSec"`) i treść; rozwinięte w `state.panelOpen` (do przeładowania), na start
   wszystko zwinięte. **Zwinięta treść zostaje w stronie** (klasa `hidden`) — szkice, pola i odpowiedzi serwera działają jak dotąd.
-  Sekcje: lista i e-mail, WhatsApp, pomocnik — produkcja, pomocnik — test (działa sekcja z `env` tej aplikacji, druga `off`:
-  wyszarzona, bez pól), członkowie, diagnostyka (nieudane `getDiagnostics` rozwija ją sama). Bez trybu edycji Panel to sama
-  diagnostyka, bez sekcji.
+  Sekcje: lista i e-mail, raport do schroniska — formularz (1.6), WhatsApp, pomocnik — produkcja, pomocnik — test (działa
+  sekcja z `env` tej aplikacji, druga `off`: wyszarzona, bez pól), członkowie, diagnostyka (nieudane `getDiagnostics` rozwija ją
+  sama). Bez trybu edycji Panel to sama diagnostyka, bez sekcji.
+- **Ramka „📝 Raport do schroniska"** (1.6, `shelterBox` / `shelterInner`; Konwencje, „Raport do schroniska"). Na bieżącym
+  dniu **pod całą listą** (pod listą innych grup) — gdy się pojawia albo zmienia, nic nad nią się nie przesuwa (bug nr 13);
+  w minionym dniu nad mailem. Pusta = niewidoczna (`.shelterbox:empty`): bez formularza, bez naszych spacerów, dzień
+  przyszły — bez ramki. Po „Wrócił ✓" zmienia się w miejscu (`patchCounts` → `patchShelter`). Link `target="_blank"
+  rel="noopener"` (aplikacja zostaje w swojej karcie), **dla osłony stuknięć to „kafelek"** (`data-tile="shelter:<dzień>"`,
+  `shelterReport` w `GUARDED`): ramka zmieniona pod palcem (cudze otwarcie z odświeżenia — w tym miejscu staje „Doślij nowe")
+  albo przesunięta lista — formularz się nie otwiera (`preventDefault`), komunikat „Raport właśnie się zmienił"; podwójne
+  stuknięcie — drugie po cichu. Stuknięcie zapisuje otwarcie (`shelterOpen` → kolejka, `shelterReportOpened`), a ramkę
+  przerysowuje **dopiero po kliknięciu** (`setTimeout`) — podmiana linku w trakcie kliknięcia mogłaby zatrzymać otwarcie.
+  W trakcie zaznaczania grupy link nic nie otwiera.
 - **Samoleczenie.** Watchdog 12 s, jedno automatyczne ponowienie dla operacji
   idempotentnych (`RETRIABLE`), `checkStuck()` co 3 s **oraz** przy każdym
   `pointerdown`/`touchstart` i powrocie do karty. `render()` i `handleAction()`
@@ -680,7 +723,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **2162 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **2324 asercje, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -709,7 +752,12 @@ grup) jest synchroniczny i porównuje `teamClean` z prawdziwym `dogTeam_` z back
 serwera) też. `scenarios21` (1.5: „OK" w polu 2/2, panel pomocnika Grafiku, Panel w sekcjach) — S145c czeka na skrócony
 `T.helperWait`. `scenarios22` (1.6: kilka notatek przy psie, odkleszczanie) — synchroniczny; S152 porównuje `addPeriod`
 i `tickClean` z prawdziwymi `addPeriod_` i `tickMethod_` z backend-harnessu. **Notatki i odkleszczanie po stronie serwera —
-własny zestaw `tests/care.js`** (B91–B99, ta sama atrapa arkusza co backend.js). **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
+własny zestaw `tests/care.js`** (B91–B99, ta sama atrapa arkusza co backend.js). `scenarios23` (1.6: raport do schroniska) —
+asynchroniczny (osłona stuknięć, `T.shelterWait`); prawdziwe stuknięcie w link (`tapLink`: `pointerdown` + `MouseEvent`
+z `detail`) zwraca, czy aplikacja zatrzymała otwarcie, i samo je zatrzymuje (jsdom nie nawiguje). S153 i S158 porównują
+`shelterKey` i `shelterLinkProblem` z serwerem (backend-harness). **Raport po stronie serwera — `tests/shelter.js`** (B101–B106):
+Microsoft Forms na niby (`env.http` z definicją formularza, błędem 1001 i przekierowaniem krótkiego linku — atrapa
+`UrlFetchApp` oddaje też nagłówki, `headers`); numer formularza wymyślony. **Panel jest w zwijanych sekcjach** (`panelSec`, S147): zwinięta treść zostaje w stronie, więc starsze testy
 klikają pola jak dotąd; nowy test, który sprawdza, co widać, rozwija sekcję stuknięciem w nagłówek (`openSec`).
 **Pomocnik Grafiku po stronie serwera ma własny zestaw `tests/helper.js`** (B74–B90, B100): bramka na niby z kolejką jak
 prawdziwa (`receiveNotification` oddaje pierwsze, dopóki `deleteNotification` go nie zdejmie), na końcu sprawdza, że
@@ -826,7 +874,15 @@ S148–S152 kilka notatek i odkleszczanie (1.6: każda notatka ze swoim terminem
 i nad 📌, zadanie w dniu terminu — odhaczenie z terminem z ekranu, nowy termin od dziś, cofnięcie, przyszły dzień bez
 odhaczania, w trybie edycji bez ✕; edycja psa — wiersze notatek, „+ Notatka" do `NOTES_MAX`, ✕, „nigdy nie znika" w swoim
 wierszu, termin z przeszłości; metoda z listy z podpowiedzią okresu, „Inna metoda…", limity okresu, pisownia z katalogu,
-bez metody; te same stałe i ta sama arytmetyka co serwer),
+bez metody; te same stałe i ta sama arytmetyka co serwer), S153–S158 raport do schroniska (1.6: S153 numer psa — `shelterKey`
+i serwer przyjmuje dokładnie takie numery; S154 ramka pod listą — adres formularza z datą i psami w kolejności formularza,
+tabulator, TTB w formularzu tak, spacer „team" nie, zarezerwowane, nasz pies spoza formularza, inna grupa, bez numeru, numer
+podwójny, „Wrócił ✓" zmienia ramkę w miejscu, dzień przyszły, bez formularza, formularz zamknięty, dziwny adres strony; S155
+otwarcie — zapis otwarcia, ramka po kliknięciu, podwójne stuknięcie, „Doślij nowe" i „Cały raport jeszcze raz", cudze otwarcie
+pod palcem, spóźniony odczyt niczego nie cofa, zaznaczanie grupy; S156 miniony dzień — nad mailem, z Historii, otwarcia
+z getHistoryDays, pies bez imienia po numerze; S157 panel — link, szkic, zły link od razu, zapis i sprawdzenie wprost, błąd
+sprawdzenia, odmowa, brak odpowiedzi, usunięcie, formularz a katalog, nieudane pobranie panelu; S158 stałe, RETRIABLE
+i `shelterLinkProblem` = `shelterLink_`),
 B1–B6 notatki / archiwizacja / godzina resetu,
 B7–B8 idempotencja `markWalked`, B9 PIN z właściwości, B10 Historia, B11–B12 `setAllWalks`,
 B13–B14 pełny dzień psa 2-spacerowego i cofanie, B15 oznaczenie środowiska,
@@ -904,6 +960,15 @@ unieważniony; B97 zmiana metody i okresu, poprawiony termin, bez metody, karta 
 Q–T czyjeś (także tylko jedna z czterech), `migrate()`, `setup()`; B99 stan startowy z notatkami i odkleszczaniem, nowy
 `CACHE_PREFIX`), B100 rano codziennie z „Zadaniami na dziś" (zwykłe i odkleszczanie, bez odhaczonych i przyszłych, numery
 telefonów zamaskowane, limit linijek, wyłączone „codziennie" — tylko przy problemie, podgląd „dziś"),
+B101–B106 raport do schroniska (`tests/shelter.js`, 1.6: B101 link — pełny, krótki, inne strony, zły numer, zepsute kodowanie;
+B102 `setShelterForm` — PIN, zapytanie o definicję, zapis z dokładnymi pozycjami, getData i panel, krótki link przez
+przekierowanie (w kółko, na obcą stronę — błąd), błąd 1001, każda odmowa (bez wstępnego wypełniania, jeden wybór, data
+z godziną, kilka list / dat bez tytułu, pusto, za dużo, za długo, ponad pamięć, dziwne numery pytań, strona logowania, 503,
+awaria sieci, brak zgody) bez ruszania działającego formularza, `extra`, zamknięty, usunięcie; B103 `shelterReportOpened` —
+suma, powtórka, dni trwający / miniony / przyszły, numery tylko w kształcie z przeglądarki, sufit psów, okno getData,
+getHistoryDays, `SHELTER_KEEP_DAYS`, sufit bajtów; B104 „Sprawdź formularz" i noc — nowa lista, nieudane zostawia ostatnią
+dobrą, próg wieku, brak zgody nie zatrzymuje czyszczenia, formularz usunięty albo zmieniony w trakcie odczytu zostaje;
+B105 zepsute wpisy nie psują getData, stan startowy w pamięci podręcznej unieważniony, katalog nie; B106 stałe),
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy
@@ -1202,7 +1267,8 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   **Po wdrożeniu do sprawdzenia:** na telefonie pasek „Nowa wersja 1.4", lista zmian, „Zamknij", spacer grupowy; po
   pierwszym czyszczeniu na 1.4 (24.10, 18:xx) Wykonania — czy `endOfDay` przeszedł; przez dzień–dwa Dziennik spowolnień
   i Wykonania produkcji (otwarcie strony, odczyt listy). Kolory trudności i zgłaszanie spacerów formularzem schroniska
-  (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania.
+  (Microsoft Forms, prośba o wstępnie wypełnione odpowiedzi wysłana przez liderkę) — do następnego wydania (formularz —
+  w 1.6, „Raport do schroniska").
 - **Wersja 1.6 — przygotowanie** (gałąź `release/1.6`, od 29.10.2026; prośby właściciela z 29.10): (1) **kilka notatek
   przy psie**, każda z własnym terminem; (2) **odkleszczanie** w edycji psa — 💊 przypomnienie tydzień przed terminem
   i zadanie w dniu terminu, odhaczenie liczy kolejny termin od dnia odhaczenia; (3) **pomocnik rano codziennie**, a pod
@@ -1213,6 +1279,17 @@ ta sama pułapka: zgodę daje tylko funkcja, która go naprawdę użyje (albo `r
   Cofnięcie do 1.5: dalsze notatki i odkleszczanie zostają w arkuszu, 1.5 ich nie widzi (pierwsza notatka — tak).
   **Na teście @53 (29.10, 14:45, `40a9090`)** — strona otwiera się na 1.6; metod odkleszczania na teście jeszcze nikt nie
   ustawił. Pomocnik testu (włączony) od następnego ranka pisze do właściciela codziennie, z zadaniami na dziś.
+  (4) **Raport do schroniska** (29.10 wieczorem; Konwencje, README „Raport do schroniska"): schronisko przysłało link do
+  formularza grupy z wstępnym wypełnianiem (odpowiedź liderki: „jedna grupa już zintegrowała"). Decyzje właściciela 29.10:
+  przycisk **na bieżącym dniu** („ostatnia osoba dnia klika raz i daje Prześlij") **i w minionym dniu** („jak ktoś zapomni");
+  **psy TTB wchodzą, bo są w formularzu, a psy innych grup spoza formularza — bezpiecznie obsłużone** (wypisane, nie
+  zaznaczane). Sprawdzone 29.10 na prawdziwym formularzu (tylko odczyt definicji i otwarcie z wstępnym wypełnieniem, bez
+  wysyłania): adres zaznacza pozycje i wpisuje datę; dopasowanie po numerze — 14 pozycji formularza = 14 psów katalogu
+  produkcji (4 TTB), poza formularzem tylko Elvis (Psubraty). **Do zrobienia przez właściciela:** w panelu TESTU (sekcja
+  „Raport do schroniska — formularz") wkleić link do formularza i „Zapisz" — PIN-u Claude nie wpisuje; przed wydaniem na
+  produkcji to samo w panelu produkcji, a jeśli produkcja nie ma zgody na połączenia (`authorizeWhatsApp()` nigdy tam nie
+  uruchomione) — najpierw ona. Formularz z linkiem wysyła odpowiedź do schroniska naprawdę — na teście tylko otworzyć,
+  nie „Prześlij".
 - **Wersja 1.5 — przygotowanie** (gałąź `release/1.5`, od 24.10.2026). (1) **„OK" przy imieniu w polu 2/2 wychodził poza
   ramkę** (zrzut z testu, Android 360 px) — pole bez własnej szerokości (Styles.html, S144). (2) **Pomocnik Grafiku — faza
   testów** (Konwencje, `HELPER.md`): decyzja właściciela — „raczej nie wejdzie w tej wersji, ale zaczynamy testować", wszystkie

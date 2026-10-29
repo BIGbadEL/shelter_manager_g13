@@ -18,10 +18,11 @@ Zapisy na spacery psów dla wolontariuszy schroniska (Grupa G13). Jeden link w p
 | `Poll.gs` | ankieta tygodniowa na WhatsAppie (bramka Green API): ustawienia z panelu, wyzwalacz, wysyłka |
 | `Diag.gs` | dziennik spowolnień: wolne wywołania serwera z rozbiciem na kroki + to, co dosłały telefony (`reportDiag`) — w Panelu |
 | `Helper.gs` | pomocnik Grafiku (1.5, faza testów): bot czyta z „Grafiku" ankietę i składa wiadomości — prywatnie do właściciela, a na produkcji funkcje „gotowe" do „Grafiku"; pracuje jeden naraz (pierwszeństwo produkcji) — projekt w `HELPER.md` |
+| `Shelter.gs` | raport do schroniska (1.6): link do formularza Microsoft Forms z panelu, odczyt i sprawdzenie formularza (lista psów), odświeżanie co noc, pamięć „kto otwierał raport dnia" |
 | `Index.html` | szkielet strony (składa Styles + Script) |
 | `Styles.html` | style |
 | `Script.html` | logika interfejsu |
-| `tests/` | harness jsdom (`scenarios`…`scenarios21`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`, pomocnik Grafiku — `helper.js`) + konfiguracja wdrożeń (`tooling.js`) |
+| `tests/` | harness jsdom (`scenarios`…`scenarios23`) + harness backendu na atrapie arkusza z przestawialnym zegarem (`backend.js`, opieka nad psem — `care.js`, raport do schroniska — `shelter.js`, pomocnik Grafiku — `helper.js`) + konfiguracja wdrożeń (`tooling.js`) |
 | `SORTING.md` | model spacerów i kafelków, reguły kolejności listy z przykładami — czytaj przed zmianą sortowania |
 | `RELEASE.md` | test wydania przed mergem do `main`: pomiar (czy nic nie zwolniło) i test funkcjonalny w Chrome, historia pomiarów |
 | `HELPER.md` | pomocnik Grafiku: co dzieje się w „Grafiku" (z eksportu czatu), funkcje, jak bot czyta grupę, bezpieczniki, co sprawdzić na teście |
@@ -114,7 +115,7 @@ pilnuje, że pierwszy wpis to wersja z `package.json`, a każdy starszy ma datę
 | 1.3 | psy innych grup — osobna lista pod naszą, grupa psa w panelu, „Bierze G7"; lista dnia do prowadzącej na WhatsAppie; odczyt, który utknął, ponawiany po 20 s | `release/1.3` (`c68a141`, merge `6f38943`) | @21, 2026-10-09 |
 | 1.4 | „Co nowego?" przy nazwie aplikacji — lista zmian wszystkich wersji po ludzku, pasek „Nowa wersja" raz na telefon; otwarcie strony z pamięci podręcznej, krótsza praca zapisu pod blokadą, odczyt listy wkłada do pamięci tylko zmiany | `release/1.3.1` (`caba4e4`, merge `9ebfb21`) | @22, 2026-10-23 |
 | 1.5 | „OK" przy imieniu w polu 2/2 w ramce; pomocnik Grafiku — faza testów (na produkcji wyłączony, dopóki go nie włączyć; funkcje „gotowe" piszą do „Grafiku", pracuje jeden naraz); Panel w zwijanych sekcjach | `release/1.5` (`bdd0812`, merge `c5ba23d`) = `main` | @23, 2026-10-29 |
-| 1.6 | (w przygotowaniu) kilka notatek przy psie; odkleszczanie — 💊 przypomnienie tydzień przed terminem i zadanie w dniu terminu; pomocnik rano codziennie, z zadaniami na dziś | `release/1.6` | — |
+| 1.6 | (w przygotowaniu) raport do schroniska (formularz Microsoft Forms z datą i psami); kilka notatek przy psie; odkleszczanie — 💊 przypomnienie tydzień przed terminem i zadanie w dniu terminu; pomocnik rano codziennie, z zadaniami na dziś | `release/1.6` | — |
 
 **Potem, przy każdej zmianie** — najpierw na test (niżej: *Środowisko testowe*), potem:
 
@@ -498,6 +499,8 @@ panel był za długi) — na start wszystkie zwinięte, stuknięcie w nagłówek
 „włączony", „4 os."):
 
 - **Lista i e-mail do schroniska** — godzina czyszczenia, „Wszystkie po 2 / po 1 spacerze", e-mail z listą spacerów;
+- **Raport do schroniska — formularz** (od 1.6) — link do formularza schroniska i porównanie formularza z katalogiem
+  (niżej, „Raport do schroniska");
 - **WhatsApp — ankieta i lista dnia** — ankieta tygodniowa, lista dnia do prowadzącej;
 - **Pomocnik Grafiku — produkcja** i **Pomocnik Grafiku — test** — działa sekcja tego środowiska, druga jest wyszarzona
   (ustawia się ją w drugiej aplikacji; zdanie, jak się do siebie mają — niżej, „Pomocnik Grafiku");
@@ -528,6 +531,36 @@ od najnowszego, po 30 ostatnich z każdej:
 Jak czytać: **telefon czekał długo, a serwer nie ma wpisu z tej chwili** — czas zjadła sieć albo Google,
 zanim nasz kod ruszył (tego nie naprawimy kodem). **Jest wpis serwera** — widać, który krok trwał.
 Zegar telefonu może się mylić o kilka sekund.
+
+## Raport do schroniska (od 1.6)
+
+Schronisko zbiera spacery formularzem Microsoft Forms, osobnym dla grupy („Grupa G13"): data spaceru i psy do
+zaznaczenia — nasze i te psy innych grup, które schronisko dopisało do naszego formularza (dziś TTB).
+
+- **Na liście bieżącego dnia**, pod całą listą: **„📝 Raport do schroniska · N psów"**. Otwiera formularz w nowej karcie
+  z datą i zaznaczonymi psami, które tego dnia z nami wróciły — zostaje sprawdzić i stuknąć „Prześlij". Najwygodniej
+  robi to ostatnia osoba dnia, po „Wrócił ✓".
+- **W minionym dniu** ten sam przycisk nad mailem — gdy ktoś zapomniał.
+- **Kto i kiedy otwierał raport dnia** widać w ramce („✓ Raport otwierany dziś o 17:20 (8 psów)"): drugi raport tego samego
+  dnia podwoiłby spacery w schronisku. Psy, które wróciły później, można **dosłać osobno** („📝 Doślij nowe"); „Cały raport
+  jeszcze raz" — tylko gdy tamten nie został wysłany. Czy formularz wysłano, aplikacja nie wie (odpowiedzi widzi tylko
+  schronisko) — dlatego pisze „otwierany".
+- **Psa z pozycją w formularzu łączy numer psa** — zera z przodu i rok „2026" zamiast „26" nie przeszkadzają („0552/26"
+  w formularzu = „552/26" w katalogu). Do raportu nie trafiają, a ramka mówi które i dlaczego: **psy innych grup spoza
+  formularza** (np. Psubraty), nasze psy, których numeru nie ma w formularzu (nowy pies albo inny numer — powiedzieć
+  prowadzącej), psy bez numeru i numery, które są w formularzu kilka razy (te zaznacza się w formularzu ręcznie), a także
+  spacery jeszcze zarezerwowane. Spacer, który wzięła grupa psa („Bierze G7"), nie jest nasz — raport go pomija.
+
+**Ustawienie (panel, sekcja „Raport do schroniska — formularz")**: link do formularza od schroniska (pełny
+`…/ResponsePage.aspx?id=…` albo krótki `…/e/…`) i „Zapisz". Zapis od razu czyta formularz i sprawdza, czy da się go
+wypełnić z linku (wstępne wypełnianie włączone, pytanie o datę, lista psów z wyborem wielu) — zły link albo formularz
+nie zastąpi działającego. Pod spodem: które psy z katalogu są w formularzu, a których brakuje. Lista psów z formularza
+odświeża się co noc przy czyszczeniu; po zmianie formularza przez schronisko — „Sprawdź formularz". Nieudane sprawdzenie
+zostawia ostatnią dobrą listę (przycisk działa dalej), a błąd stoi w panelu. Pusty link i „Zapisz" — bez raportu.
+
+Odczyt formularza to połączenie z zewnętrzną usługą — ta sama zgoda co dla WhatsAppa: w projekcie, który jej jeszcze nie
+ma, raz z edytora **`authorizeWhatsApp()`** (panel mówi o tym przy zapisie). Link do formularza nie trafia do repozytorium
+— każdy z nim może wysłać schronisku odpowiedź; siedzi we właściwości skryptu `shelterForm` (ustawia go panel).
 
 ## Ankieta tygodniowa na WhatsAppie
 
@@ -697,6 +730,14 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 
 ### 1.6 — w przygotowaniu (`release/1.6`)
 
+- **📝 Raport do schroniska** (prośba właściciela 29.10: schronisko przysłało formularz grupy z wstępnym wypełnianiem) —
+  pod listą bieżącego dnia i w minionym dniu; formularz z datą i psami, które z nami wróciły, w nowej karcie, „Prześlij"
+  stuka człowiek. Psy TTB są w formularzu, więc wchodzą; psy innych grup spoza formularza, psy bez numeru i numery
+  podwójne — wypisane w ramce, bez zgadywania. Pamięć otwarć dnia („otwierany o…", „Doślij nowe") przeciw podwójnemu
+  raportowi. Link w panelu (PIN), formularz czytany i sprawdzany przy zapisie, co noc i przyciskiem. Nowe publiczne:
+  `setShelterForm` i `checkShelterForm` (PIN, wprost — nie przez kolejkę), `shelterReportOpened` (bez PIN-u, wejście
+  sprawdzane, suma psów — w `RETRIABLE`). Nowy plik `Shelter.gs`, właściwości `shelterForm` i `shelterOpened`. Szczegóły:
+  *Raport do schroniska* wyżej.
 - **Kilka notatek przy psie** (prośba właściciela: „uważać na coś, ćwiczyć kaganiec, we wtorek zapoznawczy, w środę RTG,
   w niedzielę akcja"). Każda ma własny termin, jak dotąd jedyna; na liście dnia widać te, które ten dzień obejmują.
   Pierwsza zostaje w `notatka` / `notatka_do` (wersja 1.5 widzi ją jak dotąd), dalsze w nowej kolumnie `notatki`.
@@ -710,9 +751,11 @@ niczego drugi raz, więc zapis może być bezpiecznie ponawiany po zaginionej od
 - **Pomocnik Grafiku rano codziennie** (przełącznik „…codziennie", domyślnie włączony; wyłączony — jak dotąd, tylko przy
   problemie), a pod składem „📋 Zadania na dziś": zwykłe nieodhaczone i odkleszczanie z terminem do dziś.
 - Arkusz: kolumny P–T w Psy (dokładają się same; czyjejś kolumny w tym miejscu nie nadpisujemy). Nowy prefiks pamięci
-  podręcznej `g13c2:` (kształt katalogu). Bez nowych uprawnień i wyzwalaczy.
+  podręcznej `g13c2:` (kształt katalogu). Bez nowych wyzwalaczy; raport do schroniska łączy się z Microsoft Forms —
+  zgoda `authorizeWhatsApp()` (ta sama co dla WhatsAppa), jeśli projekt jej nie ma.
 - Cofnięcie do 1.5: dalsze notatki i odkleszczanie zostają w arkuszu, 1.5 ich nie pokazuje (pierwszą notatkę — tak);
   ponowne wdrożenie 1.6 w ciągu 6 h — najpierw `migrate()` (*Cofnięcie wdrożenia*, akapit o pamięci podręcznej).
+  Raportu do schroniska 1.5 nie ma — właściwości `shelterForm` i `shelterOpened` zostają nieużywane.
 
 ### 1.5 — wdrożone 2026-10-29 (@23)
 

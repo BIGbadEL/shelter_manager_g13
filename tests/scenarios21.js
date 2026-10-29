@@ -276,7 +276,8 @@ function S147(){
   const on = {chatId: GRAFIK, chatName: 'Grafik', toKey: OWNER, toName: 'Grzesiek', enabled: true};
   const app = openPanel(HELPER({trigger: true}, on));
   const keys = [...doc(app).querySelectorAll('#view .psec')].map(s => s.dataset.sec);
-  check('sekcje po kolei: lista i e-mail, WhatsApp, pomocnik — produkcja, pomocnik — test, członkowie, diagnostyka', keys.join() === 'app,wa,botProd,botTest,members,diag', keys.join());
+  check('sekcje po kolei: lista i e-mail, raport do schroniska (1.6), WhatsApp, pomocnik — produkcja, pomocnik — test, członkowie, diagnostyka',
+    keys.join() === 'app,shelter,wa,botProd,botTest,members,diag', keys.join());
   const body = key => sec(app, key).querySelector('.psec-b');
   check('na start wszystkie zwinięte (treść ukryta), w nagłówku krótki stan', ['app', 'wa', 'botTest', 'members', 'diag'].every(k => body(k).classList.contains('hidden'))
     && /ankieta wył\./.test(txt(sec(app, 'wa').querySelector('.psec-badge'))) && txt(sec(app, 'botTest').querySelector('.psec-badge')) === 'włączony');

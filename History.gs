@@ -182,6 +182,8 @@ function endOfDay() {
   // lista dnia do prowadzącej (1.3) — już bez blokady (bramka potrafi odpowiadać do minuty) i nigdy
   // nie zatrzyma czyszczenia: to jest zrobione, a błąd zostaje w panelu (sendClosedDayReports_)
   sendClosedDayReports_(days);
+  // formularz raportu do schroniska (1.6) — lista psów w formularzu od nowa, raz na dobę; też nigdy nie rzuca
+  shelterNightly_();
 }
 
 /**

@@ -29,11 +29,12 @@
    *              (20 s, nie 60 — 1.3: zastój Google dotyka pojedynczego wykonania, równoległe idą po 1,5 s,
    *              więc drugi odczyt prawie zawsze przechodzi; dziennik wykonań produkcji 2–9.10.2026),
    *   wake     — powrót do karty odświeża listę tylko wtedy, gdy ostatni odczyt poszedł dawniej niż tyle,
-   *   helperWait — przyciski pomocnika Grafiku czekają na odpowiedź najwyżej tyle (przebieg trwa do ~3 min).
+   *   helperWait — przyciski pomocnika Grafiku czekają na odpowiedź najwyżej tyle (przebieg trwa do ~3 min),
+   *   shelterWait — zapis i sprawdzenie formularza raportu do schroniska (serwer czyta formularz od Microsoftu).
    */
   const T = Object.assign({ quiet:4000, announce:800, tapGuard:500, busyMin:600, pollRecheck:75000, pollState:20000,
     diagSlow:6000, diagNoReply:20000, diagFreeze:3000, diagSend:15000, diagBeat:1000,
-    refresh:15000, readStale:20000, wake:15000, helperWait:240000 }, window.__G13_TIMING || {});
+    refresh:15000, readStale:20000, wake:15000, helperWait:240000, shelterWait:45000 }, window.__G13_TIMING || {});
 
   const state = {
     dogs:[],               // KATALOG psów — kim są; stan dnia żyje osobno, w `slots`
@@ -55,6 +56,10 @@
     mailSubject:null,      // temat z [DATA]; null = serwer sprzed 1.2 — bez „Wyślij", zostaje „Skopiuj"
     mailDraft:null,        // {to, subject, body} pisane w panelu, jeszcze niezapisane — przeżywa przerysowanie
     mailFallback:null,     // {date, text} — schowek nie zadziałał: mail do ręcznego skopiowania
+    shelter:null,          // formularz schroniska do raportu (1.6, getData.shelterForm): {page, id, title, dateQ, dogQ, choices, extra, active}; null = bez raportu
+    shelterOpened:{},      // kto otwierał raport dnia: data -> {at, t, keys} (tylko rośnie — shelterMerge)
+    shelterDraft:null,     // link do formularza pisany w panelu, niezapisany (null = bez szkicu)
+    shelterBusy:'',        // przycisk formularza w toku: 'save' | 'check' | ''
     form:{},               // szkice formularzy trybu edycji („Dodaj psa", „Nowe zadanie"): id pola -> wartość (formVal)
     adding:[],             // psy w drodze na serwer: [{token, name, ident, box, dif, done}] — w katalogu jako „dodaję…"
     pollDraft:null,        // ankieta tygodniowa pisana w panelu, niezapisana: {chatId, chatName, day, hour, question, options, multi, enabled}
@@ -493,7 +498,7 @@
    * Zapisy bezpieczne do automatycznego ponowienia (idempotentne). `addDog` — od 1.2, bo niesie
    * token dodania (addDogToken): serwer pamięta ostatnie i powtórki psa drugi raz nie dokłada.
    */
-  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','setTickDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole']);
+  const RETRIABLE = new Set(['reserve','markWalked','markTeam','setFree','undoFirstWalk','setTaskDone','setTickDone','addDog','updateDog','removeDog','removeTask','setResetHour','setAllWalks','setMailTemplate','setMailSettings','setPollSettings','setDayReportSettings','setHelperSettings','setHelperRole','shelterReportOpened']);
 
   /**
    * Licznik zapisów wpuszczonych do kolejki. Odczyt pełnego stanu (refresh) zapamiętuje go przy
@@ -649,6 +654,9 @@
     if(typeof res.mailTemplate === 'string') state.mailTemplate = res.mailTemplate;
     if(typeof res.mailTo === 'string') state.mailTo = res.mailTo;
     if(typeof res.mailSubject === 'string') state.mailSubject = res.mailSubject;
+    // raport do schroniska (1.6): serwer sprzed 1.6 albo bez ustawionego formularza — bez ramki
+    state.shelter = res.shelterForm && typeof res.shelterForm === 'object' ? res.shelterForm : null;
+    takeShelterOpened(res.shelterOpened);
     if(prevBiz && prevBiz !== state.bizDate) state.past = {};    // wczorajszy „bieżący" dzień jest już miniony
 
     // Kto pracował na bieżącym dniu, po resecie od razu pracuje na nowym — ale nie
@@ -745,6 +753,7 @@
         days.forEach(d=>{ got[d] = []; delete state.pastLoading[d]; });
         ((res && res.history) || []).forEach(e=>{ if(got[e.date]) got[e.date].push(e); });
         Object.assign(state.past, got);
+        takeShelterOpened(res && res.shelterOpened);   // kto otwierał raport tych dni (starsze niż te z getData)
         if(state.view==='today' && isPast(state.date)) safeRender();
       })
       .withFailureHandler(err=>{
@@ -994,7 +1003,9 @@
     if(prev && prev.html === clean) return;
     tileSeen[id] = {html:clean, at: prev ? Date.now() : 0, cause};
   }
-  const GUARDED = new Set(['reserve','confirm','walk','free','team']);
+  // `shelterReport` — link „Raport do schroniska" pod listą (1.6): przesunięta lista albo zmieniona pod palcem ramka
+  // (ktoś inny właśnie otworzył raport — w tym miejscu staje „Doślij nowe") nie otwiera formularza
+  const GUARDED = new Set(['reserve','confirm','walk','free','team','shelterReport']);
   function tapRefused(e, btn){
     if(!(e.detail > 0) || !fingerDown || Date.now() - fingerDown.at > 1500) return false;
     if(!GUARDED.has(btn.dataset.act)) return false;
@@ -1005,7 +1016,7 @@
     }
     const li = btn.closest('[data-tile]'), seen = li && tileSeen[li.dataset.tile];
     if(seen && seen.at && seen.cause !== 'nav' && seen.at > fingerDown.at - T.tapGuard){
-      if(seen.cause !== 'self') toast('Ten spacer właśnie się zmienił — sprawdź i stuknij jeszcze raz');
+      if(seen.cause !== 'self') toast((li.dataset.shelter ? 'Raport' : 'Ten spacer') + ' właśnie się zmienił — sprawdź i stuknij jeszcze raz');
       return true;
     }
     return false;
@@ -1127,7 +1138,7 @@
       li.outerHTML = html;
       noteTile(t.id, html, cause);
     }
-    patchCounts();
+    patchCounts(cause);
     invalidateHtml();
     updateBusy();
   }
@@ -1887,9 +1898,10 @@
     return `<b>${c.reserved}</b> zarezerwowane · <b>${c.walked}</b> wyprowadzone`
       + (c.team ? ` · <b>${c.team}</b> u swojej grupy` : '') + ` · <b>${c.free}</b> wolne`;
   }
-  /** Linijki podsumowania obu list po patchDog — lista innych grup ma swoją pod nagłówkiem. */
-  function patchCounts(){
+  /** Linijki podsumowania obu list po patchDog — lista innych grup ma swoją pod nagłówkiem. I ramka raportu pod listą. */
+  function patchCounts(cause){
     viewEl.querySelectorAll('.count[data-list]').forEach(el => { el.innerHTML = countLine(el.dataset.list === 'other'); });
+    patchShelter(cause);
   }
 
   /**
@@ -1899,7 +1911,7 @@
    */
   function renderDay(cause){
     if(!state.loaded || !state.date) return '<div class="empty">Ładowanie…</div>';
-    if(isPast(state.date)) return renderPastDay(state.date);
+    if(isPast(state.date)) return renderPastDay(state.date, cause);
     const lay = layoutDay(state.date);
     const why = lay.moved ? 'reorder' : cause;
     noteLayout(lay.items, why);
@@ -1932,7 +1944,8 @@
         html += h;
       });
     });
-    return html + `</ul>`;
+    // raport do schroniska: pod całą listą — gdy ramka się pojawia albo zmienia, nic nad nią się nie przesuwa (bug nr 13)
+    return html + `</ul>` + (state.date === state.bizDate ? shelterBox(state.date, cause) : '');
   }
 
   /* =========================================================
@@ -2063,6 +2076,8 @@
         na listę psów: data, pies, numer, każdy pies w osobnej linijce (CSV). [LISTA] musi zostać.
         Puste pola: bez odbiorcy (wpiszesz go w poczcie), domyślny temat i treść.</div>
       </div>`)
+      + panelSec('shelter', 'Raport do schroniska — formularz', renderShelterPanel(d ? d.shelter : null),
+          {badge: !d || !d.shelter ? '' : !d.shelter.link ? 'nie ustawiony' : d.shelter.err ? 'błąd sprawdzenia' : 'ustawiony'})
       + (d && (d.poll || d.dayReport) ? panelSec('wa', 'WhatsApp — ankieta i lista dnia',
           (d.poll ? renderPollBox(d.poll) : '') + (d.dayReport ? renderDayReportBox(d.dayReport) : ''),
           {badge: [d.poll ? 'ankieta ' + (d.poll.settings && d.poll.settings.enabled ? 'wł.' : 'wył.') : '',
@@ -2238,6 +2253,307 @@
     const clip = navigator.clipboard;
     if(clip && clip.writeText) clip.writeText(text).then(() => done(true), () => done(false));
     else done(false);
+  }
+
+  /* ---------- raport do schroniska (1.6, Shelter.gs) ----------
+     Schronisko zbiera spacery formularzem Microsoft Forms grupy: data i psy do zaznaczenia — nasze i te psy innych grup,
+     które schronisko dopisało do naszego formularza (dziś TTB). „📝 Raport do schroniska" otwiera formularz z datą
+     i zaznaczonymi psami, które tego dnia wyszły z nami; zostaje „Prześlij". Na bieżącym dniu — pod całą listą (ostatnia
+     osoba po „Wrócił ✓"), w minionym dniu — nad mailem (gdy ktoś zapomniał). Psa z pozycją w formularzu łączy numer
+     (shelterKey). Pies spoza formularza (inna grupa, nowy pies, inny numer), bez numeru albo z numerem kilka razy
+     w formularzu do raportu nie trafia — ramka mówi, które i dlaczego. Kto otwierał raport dnia — state.shelterOpened
+     (serwer: shelterReportOpened): drugi raport podwoiłby spacery w schronisku, więc kolejna osoba widzi „otwierany
+     o 17:20" i może dosłać same nowe psy. Czy formularz wysłano, nie wiemy — odpowiedzi widzi tylko schronisko. */
+  const SHELTER_LINK_MAX = 500;                     // tyle, ile SHELTER_LIMITS.LINK w Config.gs (S155 pilnuje obu)
+  const SHELTER_HOSTS = ['forms.cloud.microsoft', 'forms.office.com', 'forms.microsoft.com'];   // jak SHELTER_HOSTS w Shelter.gs
+  /**
+   * Numer psa do porównania z formularzem: ostatnie „liczba/rok" w tekście, liczba bez zer z przodu, rok dwucyfrowy —
+   * „Draco<tab>0552/26" w formularzu = „552/26" w katalogu = „552/2026". Bez numeru — ''. Tylko takie numery przyjmuje
+   * serwer (SHELTER_KEY w Shelter.gs). Bez wyrażeń wstecz (lookbehind) — starsze iPhone'y ich nie znają.
+   */
+  function shelterKey(s){
+    const re = /(?:^|\D)(\d{1,6})\s*\/\s*(\d{4}|\d{2})(?!\d)/g, t = String(s==null ? '' : s);
+    let m, last = null;
+    while((m = re.exec(t))) last = m;
+    return last ? Number(last[1]) + '/' + last[2].slice(-2) : '';
+  }
+  /**
+   * Psy, które tego dnia wyszły Z NAMI, każdy raz (dwa spacery to jeden pies): [{key, label, nr, team}]. Bieżący dzień —
+   * spacery „wrócił" (spacer wzięty przez grupę psa, 'team', nie jest nasz — jak w Historii); miniony — wpisy Historii,
+   * grupa psa z katalogu po numerze (pies usunięty z katalogu — bez grupy).
+   */
+  function shelterDogs(date){
+    const out = [], seen = new Set();
+    const add = (label, nr, team) => {
+      const n = String(nr==null ? '' : nr).trim(), key = shelterKey(n), k = key || 'l:' + label;
+      if(seen.has(k)) return;
+      seen.add(k);
+      out.push({key, label: String(label), nr: n, team: team || ''});
+    };
+    if(isPast(date)){
+      const team = {};
+      state.dogs.forEach(d => { const k = shelterKey(d.ident); if(k && !(k in team)) team[k] = teamClean(d.team); });
+      (state.past[date] || []).forEach(e => add(e.name, e.ident, team[shelterKey(e.ident)] || ''));
+    } else {
+      state.dogs.forEach(d => { if(slotsOf(date, d).some(s => s.status === 'walked')) add(dogLabel(d), d.ident, teamClean(d.team)); });
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label, 'pl'));
+  }
+  /**
+   * Co trafi do raportu dnia: `inForm` — psy z jedną pozycją w formularzu (w kolejności formularza, `i` — numer pozycji),
+   * `outside` — numeru nie ma w formularzu, `noNr` — pies bez numeru, `twice` — numer na kilku pozycjach (nie zgadujemy),
+   * `mark` — wcześniejsze otwarcie raportu, `fresh` — psy spoza niego, `pending` — spacery dnia wciąż zarezerwowane.
+   * null — bez ramki: formularz nieustawiony albo nikt tego dnia z nami nie wyszedł.
+   */
+  function shelterPlan(date){
+    const f = state.shelter;
+    if(!f || !f.id || !f.dateQ || !f.dogQ || !Array.isArray(f.choices) || !f.choices.length || !/^https:\/\//.test(String(f.page || ''))) return null;
+    const dogs = shelterDogs(date);
+    if(!dogs.length) return null;
+    const at = {};                                   // numer psa -> pozycje formularza
+    f.choices.forEach((c, i) => { const k = shelterKey(c); if(k) (at[k] = at[k] || []).push(i); });
+    const p = {date, inForm: [], outside: [], noNr: [], twice: [], pending: 0};
+    dogs.forEach(d => {
+      const pos = d.key ? at[d.key] : null;
+      if(!d.key) p.noNr.push(d);
+      else if(!pos) p.outside.push(d);
+      else if(pos.length > 1) p.twice.push(d);
+      else p.inForm.push(Object.assign({i: pos[0]}, d));
+    });
+    p.inForm.sort((a, b) => a.i - b.i);
+    const mark = state.shelterOpened[date];
+    p.mark = mark && mark.keys.length ? mark : null;
+    p.fresh = p.mark ? p.inForm.filter(d => p.mark.keys.indexOf(d.key) < 0) : p.inForm;
+    if(date === state.bizDate) state.dogs.forEach(d => slotsOf(date, d).forEach(s => { if(s.status === 'reserved') p.pending++; }));
+    return p;
+  }
+  /** Adres formularza z datą i psami (wstępne wypełnienie Microsoft Forms): data rrrr-mm-dd, psy — JSON z treściami pozycji. */
+  function shelterUrl(date, dogs){
+    const f = state.shelter;
+    return f.page + '?id=' + encodeURIComponent(f.id) + '&' + encodeURIComponent(f.dateQ) + '=' + encodeURIComponent(date)
+      + '&' + encodeURIComponent(f.dogQ) + '=' + encodeURIComponent(JSON.stringify(dogs.map(d => f.choices[d.i])));
+  }
+  /** „dziś o 17:20" / „wczoraj o 9:05" / „27.10 o 18:40" — z czasu otwarcia ('rrrr-mm-dd G:mm', zegar serwera). */
+  function shelterWhen(at){
+    const m = String(at || '').match(/^(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2})$/);
+    if(!m) return '';
+    const day = m[1] === state.today ? 'dziś' : state.today && m[1] === addDays(state.today, -1) ? 'wczoraj' : plDate(m[1]).slice(0, 5);
+    return day + ' o ' + m[2];
+  }
+  function shelterNames(list){
+    return list.map(d => esc(d.label) + (d.nr && d.label !== '#' + d.nr ? ` nr ${esc(d.nr)}` : '') + (d.team ? ` (${esc(d.team)})` : '')).join(', ');
+  }
+  function shelterLinkHtml(p, dogs, label, cls){
+    // target=_blank: formularz w nowej karcie, aplikacja zostaje w swojej (piaskownica Apps Script przepuszcza okna ze stuknięcia)
+    return `<a class="btn shelter-go${cls ? ' ' + cls : ''}" href="${esc(shelterUrl(p.date, dogs))}" target="_blank" rel="noopener"
+      data-act="shelterReport" data-date="${esc(p.date)}" data-keys="${esc(dogs.map(d => d.key).join(','))}">${label}</a>`;
+  }
+  /** Treść ramki raportu dnia ('' — bez ramki). */
+  function shelterInner(date){
+    const p = shelterPlan(date);
+    if(!p) return '';
+    const f = state.shelter, n = k => k + ' ' + plural(k, 'pies', 'psy', 'psów');
+    const twice = '— drugi raport podwoi spacery w schronisku';
+    let h = '';
+    if(!p.inForm.length){
+      h += `<div class="shelter-t">📝 Raport do schroniska</div>
+        <div class="shelter-w">Żadnego z tych psów nie ma w formularzu schroniska — raportu nie da się wysłać.</div>`;
+    } else if(!p.mark || p.fresh.length === p.inForm.length){
+      // wcześniejsze otwarcie bez żadnego z tych psów (np. ich spacery cofnięto) to nie ten sam raport
+      if(p.mark) h += `<div class="shelter-ok">Raport otwierano ${esc(shelterWhen(p.mark.at))} — z innymi psami niż te.</div>`;
+      h += shelterLinkHtml(p, p.inForm, `📝 Raport do schroniska · ${n(p.inForm.length)}`, '');
+      h += `<div class="hint">Otworzy się formularz z datą ${esc(plDate(date))} i zaznaczonymi psami — sprawdź i stuknij „Prześlij”.</div>`;
+    } else {
+      h += `<div class="shelter-ok">✓ Raport otwierany ${esc(shelterWhen(p.mark.at))} (${n(p.mark.keys.length)}). Czy wysłany — nie wiemy.</div>`;
+      if(p.fresh.length){
+        h += `<div class="hint shelter-new">Od tamtej pory wróciły: ${shelterNames(p.fresh)}.</div>`;
+        h += shelterLinkHtml(p, p.fresh, `📝 Doślij nowe · ${n(p.fresh.length)}`, '');
+        h += shelterLinkHtml(p, p.inForm, `Cały raport jeszcze raz · ${n(p.inForm.length)}`, 'again');
+        h += `<div class="hint">„Cały raport” tylko wtedy, gdy tamten nie został wysłany ${twice}.</div>`;
+      } else {
+        h += shelterLinkHtml(p, p.inForm, `Raport jeszcze raz · ${n(p.inForm.length)}`, 'again');
+        h += `<div class="hint">Tylko gdy tamten nie został wysłany ${twice}.</div>`;
+      }
+    }
+    if(p.pending) h += `<div class="shelter-w">⏳ ${p.pending} ${plural(p.pending, 'spacer', 'spacery', 'spacerów')} jeszcze
+      ${plural(p.pending, 'zarezerwowany', 'zarezerwowane', 'zarezerwowanych')} — w raporcie są tylko psy, które już wróciły.</div>`;
+    const ours = p.outside.filter(d => !d.team), theirs = p.outside.filter(d => d.team);
+    if(ours.length) h += `<div class="shelter-w">Nie ma w formularzu: ${shelterNames(ours)} — nie ${ours.length === 1 ? 'trafi' : 'trafią'}
+      do raportu. Powiedz prowadzącej (inny numer albo schronisko musi dopisać psa).</div>`;
+    if(theirs.length) h += `<div class="shelter-w">Psy innych grup spoza formularza: ${shelterNames(theirs)} — nie ${theirs.length === 1 ? 'trafi' : 'trafią'} do raportu.</div>`;
+    if(p.noNr.length) h += `<div class="shelter-w">Bez numeru, nie da się ich dopasować: ${shelterNames(p.noNr)} — w formularzu zaznacz ręcznie.</div>`;
+    if(p.twice.length) h += `<div class="shelter-w">Numer jest w formularzu kilka razy: ${shelterNames(p.twice)} — w formularzu zaznacz ręcznie właściwą pozycję.</div>`;
+    if(f.active === false) h += `<div class="shelter-w">Formularz schroniska nie przyjmuje teraz odpowiedzi.</div>`;
+    if(Array.isArray(f.extra) && f.extra.length) h += `<div class="hint">W formularzu uzupełnij jeszcze: ${f.extra.map(esc).join(', ')}.</div>`;
+    return h;
+  }
+  /**
+   * Ramka raportu (pusta = niewidoczna). Dla osłony stuknięć to „kafelek" (`data-tile`): zmieniona pod palcem
+   * nie otwiera formularza (tapRefused).
+   */
+  function shelterBox(date, cause){
+    const h = shelterInner(date);
+    noteTile('shelter:' + date, h, cause || 'data');
+    return `<div class="shelterbox${isPast(date) ? ' past' : ''}" data-shelter="${esc(date)}" data-tile="shelter:${esc(date)}">${h}</div>`;
+  }
+  /** Ramka po zmianie spaceru (patchDog) albo otwarciu raportu — bez przerysowania listy. */
+  function patchShelter(cause){
+    viewEl.querySelectorAll('[data-shelter]').forEach(el => {
+      const d = el.dataset.shelter, h = withSlotMemo(() => shelterInner(d)), seen = tileSeen['shelter:' + d];
+      if(seen && seen.html === h) return;
+      el.innerHTML = h;
+      noteTile('shelter:' + d, h, cause || 'data');
+      invalidateHtml();                              // DOM zmieniony poza render()
+    });
+  }
+  /** Otwarcia raportu dnia razem: psy — suma, czas — ostatniego otwarcia (po `t`). Pamięć tylko rośnie: spóźniona odpowiedź niczego nie cofa. */
+  function shelterMerge(a, b){
+    if(!a) return b || null;
+    if(!b) return a;
+    const keys = a.keys.slice();
+    b.keys.forEach(k => { if(keys.indexOf(k) < 0) keys.push(k); });
+    const last = (b.t || 0) >= (a.t || 0) ? b : a;
+    return {at: last.at, t: last.t, keys};
+  }
+  function shelterMarkIn(m){
+    if(!m || typeof m !== 'object') return null;
+    return {at: String(m.at || ''), t: Number(m.t) || 0, keys: (Array.isArray(m.keys) ? m.keys : []).map(String).filter(Boolean)};
+  }
+  function takeShelterOpened(obj){
+    if(!obj || typeof obj !== 'object') return;
+    Object.keys(obj).forEach(d => { const m = shelterMarkIn(obj[d]); if(m) state.shelterOpened[d] = shelterMerge(state.shelterOpened[d], m); });
+  }
+  /**
+   * Stuknięcie w link raportu: formularz otwiera przeglądarka (zwykły link), a my zapamiętujemy na serwerze, kto i z jakimi
+   * psami go otwierał — od razu na tym telefonie, po odświeżeniu na każdym. Ramkę przerysowujemy dopiero po stuknięciu:
+   * podmiana linku w trakcie kliknięcia mogłaby zatrzymać otwarcie formularza.
+   */
+  function shelterOpen(btn){
+    const date = btn.dataset.date, keys = String(btn.dataset.keys || '').split(',').filter(Boolean);
+    if(!date || !keys.length) return;
+    state.shelterOpened[date] = shelterMerge(state.shelterOpened[date], {at: (state.today || '') + ' ' + localHM(), t: Date.now(), keys});
+    enqueue('shelterReportOpened', [date, keys], {key: 'shelter:' + date, reconcile: res => {
+      const m = res && shelterMarkIn(res.mark);
+      if(m && res.date){
+        // czas z serwera (zegar telefonu bywa przestawiony), psy — razem z tym, co telefon już wie
+        const cur = state.shelterOpened[res.date];
+        state.shelterOpened[res.date] = {at: m.at, t: m.t, keys: shelterMerge(cur, m).keys};
+      }
+      if(state.view === 'today' && !state.admin) patchShelter('self');
+    }});
+    setTimeout(() => { if(state.view === 'today' && !state.admin) patchShelter('self'); }, 0);
+  }
+  /** Link z panelu — te same reguły co shelterLink_ na serwerze (S155): komunikat od razu. '' = w porządku (pusty — bez raportu). */
+  function shelterLinkProblem(raw){
+    const s = String(raw==null ? '' : raw).trim();
+    if(!s) return '';
+    const bad = 'To nie jest link do formularza Microsoft Forms — wklej link od schroniska (https://forms.cloud.microsoft/… albo https://forms.office.com/…)';
+    const m = s.length <= SHELTER_LINK_MAX ? s.match(/^https:\/\/([^\/?#\s]+)([^?#\s]*)(\?[^#\s]*)?(#\S*)?$/i) : null;
+    if(!m || SHELTER_HOSTS.indexOf(m[1].toLowerCase()) < 0) return bad;
+    const q = (m[3] || '').match(/[?&]id=([^&]*)/);
+    if(q){
+      let id = '';
+      try{ id = decodeURIComponent(q[1]); }catch(e){ id = ''; }
+      return /^[A-Za-z0-9_.-]{10,300}$/.test(id) ? '' : 'W linku jest zły numer formularza (id=…) — skopiuj link jeszcze raz';
+    }
+    return /^\/(e|r)\/[A-Za-z0-9]{4,40}\/?$/.test(m[2]) ? '' : bad;
+  }
+  /**
+   * Formularz a katalog — do panelu: które psy trafią do raportu, a które nie i dlaczego (inny numer, inna grupa,
+   * bez numeru, numer kilka razy w formularzu), i pozycje formularza, których nie ma w katalogu.
+   */
+  function shelterMatch(){
+    const f = state.shelter;
+    if(!f || !Array.isArray(f.choices)) return null;
+    const form = {}, mine = {}, out = {ours: [], others: [], missing: [], othersOut: [], noNr: [], unknown: [], twice: []};
+    f.choices.forEach(c => { const k = shelterKey(c); if(k) (form[k] = form[k] || []).push(c); else out.unknown.push(c); });
+    state.dogs.forEach(d => {
+      const k = shelterKey(d.ident), x = {label: dogLabel(d), nr: String(d.ident == null ? '' : d.ident).trim(), team: teamClean(d.team)};
+      if(!k){ out.noNr.push(x); return; }
+      mine[k] = true;
+      if(form[k]) (x.team ? out.others : out.ours).push(x);
+      else (x.team ? out.othersOut : out.missing).push(x);
+    });
+    Object.keys(form).forEach(k => {
+      if(form[k].length > 1) out.twice.push(form[k][0]);
+      if(!mine[k]) out.unknown.push(form[k][0]);
+    });
+    return out;
+  }
+  function shelterMatchHtml(){
+    const m = shelterMatch();
+    if(!m) return '';
+    const choice = c => esc(String(c).replace(/\s+/g, ' ').trim());
+    const line = (warn, text) => `<div class="hint${warn ? ' pollerr' : ''}">${text}</div>`;
+    let h = line(false, `Psy z katalogu w formularzu: ${m.ours.length + m.others.length}`
+      + (m.others.length ? `, w tym innych grup: ${shelterNames(m.others)}` : '') + '.');
+    if(m.missing.length) h += line(true, `Nasze psy, których nie ma w formularzu — nie trafią do raportu (inny numer albo schronisko musi je dopisać): ${shelterNames(m.missing)}.`);
+    if(m.othersOut.length) h += line(false, `Psy innych grup spoza formularza — nie trafią do raportu: ${shelterNames(m.othersOut)}.`);
+    if(m.noNr.length) h += line(true, `Bez numeru albo z numerem w innym kształcie niż „552/26” — nie da się ich dopasować: ${shelterNames(m.noNr)}.`);
+    if(m.twice.length) h += line(true, `Ten sam numer na kilku pozycjach formularza (raport ich nie zaznaczy): ${m.twice.map(choice).join(', ')}.`);
+    if(m.unknown.length) h += line(false, `W formularzu, a nie ma ich w katalogu: ${m.unknown.map(choice).join(', ')}.`);
+    return h;
+  }
+  function renderShelterPanel(sp){
+    // bez odpowiedzi panelu — „Pobieram…"; nieudane pobranie mówi o sobie (jak diagnostyka, S114), nie wieczne „Pobieram…"
+    if(!sp) return `<div class="panelbox"><h3>Formularz schroniska</h3><div class="hint">${!state.diag ? 'Pobieram…'
+      : state.diag.failed ? 'Nie udało się pobrać ustawień — „Spróbuj jeszcze raz” w sekcji diagnostyki.'
+      : 'Nie udało się odczytać ustawień raportu.'}</div></div>`;
+    const saved = sp.link || '', link = state.shelterDraft !== null ? state.shelterDraft : saved;
+    const dirty = state.shelterDraft !== null && state.shelterDraft.trim() !== saved, busy = state.shelterBusy;
+    const status = !saved ? 'Nie ustawiony — przycisku „Raport do schroniska” nie ma.'
+      : `Formularz „${esc(sp.title || '?')}” — ${sp.count} ${plural(sp.count, 'pozycja', 'pozycje', 'pozycji')} na liście psów, sprawdzony ${esc(sp.at)}.`
+        + (sp.active === false ? ' <b>Nie przyjmuje teraz odpowiedzi.</b>' : '');
+    const err = saved && sp.err ? `<div class="hint pollerr">Ostatnie sprawdzenie (${esc(sp.errAt)}) nie wyszło: ${esc(sp.err)}
+      Raport działa dalej według listy psów z ${esc(sp.at)}.</div>` : '';
+    return `
+      <div class="panelbox">
+        <h3>Formularz schroniska</h3>
+        <label class="mailfl" for="shelterLink">Link do formularza (od schroniska)</label>
+        <input id="shelterLink" class="mailfield" type="text" inputmode="url" autocomplete="off" autocapitalize="off"
+          spellcheck="false" maxlength="${SHELTER_LINK_MAX}" value="${esc(link)}">
+        <div class="shelterdirty${dirty ? '' : ' hidden'}">Niezapisany link — raport idzie według zapisanego formularza.</div>
+        <div class="adminrow"><button class="btn add-btn" data-act="shelterSave"${busy ? ' disabled' : ''}>${busy === 'save' ? 'Sprawdzam formularz…' : 'Zapisz'}</button>
+          ${saved ? `<button class="btn outline" data-act="shelterCheck"${busy ? ' disabled' : ''}>${busy === 'check' ? 'Sprawdzam…' : 'Sprawdź formularz'}</button>` : ''}
+          <button class="btn ghost${dirty ? '' : ' hidden'}" data-act="shelterReset">Przywróć zapisany</button></div>
+        <div class="hint">${status}</div>
+        ${err}
+        ${saved ? shelterMatchHtml() : ''}
+        <div class="hint">„📝 Raport do schroniska” — pod listą bieżącego dnia i w minionym dniu — otwiera ten formularz z datą
+        i psami, które tego dnia z nami wyszły; wolontariusz sprawdza i stuka „Prześlij”. Psa z pozycją formularza łączy numer
+        (zera z przodu i rok „2026” zamiast „26” nie przeszkadzają). Psów spoza formularza raport nie zaznacza — ramka mówi
+        które. Zapis sprawdza formularz od razu; lista psów odświeża się co noc przy czyszczeniu, a po zmianie formularza przez
+        schronisko — „Sprawdź formularz”. Pusty link i „Zapisz” — bez raportu.</div>
+      </div>`;
+  }
+  function showShelterDirty(){
+    const sp = state.diag && state.diag.shelter, saved = (sp && sp.link) || '';
+    const d = state.shelterDraft !== null && state.shelterDraft.trim() !== saved;
+    viewEl.querySelectorAll('.shelterdirty, [data-act="shelterReset"]').forEach(x => x.classList.toggle('hidden', !d));
+    invalidateHtml();
+  }
+  /** Odpowiedź zapisu i sprawdzenia formularza: panel i formularz dla listy (bez czekania na odświeżenie). */
+  function applyShelterReply(res){
+    if(!res || typeof res !== 'object') return;
+    if(state.diag && !state.diag.failed && res.panel) state.diag.shelter = res.panel;
+    state.shelter = res.form && typeof res.form === 'object' ? res.form : null;
+  }
+  /**
+   * Zapis i sprawdzenie formularza idą wprost, nie przez kolejkę: serwer czyta przy tym formularz od Microsoftu (sekundy),
+   * a błąd („formularz nie pozwala na wstępne wypełnienie") ma przyjść od razu, nie po automatycznej powtórce. Bez odpowiedzi
+   * (bug nr 8) przycisk wraca po T.shelterWait, a panel dociąga stan z serwera.
+   */
+  function shelterCall(busy, fn, args, ok){
+    if(state.shelterBusy) return;
+    state.shelterBusy = busy;
+    render('nav');
+    let done = false;
+    const end = () => { if(done) return; done = true; state.shelterBusy = ''; if(state.view==='diag') safeRender('nav'); };
+    const timer = setTimeout(() => { if(!done){ toast('Formularz długo nie odpowiada — sprawdź za chwilę'); end(); fetchDiag(); } }, T.shelterWait);
+    google.script.run
+      .withSuccessHandler(res => { clearTimeout(timer); if(done) return; try{ applyShelterReply(res); ok(res || {}); } finally { end(); } })
+      .withFailureHandler(err => { clearTimeout(timer); if(done) return; toast(err && err.message ? err.message.replace(/^Error:\s*/,'') : 'Nie udało się'); end(); })
+      [fn](...args);
   }
 
   /* ---------- ankieta tygodniowa na WhatsAppie (Poll.gs) ----------
@@ -2790,7 +3106,7 @@
    * szedł z kim. Grupą jest tu numer z co najmniej dwoma odbytymi spacerami: gdy reszta grupy
    * nie wyszła, pies szedł sam. Wpisy sprzed kolumny `grupa` w Historii są bez grupy.
    */
-  function renderPastDay(date){
+  function renderPastDay(date, cause){
     const items = state.past[date];
     let html = `<div class="dayhint">Miniony dzień — tylko podgląd.</div>`;
     if(!items){
@@ -2800,6 +3116,8 @@
       return html + '<div class="empty">Wczytuję…</div>';
     }
     if(!items.length) return html + '<div class="empty">Tego dnia nie zapisano żadnego spaceru.</div>';
+    // raport do schroniska (1.6) — gdy ktoś zapomniał wysłać go w dniu spaceru; nad mailem, bo to on idzie do schroniska
+    html += shelterBox(date, cause);
     if(state.mailTemplate){
       // target=_top: aplikacja siedzi w ramce Apps Script — link idzie do okna nadrzędnego (tak radzi
       // dokumentacja HtmlService), a mailto: otwiera pocztę bez opuszczania strony
@@ -3527,6 +3845,9 @@
   // grupa listy członków — wybór trzymany w stanie (przerysowanie panelu go nie gubi)
   viewEl.addEventListener('change', e => { if(e.target.id === 'rosterChat'){ state.rosterChat = e.target.value; invalidateHtml(); } });
 
+  // link do formularza raportu pisany w panelu — szkic w stanie, jak mail
+  viewEl.addEventListener('input', e => { if(e.target.id === 'shelterLink'){ state.shelterDraft = e.target.value; showShelterDirty(); } });
+
   // treść maila pisana w panelu — trzymana w stanie, żeby przeżyła przerysowanie (np. po stuknięciu obok)
   viewEl.addEventListener('input', e=>{
     if(!['mailTo','mailSubject','mailTemplate'].includes(e.target.id)) return;
@@ -3543,7 +3864,11 @@
   viewEl.addEventListener('click',e=>{
     // podczas zaznaczania grupy stuknięcie w kafelek tylko go zaznacza — żadnych
     // rezerwacji ani spacerów „przy okazji", także z puszczenia przytrzymanego palca
-    if(state.select){ try{ togglePick(e); }catch(err){ cancelSelect(); } return; }
+    if(state.select){
+      if(e.target.closest && e.target.closest('a[href]')) e.preventDefault();   // link raportu pod listą też tylko „zaznacza"
+      try{ togglePick(e); }catch(err){ cancelSelect(); }
+      return;
+    }
     try{ handleAction(e); }
     catch(err){
       diagNote('error', { msg: 'akcja: ' + (err && err.message || err) });
@@ -3560,6 +3885,13 @@
     /* --- miniony dzień: mail z listą psów dla schroniska --- */
     if(act==='copyMail'){ copyMail(btn.dataset.date); return; }
     if(act==='sendMail') return;                    // zwykły link mailto: — telefon sam otwiera pocztę
+
+    /* --- raport do schroniska: zwykły link do formularza; ramka zmieniona pod palcem — formularz się nie otwiera --- */
+    if(act==='shelterReport'){
+      if(tapRefused(e, btn)){ e.preventDefault(); return; }
+      shelterOpen(btn);
+      return;
+    }
 
     /* --- wolontariusze: spacery --- */
     if(!state.admin && tapRefused(e, btn)) return;
@@ -3797,6 +4129,29 @@
       if(!ask('Wysłać ten podgląd do ' + to + ' na WhatsAppie?')) return;
       helperCall('send', 'helperPreview', [state.pin, pv.kind, true], () => { toast('Wysłane do ' + to, 'ok'); });
     }
+    if(act==='shelterReset'){ state.shelterDraft = null; render('nav'); }
+    if(act==='shelterSave'){
+      const el = viewEl.querySelector('#shelterLink'), link = el ? el.value.trim() : '';
+      const sp = state.diag && state.diag.shelter;
+      // te same reguły co serwer (shelterLink_) — komunikat od razu, bez przelotu
+      const problem = shelterLinkProblem(link);
+      if(problem){ toast(problem); return; }
+      if(!link && !(sp && sp.link)){ toast('Wklej link do formularza od schroniska'); return; }
+      if(!link && !ask('Usunąć formularz raportu? Przycisk „Raport do schroniska” zniknie z listy.')) return;
+      shelterCall('save', 'setShelterForm', [link, state.pin], res => {
+        state.shelterDraft = null;
+        const p = res.panel || {};
+        toast(link ? 'Formularz zapisany: „' + (p.title || '?') + '” — ' + (p.count || 0) + ' ' + plural(p.count || 0, 'pozycja', 'pozycje', 'pozycji')
+          : 'Formularz usunięty — bez raportu', 'ok');
+      });
+    }
+    if(act==='shelterCheck'){
+      shelterCall('check', 'checkShelterForm', [state.pin], res => {
+        const p = res.panel || {};
+        if(res.error) toast('Nie udało się sprawdzić formularza: ' + res.error);
+        else toast('Formularz sprawdzony — ' + (p.count || 0) + ' ' + plural(p.count || 0, 'pozycja', 'pozycje', 'pozycji') + ' na liście psów', 'ok');
+      });
+    }
     if(act==='resetMail'){ state.mailDraft = null; render('nav'); }
     if(act==='saveMail'){
       const v = id => { const el = viewEl.querySelector('#' + id); return el ? el.value : ''; };
@@ -3860,10 +4215,12 @@
    */
   const WHATS_NEW = [
     { v: '1.6', date: '', items: [
+        '📝 Raport do schroniska — pod listą dnia. Otwiera formularz schroniska z datą i psami, które wróciły ze spaceru: zostaje sprawdzić i stuknąć „Prześlij”. Gdy ktoś zapomni — ten sam przycisk jest w minionym dniu. Jeśli raport był już otwierany, widać o której, a nowe psy można dosłać osobno.',
         'Przy psie może być kilka notatek — każda ze swoim terminem.',
         'Odkleszczanie: tydzień przed terminem przy psie pojawia się 💊 przypomnienie, a w dniu terminu — zadanie na liście. Odhaczenie zadania liczy następny termin od tego dnia.',
         'Bot z „Grafiku” (w fazie testów): rano skład na dziś, a pod nim zadania na dziś.',
       ], admin: [
+        'Raport do schroniska: link do formularza w panelu (sekcja „Raport do schroniska — formularz”) i lista, które psy z katalogu są w formularzu, a których brakuje.',
         'Edycja psa: kilka notatek („+ Notatka”, każda z terminem albo „nigdy nie znika”) i odkleszczanie — metoda z listy albo nowa, co ile tygodni lub miesięcy, data następnego.',
         'Pomocnik Grafiku: rano codziennie (przełącznik „…codziennie”) — skład na dziś z zadaniami.',
       ] },

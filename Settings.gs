@@ -39,6 +39,8 @@ const PROP_HELPER_IDS = 'helperIds';           // ...numery osób (#17): adres W
 const PROP_HELPER_BUSY = 'helperBusy';         // ...przebieg w toku (znacznik czasu) — jeden naraz
 const PROP_HELPER_LEASE = 'helperLease';       // ...test: sygnał „pracuję" z produkcji {until, at, rx} — jeden aktywny pomocnik
 const PROP_HELPER_LEASE_SENT = 'helperLeaseSent'; // ...produkcja: ostatni sygnał wysłany do testu {at, on, ok, err} (panel)
+const PROP_SHELTER_FORM = 'shelterForm';      // raport do schroniska: formularz Microsoft Forms (link, pytania, psy; JSON) — Shelter.gs
+const PROP_SHELTER_OPENED = 'shelterOpened';  // ...kiedy i z jakimi psami otwierano raport dnia {'<dzień>': {at, t, k}}
 const PROP_DIAG_SERVER = 'diagServer';        // dziennik spowolnień: wolne wywołania serwera (JSON) — Diag.gs
 const PROP_DIAG_PHONES = 'diagPhones';        // dziennik spowolnień: to, co dosłały telefony (reportDiag)
 // Dostęp do bramki WhatsAppa (Green API) — ustawiane RĘCZNIE we właściwościach skryptu, jak PIN:
