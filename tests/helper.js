@@ -321,6 +321,10 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
   check('ankieta w środku tygodnia na ten weekend („26.06 - 28.06" w czwartek 25.06, „30.10-01.11" w środę 28.10) — bez ostrzeżenia o datach',
     mid1.wrong === false && mid1.from === '2026-06-26' && mid2.wrong === false, JSON.stringify([mid1, mid2]));
   check('...ankieta na dni, które już minęły („21-27.10" wysłana 28.10) — z ostrzeżeniem', R('Grafik 21-27.10', '2026-10-28').wrong === true);
+  // drugie review PR #8, nr 2: tytuł skopiowany z zeszłego tygodnia — ankieta wysłana w niedzielę, zakres kończy się tego dnia
+  check('„Grafik 19-25.10" wysłana w niedzielę 25.10 (zeszły tydzień) — z ostrzeżeniem; jednodniowa „Środa 28.10" na dziś — bez',
+    R('Grafik 19-25.10', '2026-10-25').wrong === true && R('Środa 28.10', '2026-10-28').wrong === false,
+    JSON.stringify([R('Grafik 19-25.10', '2026-10-25'), R('Środa 28.10', '2026-10-28')]));
 
   // review PR #8, nr 4b: ankieta poznana najpierw z głosu — gdy przyjdzie sama ankieta, dni i daty od dnia jej wysłania
   const quiet = { weekDays: [], features: { evening: false, morning: false, newPoll: false, members: false, lastWeek: false, weather: false } };
@@ -368,9 +372,15 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
            full('FS6b', BASIA, { 'Poniedziałek': [LA], 'Wtorek': [LB] }, '2026-10-25T10:16:00+02:00'),
            full('FS6c', BASIA, { 'Poniedziałek': [LA] }, '2026-10-25T11:00:00+02:00'));                     // Basia wycofuje wszystko
   fs6.tick();
-  check('adresy @lid: Ania powiązana ze swoim @lid; wycofanie Basi (został głos Ani) — bez powiązania Basi z cudzym @lid, jej głos zdjęty',
-    fs6.st().alias[ANIA] === LA && !fs6.st().alias[BASIA] && !pollOf(fs6, 'P5').v[LB] && votersOn(fs6, 'P5', '2026-10-26').join() === LA,
+  // jedna osoba w powiadomieniu, która nie może być nadawcą: zdjęte tylko głosy nadawcy pod znanymi adresami (decyzja właściciela
+  // 29.10, wersja ostrożna) — głos Basi pod nieznanym @lid zostaje do najbliższego pełnego stanu z co najmniej dwiema osobami
+  check('adresy @lid: Ania powiązana ze swoim @lid; wycofanie Basi (został głos Ani) — bez powiązania Basi z cudzym @lid, głos Ani zostaje',
+    fs6.st().alias[ANIA] === LA && !fs6.st().alias[BASIA] && votersOn(fs6, 'P5', '2026-10-26').join() === LA,
     JSON.stringify({ alias: fs6.st().alias, v: pollOf(fs6, 'P5').v }));
+  fs6.push(full('FS6d', DAWID, { 'Poniedziałek': [LA], 'Czwartek': [DAWID] }, '2026-10-25T11:30:00+02:00'));
+  fs6.tick('2026-10-25T11:35:00+02:00');
+  check('...najbliższy pełny stan (dwie osoby i więcej) zdejmuje głos Basi pod jej @lid', !pollOf(fs6, 'P5').v[LB] && votersOn(fs6, 'P5', '2026-10-26').join() === LA,
+    JSON.stringify(pollOf(fs6, 'P5').v));
   const fs7 = build();
   on(fs7, quiet);
   fs7.push(pollMsg('P5', Q, OPTS, '2026-10-25T10:13:00+02:00'),
@@ -388,9 +398,34 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
            full('FS8a', BASIA, { 'Poniedziałek': [LC], 'Wtorek': [BASIA] }, '2026-10-25T10:16:00+02:00'),  // głos Celiny pod nieznanym @lid
            full('FS8b', CELINA, { 'Wtorek': [BASIA] }, '2026-10-25T11:00:00+02:00'));                         // Celina wycofuje wszystko
   fs8.tick();
-  check('...wycofanie Celiny (jej głos tylko pod nieznanym @lid), został głos Basi (@c.us) — dwa adresy @c.us to dwie osoby: bez powiązania, głos @lid zdjęty',
-    !fs8.st().alias[CELINA] && !pollOf(fs8, 'P5').v[LC] && votersOn(fs8, 'P5', '2026-10-27').join() === BASIA,
-    JSON.stringify({ alias: fs8.st().alias, v: pollOf(fs8, 'P5').v }));
+  check('...wycofanie Celiny (jej głos tylko pod nieznanym @lid), został głos Basi (@c.us) — dwa adresy @c.us to dwie osoby: bez powiązania, Basia zostaje',
+    !fs8.st().alias[CELINA] && votersOn(fs8, 'P5', '2026-10-27').join() === BASIA, JSON.stringify({ alias: fs8.st().alias, v: pollOf(fs8, 'P5').v }));
+
+  // drugie review PR #8, nr 1 — model z dokumentacji bramki (powiadomienie o jednej osobie). Pierwsze, co pomocnik widzi od Ani,
+  // to wycofanie (głosowała, zanim ją znał); potem jej głos pod @lid. Wycofanie to nie głos: to jej drugi adres, nie „pełny stan"
+  const sp1 = build();
+  on(sp1, quiet);
+  sp1.push(pollMsg('P6', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P6', BASIA, ['Wtorek'], '2026-10-25T10:15:00+02:00', { name: 'Basia' }),
+           vote('P6', KASIA, ['Piątek'], '2026-10-25T10:16:00+02:00', { name: 'Kasia' }),
+           vote('P6', ANIA, [], '2026-10-25T10:20:00+02:00', { name: 'Ania' }),
+           vote('P6', ANIA, ['Środa'], '2026-10-25T10:25:00+02:00', { voter: LA, name: 'Ania' }));
+  sp1.tick();
+  const g1 = sp1.st().gone.filter(g => g.w === BASIA || g.w === KASIA);
+  check('Ania wycofała, potem głos pod @lid: głosy Basi i Kasi zostają, nikt nie „wypisał się", Ania powiązana ze swoim @lid',
+    votersOn(sp1, 'P6', '2026-10-27').join() === BASIA && votersOn(sp1, 'P6', '2026-10-30').join() === KASIA && votersOn(sp1, 'P6', '2026-10-28').join() === LA
+    && !g1.length && sp1.st().alias[ANIA] === LA, JSON.stringify({ v: pollOf(sp1, 'P6').v, gone: sp1.st().gone, alias: sp1.st().alias }));
+  // ta sama osoba najpierw jako @c.us, potem jako @lid (decyzja właściciela 29.10 — wersja ostrożna): zdjęte tylko jej głosy
+  const sp2 = build();
+  on(sp2, quiet);
+  sp2.push(pollMsg('P6', Q, OPTS, '2026-10-25T10:13:00+02:00'),
+           vote('P6', ANIA, ['Poniedziałek'], '2026-10-25T10:15:00+02:00', { name: 'Ania' }),
+           vote('P6', BASIA, ['Wtorek'], '2026-10-25T10:16:00+02:00', { name: 'Basia' }),
+           vote('P6', ANIA, ['Środa'], '2026-10-25T11:00:00+02:00', { voter: LA, name: 'Ania' }));
+  sp2.tick();
+  check('ta sama osoba raz jako @c.us, potem jako @lid: jej stary głos zdjęty, głos Basi zostaje, Basia się nie „wypisała"',
+    votersOn(sp2, 'P6', '2026-10-27').join() === BASIA && !pollOf(sp2, 'P6').v[ANIA] && votersOn(sp2, 'P6', '2026-10-28').join() === LA
+    && !sp2.st().gone.some(g => g.w === BASIA), JSON.stringify({ v: pollOf(sp2, 'P6').v, gone: sp2.st().gone }));
 })();
 
 /* ---------- B77: o obecności mówi tylko ankieta ---------- */
@@ -1050,6 +1085,46 @@ const votersOn = (env, id, date) => { const p = pollOf(env, id); return Object.k
     && !day.st().marks['ev|2026-10-26'] && !day.st().marks['poll|P3'] && day.st().queue.indexOf('P3') >= 0, JSON.stringify({ marks: day.st().marks, queue: day.st().queue }));
   day.tick('2026-10-27T10:05:00+02:00');
   check('...następnego dnia nowa ankieta idzie', day.msgs().some(m => /Nowa ankieta w Grafiku/.test(m)), day.msgs().join(' | '));
+
+  // drugie review PR #8, nr 4: przy osiągniętym sufcie wiadomości o swojej porze nie są nawet składane — bez odczytów arkusza
+  // i bez pytania o pogodę w każdym przebiegu okna (sufit dzienny i tak nie odnowi się przed jego końcem)
+  const idle = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(idle, { weekDays: [], features: { members: false, lastWeek: false, newPoll: false } });
+  idle.gw.weather = { daily: { time: ['2026-10-27'], temperature_2m_min: [4], temperature_2m_max: [11], precipitation_probability_max: [30] } };
+  idle.tick();
+  const xi = JSON.parse(idle.props.helperState);
+  xi.sent = { day: '2026-10-26', n: idle.conf.HELPER_DAY_MAX };
+  idle.props.helperState = JSON.stringify(xi);
+  const meteo = () => idle.http.calls.filter(c => /open-meteo/.test(c.url)).length, psy0 = idle.calls.bySheet['Psy'] || 0;
+  for (let t = Date.parse('2026-10-26T20:05:00+02:00'); t <= Date.parse('2026-10-26T22:55:00+02:00'); t += 10 * 60000) idle.tick(new Date(t).toISOString());
+  check('sufit dzienny: przebiegi 20:05–22:55 — ani pytania o pogodę, ani odczytu psów, skład bez znacznika, jeden wpis w dzienniku',
+    meteo() === 0 && (idle.calls.bySheet['Psy'] || 0) === psy0 && idle.gw.sent.length === 0 && !idle.st().marks['ev|2026-10-26']
+    && idle.st().log.filter(l => /limit wiadomości \(na dzień\)/.test(l.m)).length === 1,
+    'pogoda: ' + meteo() + ', psy: ' + ((idle.calls.bySheet['Psy'] || 0) - psy0) + ', dziennik: ' + JSON.stringify(idle.st().log.slice(-3)));
+
+  // drugie review PR #8, nr 3: nowa ankieta odrzucona przez bramkę (4xx) wraca do kolejki; przy nieznanym wyniku (5xx) — nie drugi raz
+  const rej = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(rej, { weekDays: [], features: { evening: false, morning: false, members: false, lastWeek: false, weather: false } });
+  let r400 = 0;
+  rej.gw.fail = (url, opts) => /\/sendMessage\//.test(url) && /Nowa ankieta/.test(JSON.parse(opts.payload).message) && !r400++
+    ? { code: 400, body: '{"message":"Bad request"}' } : null;
+  rej.push(pollMsg('P4', Q, OPTS, '2026-10-26T11:58:00+02:00'));
+  rej.tick();
+  check('nowa ankieta: bramka odrzuca (400) — nic nie poszło, ankieta czeka w kolejce', r400 === 1 && !rej.msgs().some(m => /Nowa ankieta/.test(m))
+    && rej.st().queue.indexOf('P4') >= 0, JSON.stringify(rej.st().queue));
+  rej.tick('2026-10-26T12:10:00+02:00');
+  rej.tick('2026-10-26T12:20:00+02:00');
+  check('...następny przebieg wysyła ją dokładnie raz', rej.msgs().filter(m => /Nowa ankieta/.test(m)).length === 1 && !rej.st().queue.length);
+  const unk = build({ now: '2026-10-26T12:00:00+02:00' });
+  on(unk, { weekDays: [], features: { evening: false, morning: false, members: false, lastWeek: false, weather: false } });
+  let r502 = 0;
+  unk.gw.fail = (url, opts) => /\/sendMessage\//.test(url) && /Nowa ankieta/.test(JSON.parse(opts.payload).message) && !r502++
+    ? { code: 502, body: 'bad gateway' } : null;
+  unk.push(pollMsg('P4', Q, OPTS, '2026-10-26T11:58:00+02:00'));
+  unk.tick();
+  unk.tick('2026-10-26T12:10:00+02:00');
+  check('nowa ankieta: bramka nie wiadomo czy wysłała (502) — znacznik stoi, drugi raz nie idzie, kolejka pusta', r502 === 1 && !!unk.st().marks['poll|P4']
+    && !unk.msgs().some(m => /Nowa ankieta/.test(m)) && !unk.st().queue.length, JSON.stringify({ marks: unk.st().marks, queue: unk.st().queue }));
 })();
 
 /* ---------- B88: spóźniony głos w dawnej ankiecie bez dat nie przejmuje dni bieżącej (review PR #8, nr 8) ---------- */

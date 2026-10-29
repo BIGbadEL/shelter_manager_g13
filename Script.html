@@ -3456,11 +3456,12 @@
       if(problem){ toast(problem); return; }
       // zapis, po którym coś zaczyna pisać do grupy — nowa funkcja „gotowa", „gotowe" do innej grupy albo włączenie pomocnika
       // z zapisanymi „gotowymi" (review PR #8: zmiana grupy na ogłoszenia społeczności szła bez pytania) — najpierw pytanie
-      // z grupą i całą listą (co pójdzie, widać w podglądzie)
+      // z grupą i całą listą (co pójdzie, widać w podglądzie). Przy wyłączonym pomocniku nic nie idzie, więc bez pytania —
+      // padnie przy włączeniu (drugie review PR #8, decyzja właściciela 29.10: pytanie bez potrzeby uczy klikać „OK")
       const saved = h.settings || {}, was = saved.ready || {};
       const ready = HELPER_READY.filter(k => f.ready[k]);
       const added = ready.filter(k => !was[k]);
-      const starts = added.length || (ready.length && (f.chatId !== saved.chatId || (f.enabled && !saved.enabled)));
+      const starts = f.enabled && (added.length || (ready.length && (f.chatId !== saved.chatId || !saved.enabled)));
       if(starts && !ask('Do grupy „' + (f.chatName || 'Grafik') + '" — do wszystkich jej członków — zaczną iść: '
         + ready.map(k => HELPER_LABEL[k]).join(', ') + '.\nTekst jak w podglądzie: imiona z kontaktów bota i z „Imiona", klasy 🟣 🟠 🌱, wypisani. Zapisać?')) return;
       enqueue('setHelperSettings',[f,state.pin],{key:'helper',reconcile:res=>{

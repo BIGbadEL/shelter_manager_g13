@@ -342,12 +342,14 @@ Dodanie kolumny wymaga trzech kroków: `Config.gs` (mapa + nagłówki) → `Setu
   przyjmuje. Po przerwie dłuższej niż `HELPER_STALE_MIN` pomocnik doczytuje historię czatu. Stan (członkowie, klasy, numery
   osób) jest osobny w każdej aplikacji. **`doPost` to jedyne wejście POST** — publiczne, przyjmuje tylko ten sygnał. Głosy
   (dokumentacja bramki: powiadomienie dotyczy jednej osoby — niesprawdzone, więc reguły działają przy obu): nikt w odpowiedziach =
-  nadawca wycofał wszystko, dwie i więcej = pełny stan, jedna = sam nadawca albo — gdy to nie może być on — pełny stan; drugi
-  adres nadawcy (`@lid` ↔ `@c.us`, `alias`) tylko innego rodzaju, niczyj i gdy nadawca nie ma jeszcze głosu w ankiecie
-  (`helperSelf_`, review PR #8, B76); głos to stan osoby z czasem (`vt`) — starszy niż znany nic nie zmienia. Ankieta poznana
-  tylko z głosu i bez dat w pytaniu nie ma dni (`nodays`), dopóki nie przyjdzie sama (decyzja właściciela 28.10, B88);
-  wiadomość zatrzymana sufitem albo odrzucona przez bramkę idzie w następnym przebiegu (`helperOnce_`: callback zwraca wynik
-  `helperSend_`, false = bez znacznika — B87); `helperTick` najwcześniej `HELPER_TICK_GAP_MIN` po poprzednim przebiegu (B90).
+  nadawca wycofał wszystko, dwie i więcej = pełny stan, jedna = sam nadawca albo — gdy to nie może być on — jej wybory
+  i wycofanie samego nadawcy, **bez zdejmowania głosów innym** (drugie review PR #8, decyzja właściciela 29.10 — wersja
+  ostrożna); drugi adres nadawcy (`@lid` ↔ `@c.us`, `alias`) tylko innego rodzaju, niczyj i gdy nadawca nie ma jeszcze
+  obecnego głosu w ankiecie — wycofanie to nie głos (`helperSelf_`, B76); głos to stan osoby z czasem (`vt`) — starszy niż znany
+  nic nie zmienia. Ankieta poznana tylko z głosu i bez dat w pytaniu nie ma dni (`nodays`), dopóki nie przyjdzie sama (decyzja
+  właściciela 28.10, B88); wiadomość zatrzymana sufitem albo odrzucona przez bramkę (4xx) idzie w następnym przebiegu
+  (`helperOnce_`: callback zwraca wynik `helperSend_`, false = bez znacznika; nowa ankieta bez znacznika wraca do kolejki), a przy
+  osiągniętym sufcie nie jest nawet składana (B87); `helperTick` najwcześniej `HELPER_TICK_GAP_MIN` po poprzednim przebiegu (B90).
   **Bramka nie oddaje bieżącego wyniku ankiety** — tylko zdarzenia osób z czasu, gdy powiadomienia w instancji były
   włączone. Test 24–25.10: wszystkie wyłączone, pomocnik ślepy, a pisał „W Grafiku nie ma ankiety" — teraz
   **`helperGate_`** (getSettings co przebieg, dopóki czegoś brakuje): bez powiadomień zamiast składów jedno ostrzeżenie
@@ -634,7 +636,7 @@ Wymaga Node (sprawdzone na 24 LTS) i `npm install` w katalogu projektu — `jsdo
 zależność, wyłącznie na potrzeby harnessów. Sam kod aplikacji nadal mieszka w Apps Script
 i nic o npm nie wie. Pojedynczy zestaw: `node tests/scenarios3.js`.
 
-Aktualnie **2015 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
+Aktualnie **2025 asercji, wszystkie zielone** — w każdej strefie czasowej maszyny (`tests/harness.js`
 ustawia `TZ=Europe/Warsaw`; bez tego S127 był czerwony w UTC, a z nim `deploy:*` — review PR #5, runda 3).
 Nowa funkcja bez testu nie jest skończona.
 
@@ -833,12 +835,15 @@ produkcji, POST na adres wdrożenia testowego, bez tokenu; test z ważnym sygna�
 podróbka, śmieci, inny token, sygnał sprzed 15 min, spóźniony „pracuję" po „koniec" — odrzucone; produkcja nie przyjmuje;
 „koniec" i wygaśnięcie — test przejmuje kolejkę i doczytuje historię; aplikacja testowa nie odpowiada — przebieg produkcji
 idzie dalej, błąd w panelu), B87–B90 poprawki po review PR #8 (B87 wiadomość odrzucona przez bramkę albo zatrzymana sufitem
-nie dostaje znacznika i idzie w następnym przebiegu, „nowe osoby" nie giną, nowa ankieta wraca do kolejki; B88 ankieta poznana tylko
-z głosu i bez dat — bez dni, przy limicie wypada pierwsza; B89 błąd arkusza bez szczegółów w składzie, nazwa-numer telefonu jako
-„#N" także w zapisanej liście; B90 helperTick najwyżej raz na 5 min, historia czatu tylko dla dni z wiadomości tej pory; w B76 —
-daty ankiety w środku tygodnia, dni po przyjściu ankiety poznanej z głosu, głos z pełnym stanem bez fałszywego powiązania adresów;
-w B69 — sekret kluczy raz na wykonanie, karta sprzed 27.10 nie kasuje kontaktu; w B70 — data z godziną w `noPhones_`; S147b —
-pytanie przy zmianie grupy i włączeniu z „gotowymi"), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
+nie dostaje znacznika i idzie w następnym przebiegu, „nowe osoby" nie giną, nowa ankieta wraca do kolejki — po sufcie i po 4xx, po
+5xx nie drugi raz; przy osiągniętym sufcie dziennym przebiegi okna nie składają wiadomości — bez pogody i odczytów psów; B88 ankieta
+poznana tylko z głosu i bez dat — bez dni, przy limicie wypada pierwsza; B89 błąd arkusza bez szczegółów w składzie, nazwa-numer
+telefonu jako „#N" także w zapisanej liście; B90 helperTick najwyżej raz na 5 min, historia czatu tylko dla dni z wiadomości tej
+pory; w B76 — daty ankiety w środku tygodnia i kilkudniowy zakres kończący się w dniu wysłania (zeszły tydzień), dni po przyjściu
+ankiety poznanej z głosu, głos z pełnym stanem bez fałszywego powiązania adresów, wycofanie przed głosem pod `@lid` i ta sama
+osoba raz jako `@c.us`, potem `@lid` — bez zdejmowania głosów innym; w B69 — sekret kluczy raz na wykonanie, karta sprzed 27.10 nie
+kasuje kontaktu; w B70 — data z godziną w `noPhones_`; S147b — pytanie przy zmianie grupy i włączeniu z „gotowymi", przy
+wyłączonym pomocniku bez pytania), B74b na końcu: na teście wszystko do właściciela, na produkcji do grupy tylko „gotowe" z B85,
 T1–T3 konfiguracja wdrożeń, T4 wdrożenie otwiera aplikację, T5 numer wersji przy „Spacery" (`Index.html`, od 1.3)
 = `version` w `package.json` — podnosząc wersję, zmień oba (`tests/tooling.js`), T6 „Co nowego" (`WHATS_NEW`:
 pierwszy wpis = ta wersja, najnowsza na górze, każda starsza z datą — 1.4), T7 sonda testu wydania (`perf:test` mierzy

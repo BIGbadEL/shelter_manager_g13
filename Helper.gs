@@ -788,7 +788,9 @@ function helperRange_(q, ref) {
   }
   const near = helperDaysBetween_(ref, from) >= -7 && helperDaysBetween_(ref, from) <= 14;
   if (!near) return { from: expect.from, to: expect.to, parsed: true, wrong: true, said: { from, to } };
-  return { from, to, parsed: true, wrong: to < ref || from > expect.to, said: { from, to } };
+  // kilkudniowy zakres kończący się w dniu wysłania to pomyłka — ankieta tygodniowa idzie w niedzielę, a tytuł łatwo skopiować
+  // z zeszłego tygodnia („Grafik 19-25.10" wysłana 25.10; drugie review PR #8); jednodniowa ankieta na dziś — nie
+  return { from, to, parsed: true, wrong: to < ref || (to === ref && from < to) || from > expect.to, said: { from, to } };
 }
 
 /**
@@ -894,12 +896,19 @@ function helperApplyVotes_(st, sender, pd, at) {
   const newer = w => !(poll.vt[w] > sec);
   const put = (w, idx) => { if (!newer(w)) return; if (idx) poll.v[w] = idx.sort((a, b) => a - b); else delete poll.v[w]; poll.vt[w] = sec; };
   const one = voters.length === 1 ? voters[0] : '';
-  if (voters.length >= 2 || (one && !helperSelf_(st, poll, sender, one))) {
+  if (voters.length >= 2) {
     voters.forEach(w => put(w, by[w]));
     Object.keys(poll.v).forEach(w => { if (!by[w]) put(w, null); });
-  } else if (one) {
+  } else if (one && helperSelf_(st, poll, sender, one)) {
     if (sender && sender !== one) st.alias[sender] = one;
     put(one, by[one]);
+  } else if (one) {
+    // jedna osoba, która nie może być nadawcą: jej wybory i wycofanie samego nadawcy (pod znanymi adresami) — głosów innych
+    // osób nie zdejmujemy (drugie review PR #8, decyzja właściciela 29.10, wersja ostrożna): przy powiadomieniu o jednej osobie
+    // to ta sama osoba pod nowym adresem (@c.us → @lid), a „pełny stan" skasowałby wszystkich; przy pełnym stanie stary głos
+    // wycofującego pod nieznanym adresem zostaje do najbliższego powiadomienia z co najmniej dwiema osobami
+    put(one, by[one]);
+    helperSame_(st, sender).forEach(x => { if (x !== one && poll.v[x]) put(x, null); });
   } else {
     put(st.alias[sender] || sender, null);
   }
@@ -912,11 +921,13 @@ function helperApplyVotes_(st, sender, pd, at) {
 /**
  * Czy głosujący `w` (jedyny w powiadomieniu) to sam nadawca: ten sam adres, znany drugi adres (alias, lista członków) albo
  * adres innego rodzaju (`@lid` ↔ `@c.us`), którego nikt inny nie ma, gdy nadawca nie ma jeszcze głosu w tej ankiecie.
+ * Liczy się obecny głos (`poll.v`), nie samo wycofanie (`poll.vt`) — wycofanie to nie głos (drugie review PR #8: pierwszym
+ * zdarzeniem od osoby bywa wycofanie, a jej następny głos pod `@lid` brany był za „pełny stan").
  */
 function helperSelf_(st, poll, sender, w) {
   if (!sender || sender === w || st.alias[sender] === w || (st.links && st.links[w] === sender)) return true;
   if (/@lid$/.test(sender) === /@lid$/.test(w)) return false;
-  if (helperSame_(st, sender).some(x => poll.v[x] || poll.vt[x])) return false;
+  if (helperSame_(st, sender).some(x => poll.v[x])) return false;
   return !Object.keys(st.alias).some(k => st.alias[k] === w) && !(st.links && st.links[w]);
 }
 
@@ -1220,6 +1231,15 @@ function helperSendCard_(s, st, nr) {
  */
 function helperOnce_(st, key, run, fn) {
   if (st.marks[key]) return true;
+  // sufit już osiągnięty — wiadomości nawet nie składamy (odczyty arkusza, pogoda, skład grupy z bramki), czeka bez znacznika:
+  // na przebieg — do następnego przebiegu, na dzień — do jutra (drugie review PR #8: dawniej każdy przebieg okna składał ją
+  // na próżno). Wpis w dzienniku raz na przebieg — kolejne przebiegi łączą się w jeden wpis z licznikiem
+  const capRun = run.sent >= HELPER_SEND_MAX, capDay = !!(st.sent && st.sent.day === today_() && st.sent.n >= HELPER_DAY_MAX);
+  if (capRun || capDay) {
+    if (!run.capLog) helperLog_(st, 'warn', 'limit wiadomości (' + (capRun ? 'na przebieg' : 'na dzień') + ') — wiadomości o swojej porze czekają');
+    run.capLog = true;
+    return false;
+  }
   try {
     if (fn() === false) return false;
     st.marks[key] = Date.now();
@@ -1286,8 +1306,9 @@ function helperSchedule_(s, st, run) {
   const queue = st.queue.splice(0, st.queue.length);
   if (f.newPoll) queue.forEach(id => {
     const p = st.polls.filter(x => x.id === id)[0];
-    // nowa ankieta zatrzymana sufitem wraca do kolejki (inaczej zdjęta z niej nie poszłaby już nigdy)
-    if (p && helperOnce_(st, 'poll|' + id, run, () => helperSend_(s, st, helperPollText_(st, p), run, 'newPoll')) === false) st.queue.push(id);
+    // bez znacznika (sufit, bramka odrzuciła — 4xx) nowa ankieta wraca do kolejki: zdjęta z niej nie poszłaby już nigdy (drugie
+    // review PR #8); przy nieznanym wyniku znacznik już stoi, więc następny przebieg zdejmie ją bez drugiej wiadomości
+    if (p && helperOnce_(st, 'poll|' + id, run, () => helperSend_(s, st, helperPollText_(st, p), run, 'newPoll')) !== true) st.queue.push(id);
   });
 
   if (f.morning && inWin(s.morning)) helperOnce_(st, 'mo|' + T, run, () => {

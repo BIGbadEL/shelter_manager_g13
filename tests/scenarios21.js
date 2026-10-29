@@ -400,6 +400,23 @@ function S147b(){
   check('włączenie pomocnika z zapisanymi „gotowymi" — pytanie; „Anuluj" — nic nie idzie', /Do grupy „Grafik"/.test(asked) && /skład na jutro — wieczorem/.test(asked)
     && !calls(off, 'setHelperSettings').length, asked);
 
+  // drugie review PR #8, nr 5 (decyzja właściciela 29.10): przy wyłączonym pomocniku nic nie idzie — zapis bez pytania,
+  // pytanie dopiero przy włączeniu
+  const idle = openPanel(PROD({trigger: false}, Object.assign({}, saved, {enabled: false})));
+  openSec(idle, 'botProd');
+  idle.click('[data-act="pollChats"]');
+  respondTo(idle, 'getPollChats', [{id: GRAFIK, name: 'Grafik'}, {id: COMMUNITY, name: 'G13'}]);
+  fill(idle, {'#helperChat': COMMUNITY});
+  asked = '';
+  idle.window.confirm = m => { asked = m; return true; };
+  idle.click('[data-act="helperSave"]');
+  check('wyłączony pomocnik: zmiana grupy przy „gotowej" — zapis bez pytania (nic nie zacznie pisać)', asked === ''
+    && !!lastCall(idle, 'setHelperSettings') && lastCall(idle, 'setHelperSettings').args[0].chatId === COMMUNITY, asked);
+  respondTo(idle, 'setHelperSettings', PROD({trigger: false}, Object.assign({}, saved, {enabled: false, chatId: COMMUNITY, chatName: 'G13'})));
+  fill(idle, {'#helperEnabled': true});
+  idle.click('[data-act="helperSave"]');
+  check('...a włączenie — pytanie z grupą i „gotowymi"', /Do grupy „G13"/.test(asked) && /skład na jutro — wieczorem/.test(asked), asked);
+
   const same = openPanel(PROD({trigger: true}, saved));
   openSec(same, 'botProd');
   asked = '';
@@ -407,7 +424,7 @@ function S147b(){
   fill(same, {'#helperMin': '4'});
   same.click('[data-act="helperSave"]');
   check('ta sama grupa, pomocnik był włączony — zapis bez pytania', asked === '' && !!lastCall(same, 'setHelperSettings') && lastCall(same, 'setHelperSettings').args[0].min === 4);
-  check('bez błędów', [app, off, same].every(a => a.errors.length === 0), [app, off, same].map(a => a.errors.join('; ')).join(' | '));
+  check('bez błędów', [app, off, idle, same].every(a => a.errors.length === 0), [app, off, idle, same].map(a => a.errors.join('; ')).join(' | '));
 }
 
 /* ---------- S145c: przycisk bez odpowiedzi nie blokuje panelu na zawsze (bug nr 8) ---------- */

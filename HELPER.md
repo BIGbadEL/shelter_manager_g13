@@ -123,18 +123,24 @@ zmieniają), B78, B79, B82. **Nie przywracać bez decyzji właściciela.**
   stanu ankiety, nie sprawdziliśmy (niżej, „Do sprawdzenia", punkt 3). Pomocnik bierze z niego to, co pewne przy obu
   (review PR #8, nr 5; decyzja właściciela 28.10 — poprawka od razu, nie po sprawdzeniu): nikt w odpowiedziach = nadawca
   wycofał wszystko; dwie osoby i więcej = pełny stan ankiety; **jedna osoba** = sam nadawca — ten sam adres albo jego drugi
-  adres (`@lid` zamiast `@c.us`; pomocnik zapamiętuje to powiązanie, `alias`), a gdy to nie może być on — pełny stan
-  (nadawca wycofał wszystko, został jeden głos kogoś innego; pozostałym głosy zdjęte). **Drugi adres nadawcy** to tylko
-  adres innego rodzaju (`@lid` ↔ `@c.us`), którego nikt inny już nie ma (powiązanie, lista członków), i tylko wtedy, gdy
-  nadawca nie ma jeszcze głosu w tej ankiecie — pod żadnym ze swoich znanych adresów (`helperSelf_`). Dawniej każda jedna
-  osoba inna niż nadawca stawała się jego drugim adresem: przy pełnym stanie wycofanie głosu „sklejało" dwie osoby (imię,
-  klasa, numer osoby — także w wiadomości do „Grafiku"), a głos wycofującego zostawał (B76).
+  adres (`@lid` zamiast `@c.us`; pomocnik zapamiętuje to powiązanie, `alias`). **Drugi adres nadawcy** to tylko adres innego
+  rodzaju (`@lid` ↔ `@c.us`), którego nikt inny już nie ma (powiązanie, lista członków), i tylko wtedy, gdy nadawca nie ma
+  jeszcze głosu w tej ankiecie — pod żadnym ze swoich znanych adresów (`helperSelf_`); **wycofanie to nie głos** (pierwszym
+  zdarzeniem od osoby bywa wycofanie — głosowała, zanim pomocnik ją znał — a jej następny głos pod `@lid` jest dalej jej). Gdy
+  ta jedna osoba nie może być nadawcą — jej wybory i wycofanie samego nadawcy pod jego znanymi adresami; **głosów innych osób
+  nie zdejmujemy** (drugie review PR #8, decyzja właściciela 29.10 — wersja ostrożna): przy powiadomieniu o jednej osobie to ta
+  sama osoba pod nowym adresem, a „pełny stan" skasowałby wszystkim głosy i dał fałszywe „wypisali się" (także w wiadomości
+  do „Grafiku"); przy pełnym stanie stary głos wycofującego pod nieznanym mu adresem zostaje do najbliższego powiadomienia
+  z co najmniej dwiema osobami. Dawniej każda jedna osoba inna niż nadawca stawała się jego drugim adresem: przy pełnym stanie
+  wycofanie głosu „sklejało" dwie osoby (imię, klasa, numer osoby), a głos wycofującego zostawał (B76).
 - **Daty ankiety** z pytania („Grafik 26.10-01.11", „Niedziela 16.08", „Nowy grafik 01-05.07") i odpowiedzi
   (dzień tygodnia, „27.07", „rano/wieczór"); bez dat w pytaniu — tydzień od najbliższego poniedziałku.
   Odpowiedź z dopiskiem („Niedziela - AW", „Warszawski dzień zwierząt") liczy się osobno, nie do składu dnia;
-  „Nie mogę" — nigdzie. **„Daty nie pasują"** tylko wtedy, gdy zakres skończył się przed dniem wysłania ankiety albo
-  zaczyna się po spodziewanym tygodniu (albo jest daleko od dnia wysłania — pomyłka w pytaniu); ankieta w środku tygodnia
-  na bieżący weekend („26.06 - 28.06" w czwartek) jest w porządku (review PR #8, nr 4; B76).
+  „Nie mogę" — nigdzie. **„Daty nie pasują"** tylko wtedy, gdy zakres skończył się przed dniem wysłania ankiety, **kilkudniowy
+  zakres kończy się w dniu wysłania** (ankieta tygodniowa idzie w niedzielę, a tytuł łatwo skopiować z zeszłego tygodnia —
+  „Grafik 19-25.10" wysłana 25.10; drugie review PR #8) albo zaczyna się po spodziewanym tygodniu (albo jest daleko od dnia
+  wysłania — pomyłka w pytaniu). Ankieta w środku tygodnia na bieżący weekend („26.06 - 28.06" w czwartek) i jednodniowa
+  ankieta na dziś są w porządku (review PR #8, nr 4; B76).
 - **Ankieta poznana najpierw z głosu** (pierwszy głos przyszedł przed samą ankietą — np. sprzed włączenia powiadomień)
   ma dni liczone od dnia głosu; gdy przyjdzie sama ankieta (kolejka albo historia czatu), dni i daty liczą się od nowa
   od dnia jej wysłania (numery odpowiedzi w głosach zostają ważne). **Poznana tylko z głosu i bez dat w pytaniu nie ma
@@ -220,10 +226,13 @@ i z pola „Imiona", więc nazwy kontaktów powinny nadawać się do „Grafiku"
 - Wiadomość do kontaktu prywatnego z ustawień (B74); do „Grafiku" tylko funkcja „gotowa", tylko na produkcji, tylko do
   grupy z ustawień (`helperDest_` sprawdza to przy każdej wysyłce, B85). Najwyżej `HELPER_SEND_MAX` na przebieg
   i `HELPER_DAY_MAX` na dzień (wspólnie, z odpowiedziami na pytania). Karta kontaktu — tylko do kontaktu, osobno najwyżej
-  `HELPER_CARD_MAX` na dzień. **Wiadomość zatrzymana sufitem albo odrzucona przez bramkę nie dostaje znacznika „wysłana"**
-  i idzie w następnym przebiegu (nowa ankieta wraca do kolejki); „nowe osoby" zmieniają punkt odniesienia składu grupy
-  dopiero po wysłaniu — dawniej taka wiadomość przepadała na cały dzień, a zmiana składu na zawsze (review PR #8, nr 2–3; B87).
-  Nieznany wynik (bramka nie odpowiedziała — mogła wysłać) — znacznik jest, jak dotąd.
+  `HELPER_CARD_MAX` na dzień. **Wiadomość zatrzymana sufitem albo odrzucona przez bramkę (4xx) nie dostaje znacznika
+  „wysłana"** i idzie w następnym przebiegu — powiadomienie o nowej ankiecie wraca wtedy do kolejki (w obu przypadkach —
+  drugie review PR #8: po odrzuceniu przepadało); „nowe osoby" zmieniają punkt odniesienia składu grupy dopiero po wysłaniu —
+  dawniej taka wiadomość przepadała na cały dzień, a zmiana składu na zawsze (review PR #8, nr 2–3; B87). Nieznany wynik
+  (bramka nie odpowiedziała albo 5xx — mogła wysłać) — znacznik jest, jak dotąd, i drugi raz nic nie idzie. **Przy osiągniętym
+  sufcie wiadomość o swojej porze nie jest nawet składana** (bez odczytów arkusza, pogody i składu grupy z bramki), a dziennik
+  dostaje jeden wpis z licznikiem — sufit dzienny i tak nie odnowi się przed końcem okna (drugie review PR #8; B87).
 - Pracuje jeden pomocnik naraz — sygnał produkcji, podpisany tokenem bramki (B86, wyżej).
 - Numery osób nadają dwa miejsca (przebieg i „Pobierz członków"), więc zawsze pod blokadą skryptu ze świeżym odczytem
   (`helperNrsAdd_`); przebieg bierze ją na chwilę i tylko wtedy, gdy ktoś nowy nie ma numeru (bez flush i pamięci podręcznej).
